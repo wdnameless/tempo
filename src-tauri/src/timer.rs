@@ -736,26 +736,32 @@ pub async fn timer_get_state() -> Result<TimerSnapshot, String> {
     Ok(snapshot())
 }
 
+/// Writes one finished session into the database.
+///
+/// Split from `save_sessions_to_db` so the row shape can be tested against a
+/// real connection: a bug here loses every statistic the app has, and the
+/// `AppHandle` version cannot be exercised from a unit test.
+fn insert_session_row(conn: &rusqlite::Connection, session: &TimerSession) -> Result<(), String> {
+    let row = serde_json::json!({
+        "id": session.id,
+        "kind": session.kind,
+        "started_at": session.started_at,
+        "ended_at": session.ended_at,
+        "duration_sec": session.duration_sec,
+        "completed": if session.completed { 1 } else { 0 },
+        "task_id": session.task_id,
+    });
+    crate::storage::repo::insert(conn, "sessions", &row).map(|_| ())
+}
+
 /// Drains pending sessions and writes focus sessions to SQLite via `storage::with_db`.
 fn save_sessions_to_db(app: &tauri::AppHandle, sessions: &[TimerSession]) {
     for session in sessions {
         if session.kind != "pomodoro" && session.kind != "stopwatch" {
             continue;
         }
-        let row = serde_json::json!({
-            "id": session.id,
-            "kind": session.kind,
-            "started_at": session.started_at,
-            "ended_at": session.ended_at,
-            "duration_sec": session.duration_sec,
-            "completed": if session.completed { 1 } else { 0 },
-            "task_id": session.task_id,
-        });
-
         let app_handle = app.clone();
-        let _ = crate::storage::with_db(&app_handle, |conn| {
-            crate::storage::repo::insert(conn, "sessions", &row)
-        });
+        let _ = crate::storage::with_db(&app_handle, |conn| insert_session_row(conn, session));
     }
 }
 
@@ -1050,5 +1056,73 @@ mod tests {
         let sessions = state.take_sessions();
         assert_eq!(sessions.len(), 1);
         assert!(!sessions[0].completed);
+    }
+
+    /// A finished focus phase must land in the sessions table as a row statistics
+    /// can read: right kind, right duration, completed flag as an integer.
+    #[test]
+    fn finished_focus_phase_is_written_to_the_sessions_table() {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::storage::migrations::migrate(&conn).expect("migrate");
+
+        let session = TimerSession {
+            id: uuid::Uuid::new_v4().to_string(),
+            kind: "pomodoro".to_string(),
+            started_at: "2026-09-19T09:00:00+05:00".to_string(),
+            ended_at: "2026-09-19T09:25:00+05:00".to_string(),
+            duration_sec: 1500,
+            completed: true,
+            task_id: None,
+        };
+        insert_session_row(&conn, &session).expect("session insert");
+
+        let rows = crate::storage::repo::list(&conn, "sessions", false).expect("list");
+        assert_eq!(rows.len(), 1, "exactly one session row");
+        let row = &rows[0];
+        assert_eq!(row["kind"], "pomodoro");
+        assert_eq!(row["duration_sec"], 1500);
+        assert_eq!(row["completed"], 1, "completed is stored as an integer");
+        assert!(row["deleted_at"].is_null(), "a fresh row is not soft-deleted");
+    }
+
+    /// An interrupted session is still recorded — the spec counts it separately,
+    /// which is only possible if the row exists with the flag off.
+    #[test]
+    fn interrupted_session_is_recorded_as_incomplete() {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::storage::migrations::migrate(&conn).expect("migrate");
+
+        let session = TimerSession {
+            id: uuid::Uuid::new_v4().to_string(),
+            kind: "pomodoro".to_string(),
+            started_at: "2026-09-19T09:00:00+05:00".to_string(),
+            ended_at: "2026-09-19T09:05:00+05:00".to_string(),
+            duration_sec: 300,
+            completed: false,
+            task_id: None,
+        };
+        insert_session_row(&conn, &session).expect("session insert");
+
+        let rows = crate::storage::repo::list(&conn, "sessions", false).expect("list");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["completed"], 0);
+        assert_eq!(rows[0]["duration_sec"], 300);
+    }
+
+    /// The break is not work: a rest phase must never produce a row, or every
+    /// focus statistic would count the time the user was away from the desk.
+    #[test]
+    fn a_break_records_no_session() {
+        let mut state = running_for(60);
+        state.mode = TimerMode::Pomodoro;
+        state.phase = Phase::ShortRest;
+        state.session_started = Some(SystemTime::now() - Duration::from_secs(5));
+
+        state.close_session(SystemTime::now(), true);
+
+        assert!(
+            state.take_sessions().is_empty(),
+            "a rest phase must not be recorded as focus"
+        );
     }
 }

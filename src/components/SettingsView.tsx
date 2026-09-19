@@ -10,6 +10,7 @@ import { I18nService, Language } from '../services/i18n';
 import { AIGateway } from '../services/aiGateway';
 import { checkForUpdate, currentVersion, detectPortable, installUpdate, type UpdateInfo } from '../services/update';
 import { StoreService } from '../services/store';
+import { PomodoroSettings } from './PomodoroSettings';
 
 interface SettingsViewProps {
   theme: ThemeColors;
@@ -53,7 +54,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [testingVoice, setTestingVoice] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [autostartEnabled, setAutostartEnabled] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'sound' | 'ai' | 'data'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'pomodoro' | 'sound' | 'ai' | 'data'>('general');
   const [uiClicks, setUiClicks] = useState<boolean>(() => {
     return StoreService.getPreference('alarmer_ui_clicks', true);
   });
@@ -276,6 +277,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </button>
         <button
           type="button"
+          onClick={() => { setActiveTab('pomodoro'); soundService.playUiClick(); }}
+          className={`flex-1 py-1.5 px-3 rounded-lg flex items-center justify-center space-x-1.5 transition-all shrink-0 ${
+            activeTab === 'pomodoro' ? 'bg-white/20 font-bold shadow-sm' : 'opacity-60 hover:opacity-100'
+          }`}
+          style={{ color: activeTab === 'pomodoro' ? theme.text : theme.subtext }}
+        >
+          <Timer size={13} />
+          <span>{I18nService.t().pomodoroSettings}</span>
+        </button>
+        <button
+          type="button"
           onClick={() => { setActiveTab('sound'); soundService.playUiClick(); }}
           className={`flex-1 py-1.5 px-3 rounded-lg flex items-center justify-center space-x-1.5 transition-all shrink-0 ${
             activeTab === 'sound' ? 'bg-white/20 font-bold shadow-sm' : 'opacity-60 hover:opacity-100'
@@ -369,6 +381,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
       )}
+
+      {activeTab === 'pomodoro' && <PomodoroSettings />}
 
       {activeTab === 'sound' && (
         <div className="flex flex-col space-y-6">
