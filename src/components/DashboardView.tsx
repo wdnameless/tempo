@@ -135,8 +135,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </button>
                 </div>
                 <Timer
-                  theme={theme}
-                  dynamicUi={dynamicUi}
                   initialMinutes={timerMinutes}
                 />
               </div>

@@ -1,356 +1,258 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
-/**
- * The Timer view must be a pure renderer of backend state. The regression it
- * guards is that the countdown used to be React state: leaving the sub-tab
- * unmounted the component and silently reset the clock, and the mini overlay
- * had nothing to display.
- */
-
-const listeners = new Map<string, (event: { payload: unknown }) => void>();
-
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: (event: string, handler: (e: { payload: unknown }) => void) => {
-    listeners.set(event, handler);
-    return Promise.resolve(() => listeners.delete(event));
-  },
-  emit: vi.fn(() => Promise.resolve()),
-}));
-
-let backend: Record<string, unknown> = {
-  total_secs: 1500,
-  remaining_secs: 900,
-  running: true,
-  mode: 'countdown',
-  phase: 'focus',
-  block_index: 0,
-  direction_id: null,
-  overtime_secs: 0,
-  overtime: false,
-};
-
-const invokeMock = vi.fn((cmd: string, args?: { mode?: string }) => {
-  switch (cmd) {
-    case 'timer_get_state':
-      return Promise.resolve(backend);
-    case 'timer_start':
-      return Promise.resolve((backend = { ...backend, running: true }));
-    case 'timer_pause':
-      return Promise.resolve((backend = { ...backend, running: false }));
-    case 'timer_reset':
-      return Promise.resolve(
-        (backend = {
-          ...backend,
-          running: false,
-          remaining_secs: backend.total_secs,
-        }),
-      );
-    case 'timer_set_mode':
-      if (args && args.mode) {
-        backend = { ...backend, mode: args.mode };
-      }
-      return Promise.resolve(backend);
-    default:
-      return Promise.resolve(undefined);
-  }
-});
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: (cmd: string, args?: { mode?: string }) => invokeMock(cmd, args) }));
-
-vi.mock('../services/sound', () => ({
-  soundService: {
-    playCountdownTick: vi.fn(),
-    playUiClick: vi.fn(),
-    playFinishAlarm: vi.fn(),
-    speak: vi.fn(),
-  },
-}));
-
-vi.mock('../services/music', () => ({
-  MusicService: {
-    play: vi.fn(),
-    stop: vi.fn(),
-  },
-}));
-
+// Define __TAURI_INTERNALS__ so isTauri() returns true in tests
 Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
 
 import { Timer } from '../Timer';
-import { StoreService } from '../../services/store';
+import type { TimerSnapshot } from '../../services/timer';
 
-const theme = {
-  id: 'winter' as const,
-  name: 'Winter',
-  bg: '#050505',
-  surface: '#0a0a0a',
-  cardBg: '#0f0f0f',
-  border: '#27272a',
-  text: '#fafafa',
-  subtext: '#a1a1aa',
-  accent: '#ff7a1a',
-  accentGlow: 'rgba(255,122,26,0.28)',
-  ringTrack: '#1c1c1f',
-  ringProgress: '#ff7a1a',
-  ticks: '#3f3f46',
+// Mock confetti and soundService
+vi.mock('canvas-confetti', () => ({
+  default: vi.fn(),
+}));
+
+vi.mock('../../services/sound', () => ({
+  soundService: {
+    playUiClick: vi.fn(),
+    playFinishAlarm: vi.fn(),
+  },
+}));
+
+// Tauri invoke & listen mocks
+const listeners = new Map<string, (event: { payload: unknown }) => void>();
+let backendState: TimerSnapshot;
+
+const defaultSnapshot: TimerSnapshot = {
+  total_secs: 1500,
+  remaining_secs: 1500,
+  elapsed_secs: 0,
+  running: false,
+  mode: 'pomodoro',
+  phase: 'focus',
+  pomodoro_index: 1,
+  completed_today: 0,
+  focus_min: 25,
+  short_rest_min: 5,
+  long_rest_min: 15,
+  auto_start: false,
 };
 
-describe('Timer view', () => {
+const mockInvoke = vi.fn((cmd: string, args?: Record<string, unknown>) => {
+  switch (cmd) {
+    case 'timer_get_state':
+      return Promise.resolve(backendState);
+    case 'timer_start':
+      backendState = { ...backendState, running: true };
+      listeners.get('timer://tick')?.({ payload: backendState });
+      return Promise.resolve();
+    case 'timer_pause':
+      backendState = { ...backendState, running: false };
+      listeners.get('timer://tick')?.({ payload: backendState });
+      return Promise.resolve();
+    case 'timer_reset':
+      backendState = {
+        ...backendState,
+        running: false,
+        remaining_secs: backendState.total_secs,
+        elapsed_secs: 0,
+      };
+      listeners.get('timer://tick')?.({ payload: backendState });
+      return Promise.resolve();
+    case 'timer_set_mode':
+      if (args && args.mode) {
+        backendState = { ...backendState, mode: args.mode as 'pomodoro' | 'stopwatch' };
+        listeners.get('timer://tick')?.({ payload: backendState });
+      }
+      return Promise.resolve();
+    case 'timer_skip_phase':
+      return Promise.resolve();
+    default:
+      return Promise.resolve();
+  }
+});
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => (mockInvoke as unknown as (...a: unknown[]) => unknown)(...args),
+}));
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: (event: string, handler: (event: { payload: unknown }) => void) => {
+    listeners.set(event, handler);
+    return Promise.resolve(() => listeners.delete(event));
+  },
+}));
+
+describe('Timer Component (Pomodoro & Stopwatch)', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     listeners.clear();
-    invokeMock.mockClear();
-    cleanup();
-    StoreService.setPreference('alarmer_timer_mode', 'countdown');
-    backend = {
-      mode: 'countdown',
-      phase: 'focus',
-      overtime: false,
+    backendState = { ...defaultSnapshot };
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('renders remaining time from backend on dial display', async () => {
+    backendState = {
+      ...defaultSnapshot,
+      remaining_secs: 1500,
       total_secs: 1500,
-      remaining_secs: 900,
-      running: true,
-      overtime_secs: 0,
-    };
-  });
-
-  it('renders the countdown it reads from the backend', async () => {
-    render(<Timer theme={theme} />);
-
-    // 900 s remaining = 15:00.
-    await waitFor(() => expect(screen.getAllByText('15:00')[0]).toBeDefined());
-  });
-
-  it('re-renders from a backend tick without owning the clock', async () => {
-    render(<Timer theme={theme} />);
-    await waitFor(() => expect(screen.getAllByText('15:00')[0]).toBeDefined());
-
-    // The backend broadcasts a new snapshot, exactly as timer::spawn does.
-    listeners.get('timer://tick')?.({
-      payload: { ...backend, remaining_secs: 840 },
-    });
-
-    await waitFor(() => expect(screen.getAllByText('14:00')[0]).toBeDefined());
-  });
-
-  it('survives being unmounted and remounted with the countdown intact', async () => {
-    const first = render(<Timer theme={theme} />);
-    await waitFor(() => expect(screen.getAllByText('15:00')[0]).toBeDefined());
-    first.unmount();
-
-    backend = { ...backend, remaining_secs: 600 };
-    render(<Timer theme={theme} />);
-
-    await waitFor(() => expect(screen.getAllByText('10:00')[0]).toBeDefined());
-  });
-
-  it('shows the armed duration on the minutes control', async () => {
-    render(<Timer theme={theme} />);
-
-    await waitFor(() => expect(screen.getByText('25 мин')).toBeDefined());
-  });
-
-  it('exposes the overtime state in flow mode instead of hiding it', async () => {
-    backend = {
-      mode: 'flow',
-      phase: 'focus',
-      overtime: true,
-      total_secs: 60,
-      remaining_secs: 0,
-      running: true,
-      overtime_secs: 65,
     };
 
-    render(<Timer theme={theme} />);
+    render(<Timer />);
 
-    await waitFor(() => expect(screen.getByText('OVERTIME')).toBeDefined());
-    expect(screen.getByText('+1:05')).toBeDefined();
+    await waitFor(() => {
+      const display = screen.getByTestId('timer-display');
+      expect(display.textContent).toBe('25:00');
+    });
   });
 
-  it('renders block mode with phase (Фокус), counter, and direction badge', async () => {
-    StoreService.setPreference('alarmer_timer_mode', 'block');
-    backend = {
-      mode: 'block',
-      phase: 'focus',
-      overtime: false,
-      total_secs: 3000,
-      remaining_secs: 3000,
-      running: true,
-      overtime_secs: 0,
-      block_index: 2,
-      direction_id: 'dir-1',
+  it('renders pomodoro index in cycle and completed today count', async () => {
+    backendState = {
+      ...defaultSnapshot,
+      pomodoro_index: 3,
+      completed_today: 5,
     };
 
-    const directions = [
-      { id: 'dir-1', name: 'Программирование', color: '#10b981', weeklyBlockBudget: 15, archived: false },
-    ];
-
-    render(<Timer theme={theme} directions={directions} />);
+    render(<Timer />);
 
     await waitFor(() => {
-      expect(screen.getByText('Блок 2')).toBeDefined();
-      expect(screen.getAllByText('Фокус').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText('Программирование')).toBeDefined();
-      expect(screen.getByText('БЛОКИ')).toBeDefined();
+      expect(screen.getByTestId('pomodoro-cycle-index').textContent).toBe('3 из 4');
+      expect(screen.getByTestId('pomodoro-completed-today').textContent).toContain('5');
     });
   });
 
-  it('renders rest phase correctly in block mode (Отдых)', async () => {
-    StoreService.setPreference('alarmer_timer_mode', 'block');
-    backend = {
-      mode: 'block',
-      phase: 'rest',
-      overtime: false,
-      total_secs: 600,
-      remaining_secs: 600,
+  it('calls start/pause/reset backend commands', async () => {
+    render(<Timer />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('toggle-btn')).toBeDefined();
+    });
+
+    // When paused, toggle button starts the timer
+    fireEvent.click(screen.getByTestId('toggle-btn'));
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('timer_start');
+    });
+
+    // Reset button calls timer_reset
+    fireEvent.click(screen.getByTestId('reset-btn'));
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('timer_reset');
+    });
+
+    // When running, toggle button pauses the timer
+    backendState = { ...backendState, running: true };
+    listeners.get('timer://tick')?.({ payload: backendState });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('toggle-btn')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId('toggle-btn'));
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('timer_pause');
+    });
+  });
+
+  it('calls timer_set_mode when mode switch buttons are clicked', async () => {
+    render(<Timer />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mode-stopwatch-btn')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId('mode-stopwatch-btn'));
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('timer_set_mode', { mode: 'stopwatch' });
+    });
+  });
+
+  it('calls timer_skip_phase when skip button is clicked', async () => {
+    render(<Timer />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('skip-btn')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId('skip-btn'));
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('timer_skip_phase');
+    });
+  });
+
+  it('updates phase label when phase changes', async () => {
+    render(<Timer />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase-label')).toBeDefined();
+    });
+
+    // Focus phase (running)
+    backendState = { ...defaultSnapshot, running: true, phase: 'focus' };
+    listeners.get('timer://tick')?.({ payload: backendState });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase-label').textContent).toBe('Фокус');
+    });
+
+    // Short rest phase
+    backendState = { ...defaultSnapshot, running: true, phase: 'short_rest' };
+    listeners.get('timer://tick')?.({ payload: backendState });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase-label').textContent).toBe('Перерыв');
+    });
+
+    // Long rest phase
+    backendState = { ...defaultSnapshot, running: true, phase: 'long_rest' };
+    listeners.get('timer://tick')?.({ payload: backendState });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('phase-label').textContent).toBe('Длинный перерыв');
+    });
+  });
+
+  it('survives unmount and remount with countdown intact', async () => {
+    backendState = {
+      ...defaultSnapshot,
       running: true,
-      overtime_secs: 0,
-      block_index: 3,
-      direction_id: 'dir-1',
-    };
-
-    render(<Timer theme={theme} />);
-
-    await waitFor(() => {
-      expect(screen.getAllByText('Отдых').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText('Блок 3')).toBeDefined();
-    });
-  });
-
-  it('shows quality prompt when focus completes in block mode and calls onRateQuality', async () => {
-    backend = {
-      mode: 'block',
-      phase: 'focus',
-      overtime: false,
-      total_secs: 3000,
-      remaining_secs: 3000,
-      running: true,
-      overtime_secs: 0,
-    };
-
-    const onRateQuality = vi.fn();
-    const directions = [
-      { id: 'dir-1', name: 'Дизайн', color: '#8b5cf6', weeklyBlockBudget: 10, archived: false },
-    ];
-
-    StoreService.setPreference('alarmer_timer_mode', 'block');
-    backend = { ...backend, block_index: 1, direction_id: 'dir-1' };
-    render(<Timer theme={theme} directions={directions} onRateQuality={onRateQuality} />);
-
-    // In focus, the prompt is not shown — it belongs to the end of a block.
-    await waitFor(() => expect(screen.getAllByText('Фокус').length).toBeGreaterThanOrEqual(1));
-    expect(screen.queryByText('Блок фокуса завершён')).toBeNull();
-
-    // Transition to rest phase (focus phase ended, auto-rest started)
-    listeners.get('timer://tick')?.({
-      payload: {
-        ...backend,
-        remaining_secs: 600,
-        phase: 'rest',
-      },
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText(/Блок (фокуса )?завершён|Блок завершён/)).toBeDefined();
-      expect(screen.getByText('Дизайн')).toBeDefined();
-    });
-
-    // Rate 8
-    fireEvent.click(screen.getByText('8'));
-    expect(onRateQuality).toHaveBeenCalledWith(8);
-
-    // Prompt disappears after rating
-    await waitFor(() => {
-      expect(screen.queryByText('Блок фокуса завершён')).toBeNull();
-    });
-  });
-
-  it('allows skipping the quality prompt without storing quality value', async () => {
-    backend = {
-      mode: 'block',
-      phase: 'focus',
-      overtime: false,
-      total_secs: 3000,
-      remaining_secs: 3000,
-      running: true,
-      overtime_secs: 0,
-    };
-
-    const onRateQuality = vi.fn();
-
-    StoreService.setPreference('alarmer_timer_mode', 'block');
-    backend = { ...backend, block_index: 1, direction_id: 'dir-1' };
-    render(<Timer theme={theme} onRateQuality={onRateQuality} />);
-
-    // Wait for the component to adopt the backend's block mode before nudging it.
-    await waitFor(() => expect(screen.getAllByText('Фокус').length).toBeGreaterThanOrEqual(1));
-
-    // Trigger transition to rest
-    listeners.get('timer://tick')?.({
-      payload: {
-        ...backend,
-        remaining_secs: 600,
-        phase: 'rest',
-      },
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText(/Блок (фокуса )?завершён|Блок завершён/)).toBeDefined();
-    });
-
-    // Click "Пропустить"
-    fireEvent.click(screen.getByText('Пропустить'));
-
-    // onRateQuality was NEVER called!
-    expect(onRateQuality).not.toHaveBeenCalled();
-
-    // Prompt is closed
-    await waitFor(() => {
-      expect(screen.queryByText('Блок фокуса завершён')).toBeNull();
-    });
-  });
-
-  it('proves quality prompt does NOT appear outside block mode (R6)', async () => {
-    // Mode is countdown
-    backend = {
-      mode: 'countdown',
-      phase: 'focus',
-      overtime: false,
+      remaining_secs: 1234,
       total_secs: 1500,
-      remaining_secs: 0,
-      running: false,
-      overtime_secs: 0,
     };
 
-    render(<Timer theme={theme} />);
+    const { unmount } = render(<Timer />);
 
-    // Tick at 0
-    listeners.get('timer://tick')?.({
-      payload: { ...backend, remaining_secs: 0, remainingSeconds: 0 },
+    await waitFor(() => {
+      expect(screen.getByTestId('timer-display').textContent).toBe('20:34');
     });
 
-    // Session event in countdown mode
-    listeners.get('timer://session')?.({
-      payload: {
-        elapsedSeconds: 1500,
-        targetSeconds: 1500,
-        completedAt: new Date().toISOString(),
-        completed: true,
-        mode: 'countdown',
-      },
+    unmount();
+
+    // Re-mount: backend state must be queried again and restored seamlessly
+    render(<Timer />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('timer-display').textContent).toBe('20:34');
     });
+  });
 
-    // Verify quality prompt is completely absent
-    expect(screen.queryByText('Блок фокуса завершён')).toBeNull();
+  it('in stopwatch mode shows elapsed time and hides pomodoro cycle counter', async () => {
+    backendState = {
+      ...defaultSnapshot,
+      mode: 'stopwatch',
+      running: true,
+      elapsed_secs: 125, // 02:05
+    };
 
-    // In flow mode
-    listeners.get('timer://tick')?.({
-      payload: {
-        ...backend,
-        mode: 'flow',
-        remaining_secs: 0,
-        overtime: true,
-      },
+    render(<Timer />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('timer-display').textContent).toBe('02:05');
+      expect(screen.queryByTestId('pomodoro-cycle-info')).toBeNull();
+      expect(screen.queryByTestId('skip-btn')).toBeNull();
     });
-
-    expect(screen.queryByText('Блок фокуса завершён')).toBeNull();
   });
 });

@@ -49,6 +49,7 @@ export interface Translations {
   pomodoroReset: string;
   pomodoroSkip: string;
   pomodoroSettings: string;
+  minutesShort: string;
   pomodoroFocusLength: string;
   pomodoroShortRestLength: string;
   pomodoroLongRestLength: string;
@@ -146,6 +147,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     pomodoroReset: 'Сброс',
     pomodoroSkip: 'Пропустить фазу',
     pomodoroSettings: 'Помодоро',
+    minutesShort: 'мин',
     pomodoroFocusLength: 'Длительность фокуса',
     pomodoroShortRestLength: 'Короткий перерыв',
     pomodoroLongRestLength: 'Длинный перерыв',
@@ -240,6 +242,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     pomodoroReset: 'Reset',
     pomodoroSkip: 'Skip phase',
     pomodoroSettings: 'Pomodoro',
+    minutesShort: 'min',
     pomodoroFocusLength: 'Focus length',
     pomodoroShortRestLength: 'Short break',
     pomodoroLongRestLength: 'Long break',

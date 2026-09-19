@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { isTauri } from './platform';
 
 /**
- * The countdown timer, backed by the Rust `timer` module.
+ * The pomodoro timer, backed by the Rust `timer` module.
  *
  * The clock itself lives in the backend: a component-owned countdown was lost
  * the moment its sub-tab unmounted, the mini overlay had nothing to display
@@ -11,56 +11,49 @@ import { isTauri } from './platform';
  * not running. Here the frontend only issues commands and renders snapshots.
  */
 
-export type TimerPhase = 'focus' | 'rest';
-export type TimerMode = 'countdown' | 'flow' | 'block';
+export type TimerPhase = 'focus' | 'short_rest' | 'long_rest';
+export type TimerMode = 'pomodoro' | 'stopwatch';
 
 export interface TimerSnapshot {
   total_secs: number;
   remaining_secs: number;
+  elapsed_secs: number;
   running: boolean;
   mode: TimerMode;
-  overtime_secs: number;
-  overtime: boolean;
-  /** Which half of a block is running. Always `focus` outside block mode. */
   phase: TimerPhase;
-  /** Completed focus phases today; the counter the user sees. */
-  block_index: number;
-  direction_id: string | null;
+  /** 1-based index in the current 4-pomodoro cycle (1..=4). */
+  pomodoro_index: number;
+  /** Completed focus sessions today. */
+  completed_today: number;
+  focus_min: number;
+  short_rest_min: number;
+  long_rest_min: number;
+  auto_start: boolean;
 }
 
-const IDLE: TimerSnapshot = {
-  total_secs: 25 * 60,
-  remaining_secs: 25 * 60,
+export const IDLE: TimerSnapshot = {
+  total_secs: 1500,
+  remaining_secs: 1500,
+  elapsed_secs: 0,
   running: false,
-  mode: 'countdown',
-  overtime_secs: 0,
-  overtime: false,
+  mode: 'pomodoro',
   phase: 'focus',
-  block_index: 0,
-  direction_id: null,
+  pomodoro_index: 1,
+  completed_today: 0,
+  focus_min: 25,
+  short_rest_min: 5,
+  long_rest_min: 15,
+  auto_start: false,
 };
 
 /** Mirrors the backend's clamp, so the UI never arms something it cannot set. */
-export const MIN_MINUTES = 1;
-export const MAX_MINUTES = 180;
+export const MIN_MINUTES = 10;
+export const MAX_MINUTES = 120;
 
-/**
- * A finished stretch of focus reported by the backend timer.
- *
- * The clock lives in Rust, so the measurement of how long the user actually
- * focused has to come from there: a webview that was hidden or unmounted never
- * saw the seconds go by.
- */
-export interface TimerSessionEvent {
-  focused_secs: number;
-  started_at_ms: number;
-  ended_at_ms: number;
-  completed: boolean;
-  /** Direction the finished block belonged to, when one was set. */
-  direction_id: string | null;
-  /** Phase that finished; only `focus` earns blocks. */
-  phase: TimerPhase;
-}
+export const MIN_SHORT_REST = 1;
+export const MAX_SHORT_REST = 30;
+export const MIN_LONG_REST = 5;
+export const MAX_LONG_REST = 60;
 
 export class TimerService {
   /**
@@ -85,6 +78,11 @@ export class TimerService {
     await invoke('timer_set_duration', { secs: clamped * 60 });
   }
 
+  static async shiftMinutes(delta: number): Promise<void> {
+    if (!isTauri()) return;
+    await invoke('timer_shift_minutes', { delta });
+  }
+
   static async start(): Promise<void> {
     if (!isTauri()) return;
     await invoke('timer_start');
@@ -105,44 +103,30 @@ export class TimerService {
     await invoke('timer_reset');
   }
 
+  static async skipPhase(): Promise<void> {
+    if (!isTauri()) return;
+    await invoke('timer_skip_phase');
+  }
+
   static async setMode(mode: TimerMode): Promise<void> {
     if (!isTauri()) return;
     await invoke('timer_set_mode', { mode });
   }
 
-  /** Arms the focus/rest cycle lengths for block mode. */
-  static async setBlockSettings(focusMin: number, restMin: number): Promise<void> {
+  /** Arms the pomodoro cycle settings: focus duration, short/long rest, auto-start. */
+  static async setPomodoroSettings(
+    focusMin: number,
+    shortRestMin: number,
+    longRestMin: number,
+    autoStart: boolean,
+  ): Promise<void> {
     if (!isTauri()) return;
-    await invoke('timer_set_block_settings', { focusMin, restMin });
-  }
-
-  /** Points the timer at a direction, so finished blocks can be attributed. */
-  static async setDirection(directionId: string | null): Promise<void> {
-    if (!isTauri()) return;
-    await invoke('timer_set_direction', { directionId });
-  }
-
-  /**
-   * Subscribes to completed stretches of focus.
-   *
-   * Unlike the tick subscription this is keyed to the event itself, so the
-   * recording of a session does not depend on any component being mounted.
-   */
-  static onSession(handler: (session: TimerSessionEvent) => void): () => void {
-    if (!isTauri()) return () => {};
-
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-
-    void listen<TimerSessionEvent>('timer://session', (e) => handler(e.payload)).then((fn) => {
-      if (cancelled) fn();
-      else unlisten = fn;
+    await invoke('timer_set_pomodoro_settings', {
+      focusMin,
+      shortRestMin,
+      longRestMin,
+      autoStart,
     });
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
   }
 
   /**

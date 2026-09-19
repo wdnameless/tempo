@@ -1,104 +1,146 @@
-import { X } from 'lucide-react';
-import { WindowService } from '../services/window';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { themeFromTokens } from '../constants/themes';
+import { DEFAULT_ACCENT, PHASE_COLORS } from '../constants/design';
+import { I18nService } from '../services/i18n';
 import { TimerService, type TimerSnapshot } from '../services/timer';
 
 /**
- * Compact always-on-top overlay showing the remaining timer time.
+ * Compact always-on-top overlay showing the timer state.
  *
- * Rendered in its own transparent, frameless window (`?window=mini-overlay`).
- * It reads the backend timer, the same source the main window renders, so it
- * shows the real countdown even when the main window has never opened the Timer
- * sub-tab — and it stays correct when the main window is hidden.
+ * The overlay is opened from the main window and lives in its own Tauri window
+ * ('mini-overlay'). It mirrors backend timer state via TimerService.subscribe,
+ * so time stays in sync without passing messages through the frontend.
+ *
+ * Dragging anywhere on the overlay moves the window. A close button returns
+ * the user to the main window.
  */
-export function MiniOverlay() {
-  const [state, setState] = useState<TimerSnapshot | null>(null);
-
-  const theme = themeFromTokens('amber');
+export const MiniOverlay: React.FC = () => {
+  const [snapshot, setSnapshot] = useState<TimerSnapshot | null>(null);
+  const theme = themeFromTokens(DEFAULT_ACCENT);
+  const t = I18nService.t();
 
   useEffect(() => {
-    let active = true;
-    void TimerService.getState().then((initial) => {
-      if (active) setState(initial);
-    });
-    const unsubscribe = TimerService.subscribe((next) => setState(next));
-    return () => {
-      active = false;
-      unsubscribe();
-    };
+    void TimerService.getState().then(setSnapshot);
+    const unsubscribe = TimerService.subscribe(setSnapshot);
+    return () => unsubscribe();
   }, []);
 
-  if (!state) return null;
+  const formatTime = (totalSeconds: number): string => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
 
-  const remaining = state.overtime ? state.overtime_secs : state.remaining_secs;
-  const progress = state.total_secs > 0
-    ? Math.max(0, Math.min(1, remaining / state.total_secs))
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    try {
+      void getCurrentWindow().startDragging();
+    } catch {
+      // Ignored outside Tauri
+    }
+  };
+
+  const handleClose = async () => {
+    try {
+      await getCurrentWindow().hide();
+    } catch {
+      // Ignored outside Tauri
+    }
+  };
+
+  const isStopwatch = snapshot?.mode === 'stopwatch';
+  const displaySeconds = snapshot
+    ? isStopwatch
+      ? snapshot.elapsed_secs
+      : snapshot.remaining_secs
     : 0;
 
-  const mm = Math.floor(state.remaining_secs / 60).toString().padStart(2, '0');
-  const ss = Math.floor(state.remaining_secs % 60).toString().padStart(2, '0');
+  const phaseColor = snapshot
+    ? isStopwatch
+      ? PHASE_COLORS.focus
+      : PHASE_COLORS[snapshot.phase] ?? PHASE_COLORS.focus
+    : PHASE_COLORS.idle;
+
+  const phaseLabel = snapshot
+    ? isStopwatch
+      ? t.pomodoroStopwatch
+      : snapshot.phase === 'short_rest'
+        ? t.pomodoroShortRest
+        : snapshot.phase === 'long_rest'
+          ? t.pomodoroLongRest
+          : t.pomodoroFocus
+    : t.pomodoroIdle;
+
+  // Progress bar calculation for pomodoro mode
+  const progressPercent = snapshot && !isStopwatch && snapshot.total_secs > 0
+    ? Math.min(100, Math.max(0, ((snapshot.total_secs - snapshot.remaining_secs) / snapshot.total_secs) * 100))
+    : 0;
 
   return (
     <div
-      data-tauri-drag-region
-      onPointerDown={(e) => {
-        if ((e.target as HTMLElement).closest('button')) return;
-        WindowService.startDragging();
+      data-testid="mini-overlay"
+      onMouseDown={handleMouseDown}
+      className="w-full h-full select-none cursor-move flex flex-col justify-between p-3 rounded-2xl border backdrop-blur-md transition-colors duration-300"
+      style={{
+        backgroundColor: `${theme.surface}E6`,
+        borderColor: `${phaseColor}40`,
+        color: theme.text,
       }}
-      className="w-screen h-screen flex items-center justify-center select-none cursor-move"
-      style={{ background: 'transparent' }}
     >
-      <div
-        className="relative flex flex-col items-center justify-center rounded-2xl border px-4 py-2 shadow-2xl group"
-        style={{
-          backgroundColor: `${theme.bg}E6`,
-          borderColor: theme.border,
-          backdropFilter: 'blur(12px)',
-        }}
-      >
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            void getCurrentWindow().close();
-          }}
-          className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500/80 hover:bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md z-50 cursor-pointer"
-          title="Закрыть виджет"
-        >
-          <X size={11} />
-        </button>
-        {/* Hairline progress rail */}
-        <div
-          className="absolute left-2 right-2 bottom-1.5 h-[2px] rounded-full overflow-hidden"
-          style={{ backgroundColor: theme.ringTrack }}
-        >
-          <div
-            className="h-full rounded-full transition-[width] duration-500"
-            style={{ width: `${progress * 100}%`, backgroundColor: theme.accent }}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <span
+            data-testid="mini-phase-dot"
+            className="w-2 h-2 rounded-full transition-colors"
+            style={{ backgroundColor: phaseColor }}
           />
+          <span className="text-xs font-medium uppercase tracking-wider text-neutral-400">
+            {phaseLabel}
+          </span>
         </div>
-
-        <span
-          className="text-2xl font-mono font-bold tabular-nums leading-none"
-          style={{ color: theme.text }}
+        <button
+          type="button"
+          onClick={handleClose}
+          aria-label="Close overlay"
+          className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/10 text-neutral-400 hover:text-white transition-colors cursor-pointer"
         >
-          {state.overtime ? `+${mm}:${ss}` : `${mm}:${ss}`}
-        </span>
+          &times;
+        </button>
+      </div>
 
-        <span className="text-[9px] uppercase tracking-widest mt-1" style={{ color: theme.subtext }}>
-          {state.overtime ? 'поток' : state.running ? 'идёт' : 'пауза'}
-        </span>
+      <div className="text-center my-auto">
+        <div
+          data-testid="mini-time"
+          className="text-2xl font-mono font-bold tracking-tight"
+          style={{ color: phaseColor }}
+        >
+          {formatTime(displaySeconds)}
+        </div>
+      </div>
+
+      <div className="w-full bg-neutral-800 rounded-full h-1 overflow-hidden">
+        <div
+          className="h-full transition-all duration-300 rounded-full"
+          style={{
+            backgroundColor: phaseColor,
+            width: isStopwatch ? '100%' : `${progressPercent}%`,
+          }}
+        />
       </div>
     </div>
   );
-}
+};
 
 /** Closes the overlay window when the user double-clicks it. */
-export function useOverlayDismiss() {
+export function useOverlayDismiss(): void {
   useEffect(() => {
     const handler = () => {
-      void getCurrentWindow().close();
+      try {
+        void getCurrentWindow().close();
+      } catch {
+        // Ignored outside Tauri
+      }
     };
     window.addEventListener('dblclick', handler);
     return () => window.removeEventListener('dblclick', handler);

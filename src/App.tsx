@@ -24,6 +24,7 @@ import { StatsView } from './components/StatsView';
 import { AlarmCenter } from './components/AlarmCenter';
 import { UpdateBanner } from './components/UpdateBanner';
 
+import { DynamicBackground } from './components/DynamicBackground';
 import { themeFromTokens } from './constants/themes';
 import { ACCENTS, DEFAULT_ACCENT, AccentId, applyAccent } from './constants/design';
 import {
@@ -355,6 +356,7 @@ function MainShell() {
       <div
         className="flex flex-col h-screen w-screen overflow-hidden select-none bg-[var(--bg)] text-[var(--text)] transition-colors duration-150 relative"
       >
+        <DynamicBackground />
         <ResizeHandles />
 
         <AlarmCenter

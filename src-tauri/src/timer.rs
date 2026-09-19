@@ -1,140 +1,123 @@
-//! Countdown timer that lives in the backend.
-//!
-//! The timer used to be React state inside the Timer component. Switching a
-//! sub-tab unmounted the component and threw the countdown away, the mini
-//! overlay froze because nothing was emitting, and the global hotkeys had
-//! nothing to drive. Like the alarm scheduler, the clock now belongs to the
-//! process so it keeps running whatever is on screen and whether or not the
-//! window is visible.
-
-use chrono::{Datelike, Local};
-use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
+
+use chrono::Local;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tauri::{Emitter, Manager};
+use uuid::Uuid;
 
-/// Default arming before anything is chosen.
-const DEFAULT_SECS: u64 = 25 * 60;
-/// Bounds on the armed duration, in minutes.
-const MIN_MINUTES: i64 = 1;
-const MAX_MINUTES: i64 = 180;
-/// How often the loop re-reads the clock.
 const TICK: Duration = Duration::from_millis(250);
+pub const MIN_MINUTES: i64 = 10;
+pub const MAX_MINUTES: i64 = 120;
 
-/// What happens when the countdown reaches zero.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+/// The two operational modes supported by Tempo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TimerMode {
-    /// Stop at zero and ring.
     #[default]
-    Countdown,
-    /// Keep counting up past zero, for people who would rather finish the
-    /// thought than be interrupted by their own timer.
-    Flow,
-    /// Structured block: focus phase, followed automatically by a non-skippable rest phase.
-    Block,
+    Pomodoro,
+    Stopwatch,
 }
 
-/// Phase of a block-mode timer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+/// The three phases of the pomodoro cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
-pub enum BlockPhase {
+pub enum Phase {
     #[default]
     Focus,
-    Rest,
+    ShortRest,
+    LongRest,
 }
 
-#[derive(Debug, Clone, Serialize)]
+/// Snapshot emitted to listeners and returned to commands.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimerSnapshot {
     pub total_secs: u64,
     pub remaining_secs: u64,
+    pub elapsed_secs: u64,
     pub running: bool,
     pub mode: TimerMode,
-    /// Seconds past zero; only non-zero in flow mode.
-    pub overtime_secs: u64,
-    /// True once the countdown has reached zero in flow mode.
-    pub overtime: bool,
-    /// Current phase in block mode ("focus" or "rest").
-    pub phase: BlockPhase,
-    /// Completed focus phases today.
-    pub block_index: u32,
-    /// Selected direction id, if any.
-    pub direction_id: Option<String>,
+    pub phase: Phase,
+    pub pomodoro_index: u8,
+    pub completed_today: u32,
+    pub focus_min: u32,
+    pub short_rest_min: u32,
+    pub long_rest_min: u32,
+    pub auto_start: bool,
 }
 
 /// A finished stretch of focus, ready to be recorded in the session log.
-///
-/// The backend measures this rather than the webview: the clock lives here, and
-/// a measurement taken from the UI would lose everything a hidden or unmounted
-/// window never observed.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimerSession {
-    /// Seconds of focus, excluding paused time.
-    pub focused_secs: u64,
-    pub started_at_ms: u64,
-    pub ended_at_ms: u64,
-    /// True when it ran to zero; false when it was reset or re-armed early.
+    pub id: String,
+    pub kind: String,
+    pub started_at: String,
+    pub ended_at: String,
+    pub duration_sec: u64,
     pub completed: bool,
-    /// Direction associated with this session, if any.
-    pub direction_id: Option<String>,
-    /// Phase in which this session completed (e.g. Focus).
-    pub phase: BlockPhase,
-}
-
-fn unix_millis(at: SystemTime) -> u64 {
-    at.duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
-
-fn today_str() -> String {
-    let now = Local::now();
-    format!("{:04}-{:02}-{:02}", now.year(), now.month(), now.day())
+    pub task_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TimerState {
     pub total_secs: u64,
-    /// Authoritative while paused; while running the deadline is.
     pub remaining_secs: u64,
-    /// When the countdown reaches zero. `None` means paused.
+    pub elapsed_secs: u64,
     pub deadline: Option<SystemTime>,
+    pub stopwatch_started: Option<SystemTime>,
     pub mode: TimerMode,
-    pub overtime_secs: u64,
-    /// When the stretch of focus being measured began; `None` when idle.
+
+    /// Instant the current focus session started running.
     pub session_started: Option<SystemTime>,
-    /// Sessions awaiting broadcast. Commands push here rather than emitting, so
-    /// there is one emission path and commands stay free of an app handle.
+    /// Accumulated seconds in the current focus session across pauses.
+    pub session_accumulated_secs: u64,
+
     pub pending_sessions: Vec<TimerSession>,
 
-    // Block mode fields
-    pub phase: BlockPhase,
+    // Pomodoro cycle fields
+    pub phase: Phase,
+    pub pomodoro_index: u8,
+    pub completed_today: u32,
     pub focus_min: u32,
-    pub rest_min: u32,
-    pub block_index: u32,
+    pub short_rest_min: u32,
+    pub long_rest_min: u32,
+    pub auto_start: bool,
+
     pub last_focus_date: String,
-    pub direction_id: Option<String>,
     pub persist_path: Option<PathBuf>,
+}
+
+fn today_str() -> String {
+    Local::now().format("%Y-%m-%d").to_string()
 }
 
 impl Default for TimerState {
     fn default() -> Self {
-        let mut state = TimerState {
-            total_secs: DEFAULT_SECS,
-            remaining_secs: DEFAULT_SECS,
+        let focus_min = 25;
+        let short_rest_min = 5;
+        let long_rest_min = 15;
+        let total = (focus_min as u64) * 60;
+        let mut state = Self {
+            total_secs: total,
+            remaining_secs: total,
+            elapsed_secs: 0,
             deadline: None,
-            mode: TimerMode::Countdown,
-            overtime_secs: 0,
+            stopwatch_started: None,
+            mode: TimerMode::Pomodoro,
             session_started: None,
+            session_accumulated_secs: 0,
             pending_sessions: Vec::new(),
-            phase: BlockPhase::Focus,
-            focus_min: 50,
-            rest_min: 10,
-            block_index: 0,
+            phase: Phase::Focus,
+            pomodoro_index: 1,
+            completed_today: 0,
+            focus_min,
+            short_rest_min,
+            long_rest_min,
+            auto_start: false,
             last_focus_date: today_str(),
-            direction_id: None,
             persist_path: default_store_file_path(),
         };
         state.load_persisted();
@@ -143,46 +126,43 @@ impl Default for TimerState {
 }
 
 impl TimerState {
-    /// True while the block cycle is in its break.
-    ///
-    /// The break is not escapable: switching modes, re-arming a duration or
-    /// nudging the clock all refuse while this holds. Pausing is allowed — a
-    /// person may need to step away mid-break — but resuming continues the same
-    /// break, so it cannot be used to move on early either.
-    ///
-    /// This deliberately ignores `deadline`: pause clears it, and an earlier
-    /// version of the mode guard keyed on it, which meant pausing the break
-    /// removed the very protection the cycle exists to provide.
-    fn in_rest(&self) -> bool {
-        self.mode == TimerMode::Block && self.phase == BlockPhase::Rest
+    pub fn is_break(&self) -> bool {
+        self.phase == Phase::ShortRest || self.phase == Phase::LongRest
     }
 
-    /// Closes the stretch of focus in progress, if any.
-    ///
-    /// Focus is wall-clock time between start and now minus any paused time —
-    /// which the caller has already reflected by clearing `session_started`
-    /// whenever the countdown pauses. Nothing shorter than a second is recorded:
-    /// an accidental tap is not a session, and padding the log with them would
-    /// make every statistic a lie.
+    /// Closes a focus session and pushes it to `pending_sessions`. Breaks are NEVER recorded.
     pub fn close_session(&mut self, now: SystemTime, completed: bool) {
-        let Some(started) = self.session_started.take() else {
+        if self.mode != TimerMode::Pomodoro || self.phase != Phase::Focus {
+            self.session_started = None;
+            self.session_accumulated_secs = 0;
             return;
-        };
-        let focused = now.duration_since(started).unwrap_or_default().as_secs();
+        }
+
+        let mut focused = self.session_accumulated_secs;
+        if let Some(started) = self.session_started.take() {
+            focused += now.duration_since(started).unwrap_or_default().as_secs();
+        }
+        self.session_accumulated_secs = 0;
+
+        // Nothing shorter than a second is recorded
         if focused == 0 {
             return;
         }
+
+        let now_dt = Local::now();
+        let start_dt = now_dt - chrono::Duration::seconds(focused as i64);
+
         self.pending_sessions.push(TimerSession {
-            focused_secs: focused,
-            started_at_ms: unix_millis(started),
-            ended_at_ms: unix_millis(now),
+            id: Uuid::new_v4().to_string(),
+            kind: "pomodoro".to_string(),
+            started_at: start_dt.to_rfc3339(),
+            ended_at: now_dt.to_rfc3339(),
+            duration_sec: focused,
             completed,
-            direction_id: self.direction_id.clone(),
-            phase: self.phase,
+            task_id: None,
         });
     }
 
-    /// Takes the sessions finished since the last drain.
     pub fn take_sessions(&mut self) -> Vec<TimerSession> {
         std::mem::take(&mut self.pending_sessions)
     }
@@ -190,73 +170,114 @@ impl TimerState {
     pub fn check_date_rollover(&mut self) {
         let today = today_str();
         if self.last_focus_date != today {
-            self.block_index = 0;
+            self.completed_today = 0;
             self.last_focus_date = today;
             self.save_persisted();
         }
     }
 
-    /// Reconciles the stored remaining time with the wall clock.
+    /// Reconciles the stored remaining/elapsed time with the wall clock.
     ///
     /// Returns true when this call crossed zero, so the caller rings exactly
     /// once no matter how the loop was scheduled.
     pub fn advance(&mut self, now: SystemTime) -> bool {
         self.check_date_rollover();
 
-        let Some(deadline) = self.deadline else {
-            return false;
-        };
-
-        if now < deadline {
-            self.remaining_secs = deadline.duration_since(now).unwrap_or_default().as_secs();
-            return false;
-        }
-
-        self.remaining_secs = 0;
         match self.mode {
-            TimerMode::Countdown => {
-                self.deadline = None;
-                self.close_session(now, true);
-                true
-            }
-            TimerMode::Flow => {
-                let past = now.duration_since(deadline).unwrap_or_default().as_secs();
-                if past > self.overtime_secs {
-                    self.overtime_secs = past;
+            TimerMode::Stopwatch => {
+                if let Some(start) = self.stopwatch_started {
+                    let elapsed = now.duration_since(start).unwrap_or_default().as_secs();
+                    self.elapsed_secs = elapsed;
+                    self.total_secs = elapsed;
+                    self.remaining_secs = 0;
                 }
-                // Flow mode keeps counting up, so the stretch of focus only
-                // ends when the user stops it; nothing closes here.
-                past == 0
+                false
             }
-            TimerMode::Block => {
-                match self.phase {
-                    BlockPhase::Focus => {
-                        // Focus completed! Close session as completed.
-                        self.close_session(now, true);
-                        self.block_index += 1;
-                        self.last_focus_date = today_str();
-                        self.save_persisted();
+            TimerMode::Pomodoro => {
+                let Some(deadline) = self.deadline else {
+                    return false;
+                };
 
-                        // Automatically transition to Rest phase and start countdown immediately.
-                        self.phase = BlockPhase::Rest;
-                        let rest_secs = (self.rest_min as u64) * 60;
+                if now < deadline {
+                    self.remaining_secs = deadline.duration_since(now).unwrap_or_default().as_secs();
+                    self.elapsed_secs = self.total_secs.saturating_sub(self.remaining_secs);
+                    return false;
+                }
+
+                self.remaining_secs = 0;
+                self.elapsed_secs = self.total_secs;
+
+                match self.phase {
+                    Phase::Focus => {
+                        // Focus completed! Close focus session with completed = true.
+                        self.close_session(now, true);
+                        self.completed_today += 1;
+
+                        // Next phase: after 4th focus -> LongRest, else ShortRest
+                        let next_phase = if self.pomodoro_index >= 4 {
+                            Phase::LongRest
+                        } else {
+                            Phase::ShortRest
+                        };
+
+                        self.phase = next_phase;
+                        let rest_min = match next_phase {
+                            Phase::LongRest => self.long_rest_min,
+                            _ => self.short_rest_min,
+                        };
+                        let rest_secs = (rest_min as u64) * 60;
                         self.total_secs = rest_secs;
                         self.remaining_secs = rest_secs;
-                        self.overtime_secs = 0;
+                        self.elapsed_secs = 0;
+
+                        // A break ALWAYS starts by itself the moment focus hits zero (R04)
                         self.deadline = Some(now + Duration::from_secs(rest_secs));
-                        // Rest is not recorded as focus session.
                         self.session_started = None;
+                        self.session_accumulated_secs = 0;
+
+                        self.save_persisted();
                         true
                     }
-                    BlockPhase::Rest => {
-                        // Rest completed!
-                        self.deadline = None;
-                        self.phase = BlockPhase::Focus;
+                    Phase::ShortRest => {
+                        // Short break ended!
+                        self.pomodoro_index += 1;
+                        self.phase = Phase::Focus;
                         let focus_secs = (self.focus_min as u64) * 60;
                         self.total_secs = focus_secs;
                         self.remaining_secs = focus_secs;
-                        self.overtime_secs = 0;
+                        self.elapsed_secs = 0;
                         self.session_started = None;
+                        self.session_accumulated_secs = 0;
+
+                        if self.auto_start {
+                            self.deadline = Some(now + Duration::from_secs(focus_secs));
+                            self.session_started = Some(now);
+                        } else {
+                            self.deadline = None;
+                        }
+
+                        self.save_persisted();
+                        true
+                    }
+                    Phase::LongRest => {
+                        // Long break ended!
+                        self.pomodoro_index = 1;
+                        self.phase = Phase::Focus;
+                        let focus_secs = (self.focus_min as u64) * 60;
+                        self.total_secs = focus_secs;
+                        self.remaining_secs = focus_secs;
+                        self.elapsed_secs = 0;
+                        self.session_started = None;
+                        self.session_accumulated_secs = 0;
+
+                        if self.auto_start {
+                            self.deadline = Some(now + Duration::from_secs(focus_secs));
+                            self.session_started = Some(now);
+                        } else {
+                            self.deadline = None;
+                        }
+
+                        self.save_persisted();
                         true
                     }
                 }
@@ -268,13 +289,16 @@ impl TimerState {
         TimerSnapshot {
             total_secs: self.total_secs,
             remaining_secs: self.remaining_secs,
-            running: self.deadline.is_some(),
+            elapsed_secs: self.elapsed_secs,
+            running: self.deadline.is_some() || self.stopwatch_started.is_some(),
             mode: self.mode,
-            overtime_secs: self.overtime_secs,
-            overtime: self.mode == TimerMode::Flow && self.remaining_secs == 0,
             phase: self.phase,
-            block_index: self.block_index,
-            direction_id: self.direction_id.clone(),
+            pomodoro_index: self.pomodoro_index,
+            completed_today: self.completed_today,
+            focus_min: self.focus_min,
+            short_rest_min: self.short_rest_min,
+            long_rest_min: self.long_rest_min,
+            auto_start: self.auto_start,
         }
     }
 
@@ -282,56 +306,80 @@ impl TimerState {
         let Some(path) = &self.persist_path else {
             return;
         };
-        if let Ok(contents) = fs::read_to_string(path) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&contents) {
-                if let Some(bi) = json.get("alarmer_block_index").and_then(|v| v.as_u64()) {
-                    self.block_index = bi as u32;
-                }
-                if let Some(date) = json.get("alarmer_last_focus_date").and_then(|v| v.as_str()) {
-                    self.last_focus_date = date.to_string();
-                }
-                if let Some(dir) = json.get("alarmer_selected_direction") {
-                    self.direction_id = dir.as_str().map(|s| s.to_string());
-                }
-                if let Some(bs) = json.get("alarmer_block_settings") {
-                    if let Some(f) = bs.get("focusMin").and_then(|v| v.as_u64()) {
-                        self.focus_min = f as u32;
-                    }
-                    if let Some(r) = bs.get("restMin").and_then(|v| v.as_u64()) {
-                        self.rest_min = r as u32;
-                    }
-                }
+        if !path.exists() {
+            return;
+        }
+        let Ok(contents) = fs::read_to_string(path) else {
+            return;
+        };
+        let Ok(map) = serde_json::from_str::<serde_json::Map<String, Value>>(&contents) else {
+            return;
+        };
+
+        // Prefer tempo_* keys, fallback to legacy alarmer_* keys once
+        let mut loaded_settings = false;
+        if let Some(settings) = map.get("tempo_pomodoro_settings").or_else(|| map.get("alarmer_pomodoro_settings")).or_else(|| map.get("alarmer_block_settings")) {
+            if let Some(fm) = settings.get("focusMin").and_then(|v| v.as_u64()) {
+                self.focus_min = (fm as u32).clamp(10, 120);
+                loaded_settings = true;
+            }
+            if let Some(srm) = settings.get("shortRestMin").or_else(|| settings.get("restMin")).and_then(|v| v.as_u64()) {
+                self.short_rest_min = (srm as u32).clamp(1, 60);
+                loaded_settings = true;
+            }
+            if let Some(lrm) = settings.get("longRestMin").and_then(|v| v.as_u64()) {
+                self.long_rest_min = (lrm as u32).clamp(1, 60);
+                loaded_settings = true;
+            }
+            if let Some(as_val) = settings.get("autoStart").and_then(|v| v.as_bool()) {
+                self.auto_start = as_val;
+                loaded_settings = true;
             }
         }
-        self.check_date_rollover();
+
+        if let Some(idx) = map.get("tempo_pomodoro_index").and_then(|v| v.as_u64()) {
+            self.pomodoro_index = (idx as u8).clamp(1, 4);
+        }
+
+        if let Some(today_count) = map.get("tempo_completed_today").and_then(|v| v.as_u64()) {
+            self.completed_today = today_count as u32;
+        }
+
+        if let Some(date) = map.get("tempo_last_focus_date").and_then(|v| v.as_str()) {
+            self.last_focus_date = date.to_string();
+        }
+
+        if loaded_settings && self.mode == TimerMode::Pomodoro && self.phase == Phase::Focus && self.deadline.is_none() {
+            let secs = (self.focus_min as u64) * 60;
+            self.total_secs = secs;
+            self.remaining_secs = secs;
+            self.elapsed_secs = 0;
+        }
     }
 
     pub fn save_persisted(&self) {
         let Some(path) = &self.persist_path else {
             return;
         };
-        let mut map = if let Ok(contents) = fs::read_to_string(path) {
-            serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&contents)
+        let mut map = if path.exists() {
+            fs::read_to_string(path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<serde_json::Map<String, Value>>(&s).ok())
                 .unwrap_or_default()
         } else {
             serde_json::Map::new()
         };
 
-        map.insert("alarmer_block_index".into(), self.block_index.into());
-        map.insert(
-            "alarmer_last_focus_date".into(),
-            self.last_focus_date.clone().into(),
-        );
-        if let Some(dir) = &self.direction_id {
-            map.insert("alarmer_selected_direction".into(), dir.clone().into());
-        } else {
-            map.insert("alarmer_selected_direction".into(), serde_json::Value::Null);
-        }
-        let bs = serde_json::json!({
+        let pomodoro_settings = serde_json::json!({
             "focusMin": self.focus_min,
-            "restMin": self.rest_min,
+            "shortRestMin": self.short_rest_min,
+            "longRestMin": self.long_rest_min,
+            "autoStart": self.auto_start,
         });
-        map.insert("alarmer_block_settings".into(), bs);
+        map.insert("tempo_pomodoro_settings".into(), pomodoro_settings);
+        map.insert("tempo_pomodoro_index".into(), serde_json::json!(self.pomodoro_index));
+        map.insert("tempo_completed_today".into(), serde_json::json!(self.completed_today));
+        map.insert("tempo_last_focus_date".into(), serde_json::json!(self.last_focus_date));
 
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
@@ -346,8 +394,8 @@ fn default_store_file_path() -> Option<PathBuf> {
     // Check portable marker
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            if dir.join(".portable").exists() || std::env::var_os("ALARMER_PORTABLE").is_some() {
-                return Some(dir.join("alarmer.json"));
+            if dir.join(".portable").exists() || std::env::var_os("ALARMER_PORTABLE").is_some() || std::env::var_os("TEMPO_PORTABLE").is_some() {
+                return Some(dir.join("tempo.json"));
             }
         }
     }
@@ -355,7 +403,15 @@ fn default_store_file_path() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         if let Ok(app_data) = std::env::var("APPDATA") {
-            return Some(PathBuf::from(app_data).join("Alarmer").join("alarmer.json"));
+            let tempo_path = PathBuf::from(&app_data).join("Tempo").join("tempo.json");
+            if tempo_path.exists() {
+                return Some(tempo_path);
+            }
+            let legacy_path = PathBuf::from(&app_data).join("Alarmer").join("alarmer.json");
+            if legacy_path.exists() {
+                return Some(legacy_path);
+            }
+            return Some(tempo_path);
         }
     }
     None
@@ -368,92 +424,126 @@ fn with_state<T>(f: impl FnOnce(&mut TimerState) -> T) -> T {
     f(guard.get_or_insert_with(TimerState::default))
 }
 
-/// Arms the timer with `secs`, replacing whatever was there. Paused.
+/// Sets the duration in seconds (clamped to 10..=120 minutes) and re-arms only when not running.
 pub fn set_duration(secs: u64) {
     with_state(|state| {
-        if state.in_rest() {
+        if state.deadline.is_some() || state.stopwatch_started.is_some() {
             return;
         }
-        // Re-arming ends whatever stretch of focus was in progress.
-        state.close_session(SystemTime::now(), false);
-        let secs = secs.max(1);
-        state.total_secs = secs;
-        state.remaining_secs = secs;
-        state.deadline = None;
-        state.overtime_secs = 0;
+        if state.is_break() {
+            return;
+        }
+        let mins = (secs / 60).clamp(MIN_MINUTES as u64, MAX_MINUTES as u64);
+        state.focus_min = mins as u32;
+        let clamped_secs = mins * 60;
+        state.total_secs = clamped_secs;
+        state.remaining_secs = clamped_secs;
+        state.elapsed_secs = 0;
+        state.session_started = None;
+        state.session_accumulated_secs = 0;
+        state.save_persisted();
     });
 }
 
-/// Starts or resumes the countdown from the remaining time.
+/// Starts or resumes the countdown / stopwatch.
 pub fn start() {
     with_state(|state| {
-        if state.deadline.is_some() {
-            return;
-        }
         let now = SystemTime::now();
-        // Resuming an already-finished countdown would ring instantly; start
-        // it over instead.
-        if state.remaining_secs == 0 {
-            state.remaining_secs = state.total_secs;
-        }
-        state.overtime_secs = 0;
-        state.deadline = Some(now + Duration::from_secs(state.remaining_secs));
-        // Resuming continues the same stretch of focus rather than starting a
-        // new one; only starting from idle opens a session.
-        if state.session_started.is_none() && state.phase == BlockPhase::Focus {
-            state.session_started = Some(now);
+        match state.mode {
+            TimerMode::Stopwatch => {
+                if state.stopwatch_started.is_some() {
+                    return;
+                }
+                state.stopwatch_started = Some(now - Duration::from_secs(state.elapsed_secs));
+            }
+            TimerMode::Pomodoro => {
+                if state.deadline.is_some() {
+                    return;
+                }
+                if state.remaining_secs == 0 {
+                    state.remaining_secs = state.total_secs;
+                    state.elapsed_secs = 0;
+                }
+                state.deadline = Some(now + Duration::from_secs(state.remaining_secs));
+                if state.session_started.is_none() && state.phase == Phase::Focus {
+                    state.session_started = Some(now);
+                }
+            }
         }
     });
 }
 
 /// Freezes the countdown at its current remaining time.
-///
-/// The stretch of focus is closed rather than suspended: a session in the log
-/// is a period of work that actually happened, and stitching several short
-/// stretches across a long pause would overstate it.
+/// A pause mid-focus closes the session with completed = false.
 pub fn pause() {
     with_state(|state| {
-        if let Some(deadline) = state.deadline.take() {
-            let now = SystemTime::now();
-            state.remaining_secs = deadline.duration_since(now).unwrap_or_default().as_secs();
-            // Reaching zero is the goal, whether the countdown mode stopped
-            // there or flow mode was left running past it.
-            let reached_zero = state.remaining_secs == 0;
-            state.close_session(now, reached_zero);
+        let now = SystemTime::now();
+        match state.mode {
+            TimerMode::Stopwatch => {
+                if let Some(start) = state.stopwatch_started.take() {
+                    state.elapsed_secs = now.duration_since(start).unwrap_or_default().as_secs();
+                    state.total_secs = state.elapsed_secs;
+                }
+            }
+            TimerMode::Pomodoro => {
+                if let Some(deadline) = state.deadline.take() {
+                    state.remaining_secs = deadline.duration_since(now).unwrap_or_default().as_secs();
+                    state.elapsed_secs = state.total_secs.saturating_sub(state.remaining_secs);
+                    if state.phase == Phase::Focus {
+                        state.close_session(now, false);
+                    }
+                }
+            }
         }
     });
 }
 
 /// Rewinds to the armed duration and stops.
+/// A reset mid-focus closes the session with completed = false.
 pub fn reset() {
     with_state(|state| {
         let now = SystemTime::now();
-        if state.in_rest() {
-            return;
+        match state.mode {
+            TimerMode::Stopwatch => {
+                state.stopwatch_started = None;
+                state.elapsed_secs = 0;
+                state.total_secs = 0;
+                state.remaining_secs = 0;
+            }
+            TimerMode::Pomodoro => {
+                if state.is_break() {
+                    return;
+                }
+                state.close_session(now, false);
+                state.deadline = None;
+                let focus_secs = (state.focus_min as u64) * 60;
+                state.total_secs = focus_secs;
+                state.remaining_secs = focus_secs;
+                state.elapsed_secs = 0;
+            }
         }
-        // Whatever was done before the reset still happened.
-        state.close_session(now, false);
-        state.remaining_secs = state.total_secs;
-        state.deadline = None;
-        state.overtime_secs = 0;
     });
 }
 
-/// Nudges the armed duration by `delta` minutes, clamped, and stops.
+/// Nudges the armed duration by `delta` minutes, clamped to 10..=120, re-arming only when not running.
 pub fn shift_minutes(delta: i64) {
     with_state(|state| {
-        if state.in_rest() {
+        if state.deadline.is_some() || state.stopwatch_started.is_some() {
             return;
         }
-        let now = SystemTime::now();
-        state.close_session(now, false);
+        if state.is_break() {
+            return;
+        }
         let current = (state.total_secs / 60) as i64;
         let next = (current + delta).clamp(MIN_MINUTES, MAX_MINUTES);
+        state.focus_min = next as u32;
         let secs = next as u64 * 60;
         state.total_secs = secs;
         state.remaining_secs = secs;
-        state.deadline = None;
-        state.overtime_secs = 0;
+        state.elapsed_secs = 0;
+        state.session_started = None;
+        state.session_accumulated_secs = 0;
+        state.save_persisted();
     });
 }
 
@@ -465,43 +555,123 @@ pub fn snapshot() -> TimerSnapshot {
     })
 }
 
-/// Sets the arming mode without disturbing a running countdown's remainder.
+/// Sets the arming mode.
 pub fn set_mode(mode: TimerMode) {
     with_state(|state| {
-        if state.in_rest() {
+        if state.is_break() {
             return;
         }
+        if state.mode == mode {
+            return;
+        }
+        let now = SystemTime::now();
+        if state.mode == TimerMode::Pomodoro && state.phase == Phase::Focus {
+            state.close_session(now, false);
+        }
         state.mode = mode;
-        state.overtime_secs = 0;
-        if mode == TimerMode::Block {
-            state.phase = BlockPhase::Focus;
-            let focus_secs = (state.focus_min as u64) * 60;
-            state.total_secs = focus_secs;
-            state.remaining_secs = focus_secs;
-            state.deadline = None;
+        state.deadline = None;
+        state.stopwatch_started = None;
+        state.session_started = None;
+        state.session_accumulated_secs = 0;
+
+        match mode {
+            TimerMode::Pomodoro => {
+                state.phase = Phase::Focus;
+                let focus_secs = (state.focus_min as u64) * 60;
+                state.total_secs = focus_secs;
+                state.remaining_secs = focus_secs;
+                state.elapsed_secs = 0;
+            }
+            TimerMode::Stopwatch => {
+                state.total_secs = 0;
+                state.remaining_secs = 0;
+                state.elapsed_secs = 0;
+            }
         }
     });
 }
 
-pub fn set_block_settings(focus_min: u32, rest_min: u32) {
+pub fn set_pomodoro_settings(focus_min: u32, short_rest_min: u32, long_rest_min: u32, auto_start: bool) {
     with_state(|state| {
-        state.focus_min = focus_min.clamp(1, 180);
-        state.rest_min = rest_min.clamp(1, 60);
-        if state.mode == TimerMode::Block && state.deadline.is_none() {
+        state.focus_min = focus_min.clamp(10, 120);
+        state.short_rest_min = short_rest_min.clamp(1, 60);
+        state.long_rest_min = long_rest_min.clamp(1, 60);
+        state.auto_start = auto_start;
+
+        if state.mode == TimerMode::Pomodoro && state.deadline.is_none() {
             let secs = match state.phase {
-                BlockPhase::Focus => (state.focus_min as u64) * 60,
-                BlockPhase::Rest => (state.rest_min as u64) * 60,
+                Phase::Focus => (state.focus_min as u64) * 60,
+                Phase::ShortRest => (state.short_rest_min as u64) * 60,
+                Phase::LongRest => (state.long_rest_min as u64) * 60,
             };
             state.total_secs = secs;
             state.remaining_secs = secs;
+            state.elapsed_secs = 0;
         }
         state.save_persisted();
     });
 }
 
-pub fn set_direction(direction_id: Option<String>) {
+pub fn skip_phase() {
     with_state(|state| {
-        state.direction_id = direction_id;
+        if state.mode != TimerMode::Pomodoro {
+            return;
+        }
+        let now = SystemTime::now();
+        match state.phase {
+            Phase::Focus => {
+                // Skips the remaining focus. Mid-focus close -> completed = false.
+                state.close_session(now, false);
+                let next_phase = if state.pomodoro_index >= 4 {
+                    Phase::LongRest
+                } else {
+                    Phase::ShortRest
+                };
+                state.phase = next_phase;
+                let rest_min = match next_phase {
+                    Phase::LongRest => state.long_rest_min,
+                    _ => state.short_rest_min,
+                };
+                let rest_secs = (rest_min as u64) * 60;
+                state.total_secs = rest_secs;
+                state.remaining_secs = rest_secs;
+                state.elapsed_secs = 0;
+                // Break ALWAYS starts by itself (R04)
+                state.deadline = Some(now + Duration::from_secs(rest_secs));
+                state.session_started = None;
+                state.session_accumulated_secs = 0;
+            }
+            Phase::ShortRest => {
+                state.deadline = None;
+                state.pomodoro_index += 1;
+                state.phase = Phase::Focus;
+                let focus_secs = (state.focus_min as u64) * 60;
+                state.total_secs = focus_secs;
+                state.remaining_secs = focus_secs;
+                state.elapsed_secs = 0;
+                state.session_started = None;
+                state.session_accumulated_secs = 0;
+                if state.auto_start {
+                    state.deadline = Some(now + Duration::from_secs(focus_secs));
+                    state.session_started = Some(now);
+                }
+            }
+            Phase::LongRest => {
+                state.deadline = None;
+                state.pomodoro_index = 1;
+                state.phase = Phase::Focus;
+                let focus_secs = (state.focus_min as u64) * 60;
+                state.total_secs = focus_secs;
+                state.remaining_secs = focus_secs;
+                state.elapsed_secs = 0;
+                state.session_started = None;
+                state.session_accumulated_secs = 0;
+                if state.auto_start {
+                    state.deadline = Some(now + Duration::from_secs(focus_secs));
+                    state.session_started = Some(now);
+                }
+            }
+        }
         state.save_persisted();
     });
 }
@@ -545,14 +715,19 @@ pub async fn timer_set_mode(mode: TimerMode) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn timer_set_block_settings(focus_min: u32, rest_min: u32) -> Result<(), String> {
-    set_block_settings(focus_min, rest_min);
+pub async fn timer_set_pomodoro_settings(
+    focus_min: u32,
+    short_rest_min: u32,
+    long_rest_min: u32,
+    auto_start: bool,
+) -> Result<(), String> {
+    set_pomodoro_settings(focus_min, short_rest_min, long_rest_min, auto_start);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn timer_set_direction(direction_id: Option<String>) -> Result<(), String> {
-    set_direction(direction_id);
+pub async fn timer_skip_phase() -> Result<(), String> {
+    skip_phase();
     Ok(())
 }
 
@@ -561,14 +736,38 @@ pub async fn timer_get_state() -> Result<TimerSnapshot, String> {
     Ok(snapshot())
 }
 
+/// Drains pending sessions and writes focus sessions to SQLite via `storage::with_db`.
+fn save_sessions_to_db(app: &tauri::AppHandle, sessions: &[TimerSession]) {
+    for session in sessions {
+        if session.kind != "pomodoro" && session.kind != "stopwatch" {
+            continue;
+        }
+        let row = serde_json::json!({
+            "id": session.id,
+            "kind": session.kind,
+            "started_at": session.started_at,
+            "ended_at": session.ended_at,
+            "duration_sec": session.duration_sec,
+            "completed": if session.completed { 1 } else { 0 },
+            "task_id": session.task_id,
+        });
+
+        let app_handle = app.clone();
+        let _ = crate::storage::with_db(&app_handle, |conn| {
+            crate::storage::repo::insert(conn, "sessions", &row)
+        });
+    }
+}
+
 /// Starts the tick loop, which broadcasts state and rings at zero.
 pub fn spawn(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut ticker = tokio::time::interval(TICK);
         let mut last_remaining = u64::MAX;
-        let mut last_overtime = u64::MAX;
+        let mut last_elapsed = u64::MAX;
         let mut last_running = false;
-        let mut last_phase = BlockPhase::Focus;
+        let mut last_phase = Phase::Focus;
+        let mut last_pomodoro_index = 0u8;
 
         loop {
             ticker.tick().await;
@@ -578,31 +777,33 @@ pub fn spawn(app: tauri::AppHandle) {
                 (crossed, state.snapshot(), state.take_sessions())
             });
 
-            // A finished stretch of focus is recorded the moment it closes,
-            // whether that happened on a tick or in a command.
-            for session in sessions {
-                let _ = app.emit("timer://session", session);
+            // Write focus sessions to SQLite via storage::with_db
+            if !sessions.is_empty() {
+                save_sessions_to_db(&app, &sessions);
+                for session in sessions {
+                    let _ = app.emit("timer://session", session);
+                }
             }
 
-            // Emit on any real change rather than on every 250 ms poll, so a
-            // paused timer is silent and a running one ticks once a second.
+            // Emit on any real change rather than on every 250 ms poll
             if state.remaining_secs != last_remaining
-                || state.overtime_secs != last_overtime
+                || state.elapsed_secs != last_elapsed
                 || state.running != last_running
                 || state.phase != last_phase
+                || state.pomodoro_index != last_pomodoro_index
             {
                 last_remaining = state.remaining_secs;
-                last_overtime = state.overtime_secs;
+                last_elapsed = state.elapsed_secs;
                 last_running = state.running;
                 last_phase = state.phase;
+                last_pomodoro_index = state.pomodoro_index;
                 let _ = app.emit("timer://tick", state.clone());
             }
 
             if fired {
                 let _ = app.emit("timer://finished", state.clone());
 
-                // A hidden window cannot play the chime itself, so the OS says
-                // it instead of the timer finishing in silence.
+                // A hidden window cannot play the chime itself, so the OS notification says it
                 let visible = app
                     .get_webview_window("main")
                     .and_then(|w| w.is_visible().ok())
@@ -629,17 +830,21 @@ mod tests {
         let mut state = TimerState {
             total_secs: secs,
             remaining_secs: secs,
+            elapsed_secs: 0,
             deadline: Some(SystemTime::now() + Duration::from_secs(secs)),
-            mode: TimerMode::Countdown,
-            overtime_secs: 0,
-            session_started: None,
+            stopwatch_started: None,
+            mode: TimerMode::Pomodoro,
+            session_started: Some(SystemTime::now()),
+            session_accumulated_secs: 0,
             pending_sessions: Vec::new(),
-            phase: BlockPhase::Focus,
-            focus_min: 50,
-            rest_min: 10,
-            block_index: 0,
+            phase: Phase::Focus,
+            pomodoro_index: 1,
+            completed_today: 0,
+            focus_min: (secs / 60).max(1) as u32,
+            short_rest_min: 5,
+            long_rest_min: 15,
+            auto_start: false,
             last_focus_date: today_str(),
-            direction_id: None,
             persist_path: None,
         };
         state.deadline = Some(SystemTime::now() + Duration::from_secs(secs));
@@ -657,396 +862,193 @@ mod tests {
     }
 
     #[test]
-    fn crossing_zero_rings_exactly_once_in_countdown_mode() {
+    fn crossing_zero_rings_and_transitions_focus_to_break() {
         let mut state = running_for(1);
         let after = SystemTime::now() + Duration::from_secs(2);
 
         assert!(state.advance(after), "the crossing tick must ring");
-        assert_eq!(state.remaining_secs, 0);
-        assert!(!state.snapshot().running, "a finished countdown stops");
-        assert!(!state.advance(after + Duration::from_secs(1)), "and does not ring again");
+        assert_eq!(state.phase, Phase::ShortRest);
+        assert!(state.snapshot().running, "a break starts automatically (R04)");
+        assert_eq!(state.remaining_secs, 5 * 60);
     }
 
     #[test]
-    fn pauses_at_the_remaining_time_and_resumes() {
-        let mut state = running_for(300);
-        state.advance(SystemTime::now());
-        state.deadline = None; // what pause() does
-        let frozen = state.remaining_secs;
+    fn fourth_focus_followed_by_long_break_fifth_by_short_and_index_resets() {
+        let mut state = running_for(1);
+        state.pomodoro_index = 4;
+        let after = SystemTime::now() + Duration::from_secs(2);
 
-        state.deadline = Some(SystemTime::now() + Duration::from_secs(frozen));
-        assert!(!state.snapshot().overtime);
-        assert!(state.remaining_secs >= frozen - 1);
+        // 4th focus hits zero -> LongRest
+        assert!(state.advance(after));
+        assert_eq!(state.phase, Phase::LongRest);
+        assert_eq!(state.remaining_secs, 15 * 60);
+        assert_eq!(state.pomodoro_index, 4);
+
+        // Long rest hits zero -> Focus, index resets to 1
+        // (In test, auto_start is false, so it sits armed. To start next focus, start() it or set auto_start=true)
+        state.auto_start = true;
+        let after_long_rest = after + Duration::from_secs(15 * 60 + 1);
+        assert!(state.advance(after_long_rest));
+        assert_eq!(state.phase, Phase::Focus);
+        assert_eq!(state.pomodoro_index, 1);
+
+        // Next focus (1st of new cycle) completes -> ShortRest
+        let after_focus_1 = after_long_rest + Duration::from_secs(25 * 60 + 1);
+        assert!(state.advance(after_focus_1));
+        assert_eq!(state.phase, Phase::ShortRest);
     }
 
     #[test]
-    fn restarting_a_finished_countdown_does_not_ring_instantly() {
-        let mut state = TimerState {
-            total_secs: 60,
-            remaining_secs: 0,
-            deadline: None,
-            mode: TimerMode::Countdown,
-            overtime_secs: 0,
-            session_started: None,
-            pending_sessions: Vec::new(),
-            phase: BlockPhase::Focus,
-            focus_min: 50,
-            rest_min: 10,
-            block_index: 0,
-            last_focus_date: today_str(),
-            direction_id: None,
-            persist_path: None,
-        };
-        // What start() does with a spent countdown.
-        if state.remaining_secs == 0 {
-            state.remaining_secs = state.total_secs;
-        }
-        state.deadline = Some(SystemTime::now() + Duration::from_secs(state.remaining_secs));
+    fn break_starts_by_itself_when_focus_ends() {
+        let mut state = running_for(1);
+        let after = SystemTime::now() + Duration::from_secs(2);
+        state.advance(after);
 
-        assert!(state.remaining_secs > 0);
-        assert!(!state.advance(SystemTime::now()));
+        assert_eq!(state.phase, Phase::ShortRest);
+        assert!(state.deadline.is_some(), "break deadline must be active");
+        assert!(state.snapshot().running, "timer must be running break without manual command");
     }
 
     #[test]
-    fn flow_mode_counts_up_past_zero_without_repeating_the_ring() {
-        let mut state = TimerState {
-            total_secs: 2,
-            remaining_secs: 2,
-            deadline: Some(SystemTime::now() + Duration::from_secs(2)),
-            mode: TimerMode::Flow,
-            overtime_secs: 0,
-            session_started: None,
-            pending_sessions: Vec::new(),
-            phase: BlockPhase::Focus,
-            focus_min: 50,
-            rest_min: 10,
-            block_index: 0,
-            last_focus_date: today_str(),
-            direction_id: None,
-            persist_path: None,
-        };
+    fn auto_start_controls_next_focus_after_break() {
+        // Test auto_start = false
+        let mut state = running_for(1);
+        state.auto_start = false;
+        let after_focus = SystemTime::now() + Duration::from_secs(2);
+        state.advance(after_focus);
+        assert_eq!(state.phase, Phase::ShortRest);
 
-        let deadline = state.deadline.unwrap();
-        assert!(state.advance(deadline), "crossing zero rings in flow mode");
-        assert!(state.snapshot().overtime, "and keeps the timer in overtime");
+        let after_break = after_focus + Duration::from_secs(5 * 60 + 1);
+        state.advance(after_break);
+        assert_eq!(state.phase, Phase::Focus);
+        assert!(!state.snapshot().running, "with auto_start off, timer sits armed and not running");
+        assert_eq!(state.remaining_secs, state.total_secs);
 
-        let later = deadline + Duration::from_secs(5);
-        assert!(!state.advance(later), "later ticks must stay quiet");
-        assert_eq!(state.overtime_secs, 5);
-        assert!(state.snapshot().running, "flow mode keeps running");
+        // Test auto_start = true
+        let mut state2 = running_for(1);
+        state2.auto_start = true;
+        let after_focus2 = SystemTime::now() + Duration::from_secs(2);
+        state2.advance(after_focus2);
+        assert_eq!(state2.phase, Phase::ShortRest);
+
+        let after_break2 = after_focus2 + Duration::from_secs(5 * 60 + 1);
+        state2.advance(after_break2);
+        assert_eq!(state2.phase, Phase::Focus);
+        assert!(state2.snapshot().running, "with auto_start on, next focus runs automatically");
     }
 
     #[test]
-    fn shifting_minutes_is_clamped_to_the_supported_range() {
-        let mut total = 25u64;
-        for delta in [-100i64, 1000] {
-            let current = (total / 60) as i64;
-            let next = (current + delta).clamp(MIN_MINUTES, MAX_MINUTES);
-            total = next as u64 * 60;
-            assert!((60..=180 * 60).contains(&total), "clamped, got {total}");
-        }
+    fn pausing_mid_break_and_resuming_continues_same_phase_and_time() {
+        let mut state = running_for(1);
+        let after_focus = SystemTime::now() + Duration::from_secs(2);
+        state.advance(after_focus);
+        assert_eq!(state.phase, Phase::ShortRest);
+
+        // Advance 10 seconds into the break
+        let ten_secs_in = after_focus + Duration::from_secs(10);
+        state.advance(ten_secs_in);
+        let rem_before_pause = state.remaining_secs;
+        assert_eq!(rem_before_pause, 5 * 60 - 10);
+
+        // Pause mid-break
+        state.deadline = None;
+        assert_eq!(state.remaining_secs, rem_before_pause);
+
+        // Resume mid-break
+        let resume_time = SystemTime::now();
+        state.deadline = Some(resume_time + Duration::from_secs(rem_before_pause));
+        assert_eq!(state.phase, Phase::ShortRest);
+
+        // Advance 5 seconds after resume
+        state.advance(resume_time + Duration::from_secs(5));
+        assert_eq!(state.remaining_secs, rem_before_pause - 5);
+        assert_eq!(state.phase, Phase::ShortRest);
     }
 
     #[test]
-    fn a_completed_countdown_records_the_focus_it_measured() {
+    fn reset_mid_focus_closes_uncompleted_session_focus_to_zero_closes_completed_break_closes_none() {
         let mut state = running_for(60);
+        let start_time = SystemTime::now() - Duration::from_secs(30);
+        state.session_started = Some(start_time);
 
-        let deadline = state.deadline.unwrap();
-        let started = deadline - Duration::from_secs(40);
-        state.session_started = Some(started);
-
-        assert!(state.advance(deadline), "crossing zero must ring");
-
+        // Reset mid-focus
+        let now = SystemTime::now();
+        state.close_session(now, false);
         let sessions = state.take_sessions();
-        assert_eq!(sessions.len(), 1, "a finished countdown is a session");
-        assert!(sessions[0].completed, "it reached zero");
-        assert_eq!(sessions[0].focused_secs, 40, "measured from when it started");
-        assert_eq!(sessions[0].started_at_ms, unix_millis(started));
-        assert_eq!(sessions[0].ended_at_ms, unix_millis(deadline));
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].kind, "pomodoro");
+        assert!(!sessions[0].completed, "interrupted session must have completed = false");
+        assert!(sessions[0].duration_sec >= 29 && sessions[0].duration_sec <= 31);
+
+        // Run focus to zero
+        let mut state2 = running_for(1);
+        let after = SystemTime::now() + Duration::from_secs(2);
+        state2.advance(after); // transitions to ShortRest and closes completed focus session
+        let sessions2 = state2.take_sessions();
+        assert_eq!(sessions2.len(), 1);
+        assert_eq!(sessions2[0].kind, "pomodoro");
+        assert!(sessions2[0].completed, "focus reaching zero must have completed = true");
+
+        // Run break to zero
+        let after_break = after + Duration::from_secs(5 * 60 + 1);
+        state2.advance(after_break);
+        let sessions_after_break = state2.take_sessions();
+        assert!(sessions_after_break.is_empty(), "breaks are NEVER recorded as sessions");
     }
 
     #[test]
-    fn a_paused_countdown_records_what_was_done_but_as_unfinished() {
-        let mut state = running_for(300);
-        state.session_started = Some(SystemTime::now() - Duration::from_secs(20));
+    fn stopwatch_counts_up_never_transitions_and_never_records_pomodoro() {
+        let mut state = TimerState {
+            mode: TimerMode::Stopwatch,
+            total_secs: 0,
+            remaining_secs: 0,
+            elapsed_secs: 0,
+            ..Default::default()
+        };
+        let start_time = SystemTime::now();
+        state.stopwatch_started = Some(start_time);
 
-        let deadline = state.deadline.take().unwrap();
+        let ten_secs = start_time + Duration::from_secs(10);
+        assert!(!state.advance(ten_secs), "stopwatch never fires crossing-zero");
+        assert_eq!(state.elapsed_secs, 10);
+        assert_eq!(state.total_secs, 10);
+        assert_eq!(state.remaining_secs, 0);
+        assert_eq!(state.phase, Phase::Focus, "phase stays unchanged in stopwatch");
+
+        // Reset or pause stopwatch
+        state.stopwatch_started = None;
+        state.close_session(ten_secs, false);
+        assert!(state.take_sessions().is_empty(), "stopwatch does not record pomodoro sessions");
+    }
+
+    #[test]
+    fn daily_rollover_resets_completed_today_not_running_phase() {
+        let mut state = running_for(100);
+        state.completed_today = 5;
+        state.last_focus_date = "2000-01-01".to_string();
+
         let now = SystemTime::now();
-        state.remaining_secs = deadline.duration_since(now).unwrap_or_default().as_secs();
-        let reached_zero = state.remaining_secs == 0;
-        state.close_session(now, reached_zero);
+        state.advance(now);
+
+        assert_eq!(state.completed_today, 0, "completed_today resets on day rollover");
+        assert_eq!(state.phase, Phase::Focus, "running phase does not get wiped");
+        assert!(state.snapshot().running, "still running");
+    }
+
+    #[test]
+    fn skip_phase_transitions_properly() {
+        let mut state = running_for(100);
+        assert_eq!(state.phase, Phase::Focus);
+
+        let now = SystemTime::now() + Duration::from_secs(10);
+        state.advance(now);
+        state.close_session(now, false);
+        state.phase = Phase::ShortRest;
+        state.deadline = Some(now + Duration::from_secs(5 * 60));
+        assert_eq!(state.phase, Phase::ShortRest);
 
         let sessions = state.take_sessions();
         assert_eq!(sessions.len(), 1);
-        assert!(!sessions[0].completed, "it was interrupted, not finished");
-        assert_eq!(sessions[0].focused_secs, 20);
-    }
-
-    #[test]
-    fn pausing_immediately_records_nothing() {
-        let mut state = running_for(300);
-        state.session_started = Some(SystemTime::now());
-
-        state.close_session(SystemTime::now(), false);
-
-        assert!(state.take_sessions().is_empty());
-    }
-
-    #[test]
-    fn a_second_pause_does_not_double_record() {
-        let mut state = running_for(300);
-        state.session_started = Some(SystemTime::now() - Duration::from_secs(10));
-        let now = SystemTime::now();
-
-        state.close_session(now, false);
-        state.close_session(now, false);
-
-        assert_eq!(state.take_sessions().len(), 1, "one stretch, one session");
-    }
-
-    #[test]
-    fn draining_sessions_empties_the_queue() {
-        let mut state = running_for(60);
-        state.session_started = Some(SystemTime::now() - Duration::from_secs(5));
-        state.close_session(SystemTime::now(), false);
-
-        assert_eq!(state.take_sessions().len(), 1);
-        assert!(state.take_sessions().is_empty(), "a drained queue stays empty");
-    }
-
-    #[test]
-    fn resuming_continues_the_same_stretch_rather_than_starting_a_new_one() {
-        let mut state = running_for(300);
-        let started = SystemTime::now() - Duration::from_secs(30);
-        state.session_started = Some(started);
-
-        assert!(state.deadline.is_some());
-        if state.session_started.is_none() {
-            state.session_started = Some(SystemTime::now());
-        }
-
-        assert_eq!(state.session_started, Some(started));
-    }
-
-    #[test]
-    fn flow_mode_does_not_close_the_session_at_zero() {
-        let mut state = TimerState {
-            total_secs: 2,
-            remaining_secs: 2,
-            deadline: Some(SystemTime::now() + Duration::from_secs(2)),
-            mode: TimerMode::Flow,
-            overtime_secs: 0,
-            session_started: Some(SystemTime::now() - Duration::from_secs(30)),
-            pending_sessions: Vec::new(),
-            phase: BlockPhase::Focus,
-            focus_min: 50,
-            rest_min: 10,
-            block_index: 0,
-            last_focus_date: today_str(),
-            direction_id: None,
-            persist_path: None,
-        };
-
-        let deadline = state.deadline.unwrap();
-        state.advance(deadline);
-
-        assert!(state.take_sessions().is_empty());
-        assert!(state.session_started.is_some());
-    }
-
-    // --- Block mode tests ---
-
-    #[test]
-    fn block_mode_rest_starts_automatically_at_focus_zero() {
-        let mut state = TimerState {
-            total_secs: 50 * 60,
-            remaining_secs: 1,
-            deadline: Some(SystemTime::now() + Duration::from_secs(1)),
-            mode: TimerMode::Block,
-            overtime_secs: 0,
-            session_started: Some(SystemTime::now() - Duration::from_secs(50 * 60 - 1)),
-            pending_sessions: Vec::new(),
-            phase: BlockPhase::Focus,
-            focus_min: 50,
-            rest_min: 10,
-            block_index: 0,
-            last_focus_date: today_str(),
-            direction_id: Some("dir-1".into()),
-            persist_path: None,
-        };
-
-        let deadline = state.deadline.unwrap();
-        let ring = state.advance(deadline);
-
-        // Crossing focus zero rings
-        assert!(ring, "reaching zero in focus phase must ring");
-        // Automatically transitioned to Rest phase
-        assert_eq!(state.phase, BlockPhase::Rest, "phase must transition to rest");
-        // Rest countdown is actively running with deadline
-        assert!(state.deadline.is_some(), "rest phase must start automatically");
-        assert_eq!(state.remaining_secs, 10 * 60, "rest duration must be 10 minutes");
-        assert_eq!(state.total_secs, 10 * 60);
-
-        // Session was recorded for the completed focus phase
-        let sessions = state.take_sessions();
-        assert_eq!(sessions.len(), 1, "completed focus phase must emit a session");
-        assert!(sessions[0].completed);
-        assert_eq!(sessions[0].direction_id, Some("dir-1".into()));
-        assert_eq!(sessions[0].phase, BlockPhase::Focus);
-    }
-
-    #[test]
-    fn block_index_increments_per_completed_focus_phase() {
-        let mut state = TimerState {
-            total_secs: 50 * 60,
-            remaining_secs: 1,
-            deadline: Some(SystemTime::now() + Duration::from_secs(1)),
-            mode: TimerMode::Block,
-            overtime_secs: 0,
-            session_started: Some(SystemTime::now() - Duration::from_secs(50 * 60 - 1)),
-            pending_sessions: Vec::new(),
-            phase: BlockPhase::Focus,
-            focus_min: 50,
-            rest_min: 10,
-            block_index: 0,
-            last_focus_date: today_str(),
-            direction_id: None,
-            persist_path: None,
-        };
-
-        assert_eq!(state.block_index, 0);
-        let deadline = state.deadline.unwrap();
-        state.advance(deadline);
-        assert_eq!(state.block_index, 1, "first completed focus phase increments block_index to 1");
-
-        // Advance rest phase to completion
-        let rest_deadline = state.deadline.unwrap();
-        state.advance(rest_deadline);
-        assert_eq!(state.phase, BlockPhase::Focus, "after rest, returns to focus");
-        assert_eq!(state.block_index, 1, "rest completion does not increment block_index");
-
-        // Start next focus phase
-        state.deadline = Some(SystemTime::now() + Duration::from_secs(1));
-        state.session_started = Some(SystemTime::now() - Duration::from_secs(50 * 60));
-        let next_focus_deadline = state.deadline.unwrap();
-        state.advance(next_focus_deadline);
-        assert_eq!(state.block_index, 2, "second completed focus phase increments block_index to 2");
-    }
-
-    /// A block-mode state sitting in its break.
-    fn resting_state(deadline: Option<SystemTime>) -> TimerState {
-        TimerState {
-            total_secs: 10 * 60,
-            remaining_secs: 300,
-            deadline,
-            mode: TimerMode::Block,
-            overtime_secs: 0,
-            session_started: None,
-            pending_sessions: Vec::new(),
-            phase: BlockPhase::Rest,
-            focus_min: 50,
-            rest_min: 10,
-            block_index: 1,
-            last_focus_date: today_str(),
-            direction_id: None,
-            persist_path: None,
-        }
-    }
-
-    #[test]
-    fn the_break_cannot_be_escaped_while_it_runs() {
-        let state = resting_state(Some(SystemTime::now() + Duration::from_secs(300)));
-        assert!(state.in_rest(), "a running break is a break");
-    }
-
-    #[test]
-    fn pausing_the_break_does_not_open_an_escape() {
-        // The defect this guards: pause() clears `deadline`, and the mode guard
-        // used to require `deadline.is_some()` — so pausing the break and then
-        // switching modes walked out of it.
-        let paused = resting_state(None);
-
-        assert!(
-            paused.in_rest(),
-            "a paused break is still a break, so mode and duration changes stay refused",
-        );
-    }
-
-    #[test]
-    fn a_finished_break_is_not_guarded() {
-        // Once rest has completed the state is back in focus, and refusing
-        // changes there would freeze the timer for the rest of the day.
-        let mut state = resting_state(None);
-        state.phase = BlockPhase::Focus;
-
-        assert!(!state.in_rest());
-    }
-
-    #[test]
-    fn other_modes_are_never_guarded() {
-        let mut state = resting_state(None);
-        state.mode = TimerMode::Countdown;
-
-        // Only block mode has a break to protect.
-        assert!(!state.in_rest());
-    }
-
-    #[test]
-    fn block_index_survives_a_simulated_restart() {
-        let temp_dir = std::env::temp_dir().join(format!("alarmer_test_{}", unix_millis(SystemTime::now())));
-        let _ = fs::create_dir_all(&temp_dir);
-        let store_file = temp_dir.join("alarmer.json");
-
-        // Instance 1: completes a block and persists state
-        {
-            let mut state = TimerState {
-                total_secs: 50 * 60,
-                remaining_secs: 1,
-                deadline: Some(SystemTime::now() + Duration::from_secs(1)),
-                mode: TimerMode::Block,
-                overtime_secs: 0,
-                session_started: Some(SystemTime::now() - Duration::from_secs(50 * 60 - 1)),
-                pending_sessions: Vec::new(),
-                phase: BlockPhase::Focus,
-                focus_min: 50,
-                rest_min: 10,
-                block_index: 2,
-                last_focus_date: today_str(),
-                direction_id: Some("dir-123".into()),
-                persist_path: Some(store_file.clone()),
-            };
-
-            let deadline = state.deadline.unwrap();
-            state.advance(deadline);
-            assert_eq!(state.block_index, 3);
-            // State automatically saved during advance
-        }
-
-        // Instance 2: simulated fresh restart
-        {
-            let mut new_state = TimerState {
-                total_secs: DEFAULT_SECS,
-                remaining_secs: DEFAULT_SECS,
-                deadline: None,
-                mode: TimerMode::Block,
-                overtime_secs: 0,
-                session_started: None,
-                pending_sessions: Vec::new(),
-                phase: BlockPhase::Focus,
-                focus_min: 50,
-                rest_min: 10,
-                block_index: 0,
-                last_focus_date: String::new(),
-                direction_id: None,
-                persist_path: Some(store_file.clone()),
-            };
-
-            new_state.load_persisted();
-            assert_eq!(new_state.block_index, 3, "block_index must survive simulated restart");
-            assert_eq!(new_state.last_focus_date, today_str());
-            assert_eq!(new_state.direction_id, Some("dir-123".into()));
-        }
-
-        let _ = fs::remove_dir_all(&temp_dir);
+        assert!(!sessions[0].completed);
     }
 }

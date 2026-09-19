@@ -525,8 +525,8 @@ pub fn run() {
             timer::timer_reset,
             timer::timer_shift_minutes,
             timer::timer_set_mode,
-            timer::timer_set_block_settings,
-            timer::timer_set_direction,
+            timer::timer_set_pomodoro_settings,
+            timer::timer_skip_phase,
             timer::timer_get_state,
             register_shortcuts,
             toggle_mini_overlay,
@@ -610,7 +610,7 @@ pub fn run() {
             // Alarms must fire even with the window hidden or another tab open.
             scheduler::spawn(app.handle().clone());
 
-            // The countdown outlives any screen it is displayed on.
+            // The timer tick loop outlives any screen it is displayed on.
             timer::spawn(app.handle().clone());
 
             // Started by the OS at login: come up in the tray, as promised, and
