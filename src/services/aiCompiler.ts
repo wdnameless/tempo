@@ -1,4 +1,5 @@
 import { AISettings, DynamicUIConfig, AlarmItem } from '../types';
+import type { AIPlatformMutation, DirectionDraft } from '../types';
 import { asArray, asBoolean, asNumber, asString, isRecord, oneOf } from '../types/guards';
 import { AIGateway } from './aiGateway';
 import type { HistoryDigest } from './aiHistory';
@@ -55,28 +56,11 @@ function isLocalUiCommand(lowerPrompt: string): boolean {
 }
 
 
-export interface DirectionDraft {
-  name: string;
-  weeklyBlockBudget: number;
-  color?: string;
-}
+// The conversation message and the proposed mutation are owned by `types`;
+// re-exported here so existing callers keep one import site.
+export type { AIPlatformMutation, DirectionDraft } from '../types';
 
-export interface AIPlatformMutation {
-  type: 'ui_change' | 'alarm_schedule' | 'workout_plan' | 'hybrid' | 'answer' | 'directions';
-  explanation: string;
-  ui?: Partial<DynamicUIConfig>;
-  alarms?: AlarmItem[];
-  directions?: DirectionDraft[];
-  autoApply: boolean;
-}
-
-export interface ChatMessage {
-  id: string;
-  sender: 'user' | 'assistant' | 'system';
-  text: string;
-  timestamp: string;
-  mutation?: AIPlatformMutation;
-}
+export type { ChatMessage } from '../types';
 
 /**
  * Said when the request matched no local action and no model was reachable.

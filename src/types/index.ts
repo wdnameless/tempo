@@ -5,8 +5,46 @@ export type ThemeId = string;
 export * from './dynamicUi';
 export * from './focus';
 
-/** Re-exported so screens import their chat types from one place. */
-export type { ChatMessage } from '../services/aiCompiler';
+import type { DynamicUIConfig } from './dynamicUi';
+
+/**
+ * One message in the assistant conversation.
+ *
+ * Defined here rather than in the compiler service: `types` is the bottom of
+ * the dependency graph, and a screen that only renders a message should not have
+ * to pull the whole compiler — which is what made aiCompiler and aiHistory
+ * import each other through this module.
+ */
+export interface ChatMessage {
+  id: string;
+  sender: 'user' | 'assistant' | 'system';
+  text: string;
+  timestamp: string;
+  /** A change the assistant proposes to apply; absent for plain answers. */
+  mutation?: AIPlatformMutation;
+}
+
+/** A direction the assistant proposed creating from a chat message. */
+export interface DirectionDraft {
+  name: string;
+  weeklyBlockBudget: number;
+  color?: string;
+}
+
+/**
+ * An edit the assistant proposes, with the sentence explaining it.
+ *
+ * Lives here for the same reason as `ChatMessage`: the drawer renders these
+ * flags, and a rendering component must not have to import the compiler.
+ */
+export interface AIPlatformMutation {
+  type: 'ui_change' | 'alarm_schedule' | 'workout_plan' | 'hybrid' | 'answer' | 'directions';
+  explanation: string;
+  ui?: Partial<DynamicUIConfig>;
+  alarms?: AlarmItem[];
+  directions?: DirectionDraft[];
+  autoApply: boolean;
+}
 
 export interface ThemeColors {
   id: ThemeId;
