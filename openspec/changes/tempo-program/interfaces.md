@@ -293,3 +293,32 @@ export async function assetPrune(limitBytes: number): Promise<{ removed: number;
 | Запись экрана (R46) | ≤15% CPU суммарно | замер во время 60-секундной записи |
 | Старт приложения | ≤2 с до интерактивного главного экрана | замер по логу старта |
 | Поиск Cmd+K | ≤100 мс на выдачу при 10 000 объектов | замер запроса в тесте |
+
+## 11. Мост темы — владелец: Wave 0 (Shell), удаляется по мере переписывания экранов
+
+Девятнадцать файлов принимают `theme: ThemeColors` и читают из него ~470 значений
+(`text`, `subtext`, `accent`, `border`, `cardBg`, …). Переписать их все в волне 0 нельзя —
+это и есть работа волн 1–12. Поэтому `ThemeColors` остаётся, но перестаёт быть набором
+из шести тем и становится **представлением токенов**:
+
+```ts
+// src/constants/themes.ts — REPLACE: шесть тем удалены
+export function themeFromTokens(accent: AccentId): ThemeColors;
+// bg -> --bg · surface -> --surface · cardBg -> --elevated · border -> --border
+// text -> --text · subtext -> --text-muted · accent -> --accent
+// accentGlow -> accent при ~30% альфы · ringTrack -> --border · ringProgress -> --accent
+// ticks -> --text-faint · id/name сохранены для совместимости
+```
+
+Правила:
+- `THEMES` (шесть тем) MUST быть удалён: `src/App.tsx`, `MiniOverlay.tsx`, `SettingsView.tsx`
+  переходят на `themeFromTokens(accent)`.
+- Сохранённое значение `alarmer_theme` MUST игнорироваться без падения (сценарий спеки);
+  акцент хранится в `preferences` под ключом `tempo_accent`.
+- Экран, переписанный своей волной, MUST NOT брать цвета из `theme` — только CSS-переменные;
+  вместе с этим он перестаёт принимать проп `theme`.
+- Когда последний потребитель `themeFromTokens` исчезнет, функция и `ThemeColors` удаляются.
+  Волна, снявшая последний проп, обязана это проверить (`grep -rn "ThemeColors" src`).
+
+Почему так: это единственный способ показать новый стиль в волне 0, не переписывая
+одновременно девятнадцать экранов, и при этом не тащить шесть тем дальше в программу.
