@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Bell, BellOff, Volume2, Sparkles, Loader2, StickyNote } from 'lucide-react';
-import { ThemeColors, AlarmItem, Schedule, AISettings, DynamicUIConfig } from '../types';
-import { SchedulesPanel } from './SchedulesPanel';
+import { ThemeColors, AlarmItem, AISettings, DynamicUIConfig } from '../types';
 import { soundService } from '../services/sound';
 import { AIService } from '../services/ai';
-import { describeRepeat, findStepByFiringId } from '../services/scheduleEngine';
 
 /** Short weekday labels, indexed 0 = Sunday to match the stored data. */
 const WEEKDAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -12,8 +10,6 @@ const WEEKDAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 interface AlarmsProps {
   theme: ThemeColors;
   alarms: AlarmItem[];
-  schedules: Schedule[];
-  onUpdateSchedules: (schedules: Schedule[]) => void;
   aiSettings?: AISettings;
   onUpdateAlarms: (alarms: AlarmItem[]) => void;
   onOpenAISettings?: () => void;
@@ -29,8 +25,6 @@ interface AlarmsProps {
 export const Alarms: React.FC<AlarmsProps> = ({
   theme,
   alarms,
-  schedules,
-  onUpdateSchedules,
   aiSettings,
   onUpdateAlarms,
   onOpenAISettings,
@@ -82,7 +76,7 @@ export const Alarms: React.FC<AlarmsProps> = ({
    * is thrown away immediately. Such rows are read-only and point at the
    * program that owns them.
    */
-  const isDerived = (alarm: AlarmItem) => Boolean(alarm.scheduleId);
+  const isDerived = (_alarm: AlarmItem) => false;
 
   /** Changes an alarm's time, rejecting anything that is not a clock time. */
   const editAlarmTime = (id: string, value: string) => {
@@ -258,12 +252,6 @@ export const Alarms: React.FC<AlarmsProps> = ({
           )}
         </div>
       </div>
-      {/* Saved schedules — the primary object of the product */}
-      <SchedulesPanel
-        theme={theme}
-        schedules={schedules}
-        onUpdateSchedules={onUpdateSchedules}
-      />
 
       {/* AI Orchestration Modal Banner */}
       {showAiModal && (
@@ -512,7 +500,7 @@ export const Alarms: React.FC<AlarmsProps> = ({
                     />
                   )}
                   <span className="text-[10px] opacity-60">
-                    {describeRepeat(alarm)}
+                    {alarm.repeat === 'once' ? 'Один раз' : alarm.repeat === 'daily' ? 'Каждый день' : alarm.days.map((d) => WEEKDAY_LABELS[d]).join(', ')}
                   </span>
                   {alarm.voicePrompt && (
                     <span className="text-[10px] opacity-60 flex items-center space-x-1 truncate max-w-[180px]">

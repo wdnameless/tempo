@@ -7,7 +7,6 @@ import { soundService } from '../services/sound';
 import { TimerService, type TimerSnapshot, type TimerPhase, MAX_MINUTES, MIN_MINUTES } from '../services/timer';
 import { MusicService } from '../services/music';
 import { StoreService } from '../services/store';
-import { blocksOnDay } from '../services/focusBudget';
 import confetti from 'canvas-confetti';
 import { listen } from '@tauri-apps/api/event';
 import { isTauri } from '../services/platform';
@@ -187,7 +186,16 @@ export const Timer: React.FC<TimerProps> = ({
 
   // Day's completed block count from sessions or blockIndex
   const currentSessions = sessions ?? [];
-  const dayBlocksCompleted = blocksOnDay(currentSessions, new Date());
+  const nowDay = new Date();
+  const dayBlocksCompleted = currentSessions.filter((s) => {
+    const d = new Date(s.startedAt);
+    return (
+      s.completed &&
+      d.getFullYear() === nowDay.getFullYear() &&
+      d.getMonth() === nowDay.getMonth() &&
+      d.getDate() === nowDay.getDate()
+    );
+  }).length;
   const displayBlockCount = isBlockMode ? (blockIndex > 0 ? blockIndex : dayBlocksCompleted + 1) : 0;
 
   const toggleRun = () => {

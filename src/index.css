@@ -13,6 +13,18 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
+:root {
+  --bg: #0A0A0B;
+  --surface: #101012;
+  --elevated: #17171B;
+  --text: #EDEDF0;
+  --text-muted: #9A9AA5;
+  --text-faint: #5C5C66;
+  --border: #232329;
+  --accent: #F59E0B;
+  --accent-soft: rgba(245, 158, 11, 0.14);
+}
+
 @layer base {
   html,
   body,

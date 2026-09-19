@@ -89,10 +89,9 @@ describe('AICompilerService offline intent compilation', () => {
 
   it('honestly reports empty journal when asked history question with empty history', async () => {
     const emptyHistory = {
-      days: {},
-      directions: [],
-      byHour: new Array(24).fill(0),
-      totals: { sessions: 0, blocks: 0, minutes: 0 },
+      days: [],
+      hourHistogram: new Array(24).fill(0),
+      totals: { focusedSec: 0, sessions: 0, daysActive: 0 },
     };
 
     const result = await AICompilerService.compileUserIntent(

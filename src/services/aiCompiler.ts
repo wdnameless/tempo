@@ -309,9 +309,10 @@ export class AICompilerService {
           autoApply: false,
         };
       }
+      const minutes = Math.round(historyDigest.totals.focusedSec / 60);
       return {
         type: 'answer',
-        explanation: `Всего зафиксировано ${historyDigest.totals.sessions} сессий (${historyDigest.totals.blocks} блоков, ${historyDigest.totals.minutes} мин).`,
+        explanation: `Всего зафиксировано ${historyDigest.totals.sessions} сессий (${minutes} мин фокуса).`,
         autoApply: false,
       };
     }

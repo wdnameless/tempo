@@ -1,89 +1,110 @@
-import type { Direction, SessionRecord } from '../types';
-import { averageQuality, blocksByDirection, sessionBlocks, weekStart } from './focusBudget';
-import { dayKey } from './stats';
+import type { SessionRecord } from '../types';
 
-/** Compact, label-free digest of the journal for the model. */
-export interface HistoryDigest {
-  /** Per day: "YYYY-MM-DD" -> { blocks, minutes, avgQuality }. */
-  days: Record<string, { blocks: number; minutes: number; avgQuality: number | null }>;
-  /** Per direction name: blocks and minutes this week. */
-  directions: Array<{ name: string; blocks: number; budget: number }>;
-  /** Hour-of-day histogram of focus minutes. */
-  byHour: number[];
-  totals: { sessions: number; blocks: number; minutes: number };
+export interface DayFocusAggregate {
+  /** YYYY-MM-DD in the user's local timezone. */
+  day: string;
+  totalFocusedSec: number;
+  completedSessions: number;
+  abandonedSessions: number;
+  /**
+   * Average rated quality in [1..5], or undefined if none of the day's sessions
+   * were rated.
+   */
+  averageQuality?: number;
 }
 
-/**
- * Builds the digest. MUST NOT include session labels, ids or timestamps beyond the
- * day key — aggregates only.
- */
+export interface HistoryDigest {
+  /** Trailing calendar days, oldest first. Empty days are included with zeros. */
+  days: DayFocusAggregate[];
+  /** 24 bins, index 0 = 00:00..00:59 local time. Values are total seconds focused. */
+  hourHistogram: number[];
+  totals: {
+    focusedSec: number;
+    sessions: number;
+    daysActive: number;
+  };
+}
+
+const PAD = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+
+export function localDayKey(d: Date): string {
+  return `${d.getFullYear()}-${PAD(d.getMonth() + 1)}-${PAD(d.getDate())}`;
+}
+
 export function buildHistoryDigest(
   sessions: SessionRecord[],
-  directions: Direction[],
-  focusMin: number,
-  now: Date,
+  daysCount = 14,
+  now: Date = new Date(),
 ): HistoryDigest {
-  const days: Record<string, { blocks: number; minutes: number; avgQuality: number | null }> = {};
-  const sessionsByDay = new Map<string, SessionRecord[]>();
+  const clampedDays = Math.max(1, Math.min(daysCount, 60));
 
-  for (const session of sessions) {
-    const key = dayKey(new Date(session.startedAt));
-    const list = sessionsByDay.get(key) ?? [];
-    list.push(session);
-    sessionsByDay.set(key, list);
+  // Build the list of target day keys in chronological order.
+  const dayKeys: string[] = [];
+  for (let i = clampedDays - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    dayKeys.push(localDayKey(d));
+  }
+  const dayKeySet = new Set(dayKeys);
+
+  const byDay = new Map<
+    string,
+    { focusedSec: number; completed: number; abandoned: number; qualitySum: number; qualityCount: number }
+  >();
+  for (const k of dayKeys) {
+    byDay.set(k, { focusedSec: 0, completed: 0, abandoned: 0, qualitySum: 0, qualityCount: 0 });
   }
 
-  for (const [key, daySessions] of sessionsByDay.entries()) {
-    const rawBlocks = daySessions.reduce((sum, s) => sum + sessionBlocks(s, focusMin), 0);
-    const rawMinutes = daySessions.reduce((sum, s) => sum + s.focusedSec, 0) / 60;
-    days[key] = {
-      blocks: Math.round(rawBlocks * 100) / 100,
-      minutes: Math.round(rawMinutes),
-      avgQuality: averageQuality(daySessions),
-    };
-  }
-  const start = weekStart(now);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 7);
-  const used = blocksByDirection(sessions, directions, focusMin, start, end);
+  const hourHistogram = new Array<number>(24).fill(0);
+  let totalFocusedSec = 0;
+  let totalSessions = 0;
 
-  const dirList: Array<{ name: string; blocks: number; budget: number }> = directions.map((d) => ({
-    name: d.name,
-    blocks: Math.round((used.get(d.id) ?? 0) * 100) / 100,
-    budget: d.weeklyBlockBudget,
-  }));
+  for (const s of sessions) {
+    const started = new Date(s.startedAt);
+    if (isNaN(started.getTime())) continue;
 
-  const unattributed = Math.round((used.get(undefined) ?? 0) * 100) / 100;
-  if (unattributed > 0) {
-    dirList.push({
-      name: 'Без направления',
-      blocks: unattributed,
-      budget: 0,
-    });
-  }
+    const key = localDayKey(started);
+    const sec = Math.max(0, s.focusedSec || 0);
 
-  const byHourSec = new Array<number>(24).fill(0);
-  for (const session of sessions) {
-    const h = new Date(session.startedAt).getHours();
-    if (h >= 0 && h < 24) {
-      byHourSec[h] += session.focusedSec;
+    if (dayKeySet.has(key)) {
+      const bucket = byDay.get(key)!;
+      bucket.focusedSec += sec;
+      if (s.completed) bucket.completed += 1;
+      else bucket.abandoned += 1;
+      if (typeof s.quality === 'number' && s.quality >= 1 && s.quality <= 5) {
+        bucket.qualitySum += s.quality;
+        bucket.qualityCount += 1;
+      }
+
+      const h = started.getHours();
+      if (h >= 0 && h < 24) {
+        hourHistogram[h] += sec;
+      }
+
+      totalFocusedSec += sec;
+      totalSessions += 1;
     }
   }
-  const byHour = byHourSec.map((sec) => Math.round(sec / 60));
 
-  const totalBlocks = sessions.reduce((sum, s) => sum + sessionBlocks(s, focusMin), 0);
-  const totalSec = sessions.reduce((sum, s) => sum + s.focusedSec, 0);
+  const days: DayFocusAggregate[] = dayKeys.map((day) => {
+    const b = byDay.get(day)!;
+    return {
+      day,
+      totalFocusedSec: b.focusedSec,
+      completedSessions: b.completed,
+      abandonedSessions: b.abandoned,
+      averageQuality: b.qualityCount > 0 ? Math.round((b.qualitySum / b.qualityCount) * 10) / 10 : undefined,
+    };
+  });
 
-  const totals = {
-    sessions: sessions.length,
-    blocks: Math.round(totalBlocks * 100) / 100,
-    minutes: Math.round(totalSec / 60),
-  };
+  const daysActive = days.filter((d) => d.totalFocusedSec > 0 || d.completedSessions > 0).length;
 
   return {
     days,
-    directions: dirList,
-    byHour,
-    totals,
+    hourHistogram,
+    totals: {
+      focusedSec: totalFocusedSec,
+      sessions: totalSessions,
+      daysActive,
+    },
   };
 }

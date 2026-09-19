@@ -2,14 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Bell, BellOff } from 'lucide-react';
-import type { AlarmItem, Schedule, ScheduleStep, SessionRecord, ThemeColors } from '../types';
-import { findStepByFiringId } from '../services/scheduleEngine';
+import type { AlarmItem, Schedule, SessionRecord, ThemeColors } from '../types';
 import { soundService } from '../services/sound';
 import { StoreService } from '../services/store';
-import { BlockPlayer } from './BlockPlayer';
 import { isTauri } from '../services/platform';
-
-type BlockStep = Extract<ScheduleStep, { kind: 'block' }>;
 
 /** "на 12 мин позже" — how far past its own time a missed alarm was noticed. */
 function formatLate(minutes: number): string {
@@ -34,7 +30,7 @@ interface AlarmCenterProps {
   theme: ThemeColors;
   /** Every firing the backend should enforce, schedules already expanded. */
   firings: AlarmItem[];
-  schedules: Schedule[];
+  schedules?: Schedule[];
   /** Alarm volume 0..1, mirrored to the backend ringer. */
   alarmVolume: number;
   /** Whether alarms make a sound at all; muting passes volume 0. */
@@ -83,8 +79,6 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
   children,
 }) => {
   const [ringing, setRinging] = useState<AlarmItem | null>(null);
-  const [runningBlock, setRunningBlock] = useState<BlockStep | null>(null);
-  const [runningBlockSchedule, setRunningBlockSchedule] = useState<string | undefined>(undefined);
 
   // Push the effective schedule down whenever it changes.
   //
@@ -207,17 +201,6 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
     stopRinging();
   };
 
-  /** The alarm behind an interval block, so it can be run right from the ring. */
-  const ringingBlock = ringing ? findStepByFiringId(schedules, ringing.id) : null;
-
-  const startRingingBlock = () => {
-    if (!ringingBlock || ringingBlock.step.kind !== 'block') return;
-    soundService.playUiClick();
-    setRunningBlockSchedule(ringingBlock.schedule.id);
-    dismiss();
-    setRunningBlock(ringingBlock.step);
-  };
-
   return (
     <>
       {children}
@@ -264,20 +247,6 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
         </div>
       )}
 
-      {runningBlock && (
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
-          style={{ backgroundColor: `${theme.bg}F2`, backdropFilter: 'blur(8px)' }}
-        >
-          <BlockPlayer
-            theme={theme}
-            block={runningBlock}
-            scheduleId={runningBlockSchedule}
-            onSession={onSession}
-            onClose={() => setRunningBlock(null)}
-          />
-        </div>
-      )}
 
       {ringing && (
         <div
@@ -325,15 +294,6 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
             </span>
           )}
 
-          {ringingBlock?.step.kind === 'block' && (
-            <button
-              onClick={startRingingBlock}
-              className="mt-6 w-full max-w-[280px] py-3 rounded-lg text-xs font-bold uppercase tracking-widest active:scale-[0.97] transition-transform"
-              style={{ backgroundColor: 'rgba(10,10,10,0.14)', color: '#0a0a0a' }}
-            >
-              Начать блок
-            </button>
-          )}
 
           <div className="flex items-center space-x-2 mt-4">
             {[5, 10, 15].map((mins) => (
