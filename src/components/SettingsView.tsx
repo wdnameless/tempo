@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { Volume2, VolumeX, Sparkles, Key, RotateCcw, Check, Play, Download, Upload, RefreshCw, Loader2, Music, Timer, Sliders } from 'lucide-react';
-import { ThemeColors, ThemeId, AISettings, DynamicUIConfig, DEFAULT_DYNAMIC_UI } from '../types';
+import { ThemeColors, AISettings, DynamicUIConfig, DEFAULT_DYNAMIC_UI } from '../types';
 import { BLOCK_PRESETS, type BlockSettings } from '../types/focus';
-import { THEMES } from '../constants/themes';
+import { ACCENTS, DEFAULT_ACCENT, applyAccent, type AccentId } from '../constants/design';
 import { CLOUD_VOICES, EdgeTtsService } from '../services/edgeTts';
 import { soundService } from '../services/sound';
 import { I18nService, Language } from '../services/i18n';
@@ -14,8 +14,8 @@ import { StoreService } from '../services/store';
 interface SettingsViewProps {
   theme: ThemeColors;
   /** Currently applied base theme. */
-  themeKey: ThemeId;
-  onSelectTheme: (theme: ThemeId) => void;
+  accentKey?: AccentId;
+  onSelectAccent?: (accent: AccentId) => void;
   /** Alarm volume 0..1, and whether alarms sound at all. */
   alarmVolume: number;
   alarmEnabled: boolean;
@@ -30,8 +30,8 @@ interface SettingsViewProps {
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   theme,
-  themeKey,
-  onSelectTheme,
+  accentKey,
+  onSelectAccent,
   alarmVolume,
   alarmEnabled,
   onAlarmAudioChange,
@@ -236,8 +236,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     <div className="flex flex-col w-full h-full p-4 overflow-y-auto space-y-6">
       <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: theme.border }}>
         <div>
-          <h2 className="text-base font-bold tracking-tight">{t.systemSettings}</h2>
-          <p className="text-xs opacity-60">{t.settingsDesc}</p>
+          <h2 className="text-base font-bold tracking-tight">{t.titleSettings}</h2>
+          <p className="text-xs opacity-60">{t.settingsGeneral}</p>
         </div>
         <div className="flex items-center space-x-1 bg-white/5 p-1 rounded-xl border border-white/10 text-xs">
           <button
@@ -308,6 +308,68 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <span>Данные</span>
         </button>
       </div>
+      {activeTab === 'general' && (
+        <div className="flex flex-col space-y-6">
+          {/* Accent. One variable drives every screen, so the swatch row is the
+              whole control — there is no per-theme colour set to pick from. */}
+          <div className="flex flex-col space-y-3">
+            <label
+              className="text-xs font-bold uppercase tracking-wider"
+              style={{ color: theme.subtext }}
+            >
+              Акцент
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(ACCENTS) as AccentId[]).map((id) => {
+                const isActive = accentKey === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-label={`Акцент ${id}`}
+                    aria-pressed={isActive}
+                    onClick={() => {
+                      soundService.playUiClick();
+                      onSelectAccent?.(id);
+                    }}
+                    className={`w-9 h-9 rounded-xl border-2 transition-all ${
+                      isActive ? 'scale-110' : 'opacity-70 hover:opacity-100'
+                    }`}
+                    style={{
+                      backgroundColor: ACCENTS[id],
+                      borderColor: isActive ? theme.text : 'transparent',
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-col space-y-3 border-t pt-4" style={{ borderColor: theme.border }}>
+            <label
+              className="text-xs font-bold uppercase tracking-wider"
+              style={{ color: theme.subtext }}
+            >
+              Язык интерфейса
+            </label>
+            <div className="flex items-center space-x-1 p-1 rounded-xl bg-white/5 border border-white/10 text-xs w-fit">
+              {(['en', 'ru'] as const).map((lang) => (
+                <button
+                  key={lang}
+                  type="button"
+                  onClick={() => handleLangChange(lang)}
+                  className={`px-3 py-1.5 rounded-lg font-bold uppercase transition-all ${
+                    currentLang === lang ? 'bg-white/20 text-white' : 'opacity-50 hover:opacity-100'
+                  }`}
+                >
+                  {lang}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'sound' && (
         <div className="flex flex-col space-y-6">
         {/* Voice Selection */}
@@ -757,42 +819,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
-        {/* UI Reset */}
+        {/* Accent Selection */}
         <div className="flex flex-col space-y-2 border-t pt-4" style={{ borderColor: theme.border }}>
           <label className="text-xs font-bold uppercase tracking-wider" style={{ color: theme.subtext }}>
-            Тема оформления
+            Цветовой акцент
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            {(Object.values(THEMES)).map((candidate) => (
-              <button
-                key={candidate.id}
-                type="button"
-                onClick={() => {
-                  soundService.playUiClick();
-                  onSelectTheme(candidate.id);
-                }}
-                className="p-2 rounded-xl border flex items-center gap-2 text-left transition-all"
-                style={{
-                  borderColor: themeKey === candidate.id ? 'rgba(255,255,255,0.38)' : theme.border,
-                  backgroundColor: themeKey === candidate.id ? 'rgba(255,255,255,0.06)' : 'transparent',
-                }}
-                title={candidate.name}
-              >
-                {/* A swatch of the theme's own bg/accent is more honest than a name. */}
-                <span
-                  className="w-6 h-6 rounded-lg shrink-0 border"
-                  style={{ backgroundColor: candidate.bg, borderColor: candidate.border }}
+          <div className="grid grid-cols-4 gap-2">
+            {(Object.keys(ACCENTS) as AccentId[]).map((accId) => {
+              const color = ACCENTS[accId];
+              const isSelected = (accentKey ?? DEFAULT_ACCENT) === accId;
+              return (
+                <button
+                  key={accId}
+                  type="button"
+                  onClick={() => {
+                    soundService.playUiClick();
+                    applyAccent(accId);
+                    onSelectAccent?.(accId);
+                  }}
+                  className="p-2 rounded-xl border flex items-center gap-2 text-left transition-all"
+                  style={{
+                    borderColor: isSelected ? 'rgba(255,255,255,0.38)' : theme.border,
+                    backgroundColor: isSelected ? 'rgba(255,255,255,0.06)' : 'transparent',
+                  }}
+                  title={accId}
                 >
                   <span
-                    className="block w-2.5 h-2.5 rounded-full m-1.5"
-                    style={{ backgroundColor: candidate.accent }}
-                  />
-                </span>
-                <span className="text-[10px] leading-tight min-w-0" style={{ color: theme.text }}>
-                  {candidate.name}
-                </span>
-              </button>
-            ))}
+                    className="w-5 h-5 rounded-full shrink-0 border border-white/10 flex items-center justify-center"
+                    style={{ backgroundColor: color }}
+                  >
+                    {isSelected && <Check size={12} className="text-black" strokeWidth={3} />}
+                  </span>
+                  <span className="text-[11px] capitalize font-medium min-w-0" style={{ color: theme.text }}>
+                    {accId}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -868,8 +931,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => {
-                const blob = new Blob([StoreService.exportJson()], { type: 'application/json' });
+              onClick={async () => {
+                const data = await StoreService.exportJson();
+                const blob = new Blob([data], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;

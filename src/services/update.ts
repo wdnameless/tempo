@@ -18,7 +18,10 @@ import { StoreService } from './store';
  * GitHub release.
  */
 
-/** Where the app looks for updates. Fixed to this project's own releases. */
+/**
+ * Where the app looks for updates. Fixed to this project's own releases.
+ * The GitHub repository stays wdnameless/Alarmer while the product is renamed to Tempo.
+ */
 export const UPDATE_ENDPOINT =
   'https://github.com/wdnameless/Alarmer/releases/latest/download/latest.json';
 
@@ -64,7 +67,7 @@ export async function detectPortable(): Promise<boolean> {
   if (!isTauri()) return false;
   try {
     const portable = await invoke<boolean>('is_portable_build');
-    StoreService.setPreference('alarmer_portable', portable);
+    StoreService.setPreference('tempo_portable', portable);
     return portable;
   } catch {
     return isPortable();
@@ -73,7 +76,7 @@ export async function detectPortable(): Promise<boolean> {
 
 /** True when this build stores its data beside the executable. */
 export function isPortable(): boolean {
-  return StoreService.getPreference('alarmer_portable', false);
+  return StoreService.getPreference('tempo_portable', false);
 }
 
 /**

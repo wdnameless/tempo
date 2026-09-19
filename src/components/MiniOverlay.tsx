@@ -2,7 +2,7 @@ import { X } from 'lucide-react';
 import { WindowService } from '../services/window';
 import { useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { THEMES } from '../constants/themes';
+import { themeFromTokens } from '../constants/themes';
 import { TimerService, type TimerSnapshot } from '../services/timer';
 
 /**
@@ -16,7 +16,7 @@ import { TimerService, type TimerSnapshot } from '../services/timer';
 export function MiniOverlay() {
   const [state, setState] = useState<TimerSnapshot | null>(null);
 
-  const theme = THEMES['winter'];
+  const theme = themeFromTokens('amber');
 
   useEffect(() => {
     let active = true;

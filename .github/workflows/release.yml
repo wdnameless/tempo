@@ -5,25 +5,11 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
-# Builds the app for all three desktop platforms and publishes a draft GitHub
-# Release with installers plus a portable bundle per platform.
+# Builds the Windows desktop release and publishes a draft GitHub
+# Release with installer plus a portable bundle.
 jobs:
   release:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            platform: windows
-            exeName: alarmer.exe
-          - os: macos-latest
-            platform: macos
-            exeName: alarmer
-          - os: ubuntu-latest
-            platform: linux
-            exeName: alarmer
-
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -36,20 +22,6 @@ jobs:
           workspaces: src-tauri
 
       - run: bun install --frozen-lockfile
-
-      # Linux needs the WebKit/WebKitGTK stack to build, plus ALSA headers:
-      # `rodio` links `alsa-sys` for the alarm sound the backend plays when the
-      # window is hidden, and that crate will not build without `alsa.pc`.
-      - if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev \
-            libasound2-dev
 
       # Build only: publishing is handled once, after every platform has built.
       # `tauri-action` tried to create and then edit the same release from three
@@ -73,16 +45,14 @@ jobs:
       - name: Build portable bundle
         shell: pwsh
         run: |
-          $name = "alarmer-${{ github.ref_name }}-portable-${{ matrix.platform }}"
-          New-Item -ItemType Directory -Force -Path portable/alarmer | Out-Null
-          Copy-Item "src-tauri/target/release/${{ matrix.exeName }}" "portable/alarmer/${{ matrix.exeName }}"
-          New-Item -ItemType File -Force -Path portable/alarmer/portable | Out-Null
-          Compress-Archive -Path portable/alarmer -DestinationPath "$name.zip" -Force
+          $name = "tempo-${{ github.ref_name }}-portable-windows"
+          New-Item -ItemType Directory -Force -Path portable/tempo | Out-Null
+          Copy-Item "src-tauri/target/release/tempo.exe" "portable/tempo/tempo.exe"
+          New-Item -ItemType File -Force -Path portable/tempo/portable | Out-Null
+          Compress-Archive -Path portable/tempo -DestinationPath "$name.zip" -Force
           Write-Host "built $name.zip"
-          if ("${{ matrix.platform }}" -eq "windows") {
-            Copy-Item "src-tauri/target/release/${{ matrix.exeName }}" "alarmer-portable.exe"
-            Write-Host "prepared standalone alarmer-portable.exe"
-          }
+          Copy-Item "src-tauri/target/release/tempo.exe" "tempo-portable.exe"
+          Write-Host "prepared standalone tempo-portable.exe"
 
       # Signs the portable archive with the same key the installers use, so a
       # portable build can verify its own update before replacing itself.
@@ -92,13 +62,13 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          $name = "alarmer-${{ github.ref_name }}-portable-${{ matrix.platform }}"
+          $name = "tempo-${{ github.ref_name }}-portable-windows"
           bunx tauri signer sign "$name.zip"
           if (-not (Test-Path "$name.zip.sig")) { throw "signing produced no .sig file" }
           Write-Host "signed $name.zip"
-          if (Test-Path "alarmer-portable.exe") {
-            bunx tauri signer sign "alarmer-portable.exe"
-            Write-Host "signed alarmer-portable.exe"
+          if (Test-Path "tempo-portable.exe") {
+            bunx tauri signer sign "tempo-portable.exe"
+            Write-Host "signed tempo-portable.exe"
           }
 
       # Collect every artifact this platform produced, so the publish job has
@@ -106,18 +76,12 @@ jobs:
       - name: Collect artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: alarmer-${{ matrix.platform }}
+          name: tempo-windows
           path: |
-            alarmer-${{ github.ref_name }}-portable-${{ matrix.platform }}.zip
-            alarmer-${{ github.ref_name }}-portable-${{ matrix.platform }}.zip.sig
-            alarmer-portable.exe
-            alarmer-portable.exe.sig
-            src-tauri/target/release/bundle/**/*.deb
-            src-tauri/target/release/bundle/**/*.AppImage
-            src-tauri/target/release/bundle/**/*.AppImage.sig
-            src-tauri/target/release/bundle/**/*.dmg
-            src-tauri/target/release/bundle/**/*.app.tar.gz
-            src-tauri/target/release/bundle/**/*.app.tar.gz.sig
+            tempo-${{ github.ref_name }}-portable-windows.zip
+            tempo-${{ github.ref_name }}-portable-windows.zip.sig
+            tempo-portable.exe
+            tempo-portable.exe.sig
             src-tauri/target/release/bundle/**/*-setup.exe
             src-tauri/target/release/bundle/**/*-setup.exe.sig
             src-tauri/target/release/bundle/**/*.msi
@@ -170,13 +134,9 @@ jobs:
           const urlOf = (file) =>
             file ? `${base}/${encodeURIComponent(path.basename(file))}` : '';
 
-          // One entry per platform the updater understands, taken from the real
-          // installer artifacts. macOS ships a single universal archive.
+          // One entry per platform the updater understands: Windows installer.
           const targets = [
             { key: 'windows-x86_64', match: (f) => /-setup\.exe$/.test(f) },
-            { key: 'linux-x86_64', match: (f) => /\.AppImage$/.test(f) },
-            { key: 'darwin-x86_64', match: (f) => /\.app\.tar\.gz$/.test(f) },
-            { key: 'darwin-aarch64', match: (f) => /\.app\.tar\.gz$/.test(f) },
           ];
 
           const platforms = {};
@@ -189,11 +149,12 @@ jobs:
           // Portable archives under their own keys, so a portable build can
           // find its own update without running an installer.
           const portable = {};
-          for (const p of ['windows', 'linux', 'macos']) {
-            const file = has(`alarmer-${tag}-portable-${p}.zip`);
-            if (!file) continue;
-            const key = p === 'macos' ? 'darwin-x86_64' : `${p}-x86_64`;
-            portable[key] = { signature: sigOf(file), url: urlOf(file) };
+          const windowsPortable = has(`tempo-${tag}-portable-windows.zip`);
+          if (windowsPortable) {
+            portable['windows-x86_64'] = {
+              signature: sigOf(windowsPortable),
+              url: urlOf(windowsPortable),
+            };
           }
 
           const missing = Object.entries(platforms).filter(([, v]) => !v.signature);
@@ -203,7 +164,7 @@ jobs:
 
           const manifest = {
             version,
-            notes: `Alarmer ${version}`,
+            notes: `Tempo ${version}`,
             pub_date: new Date().toISOString(),
             platforms,
             portable,

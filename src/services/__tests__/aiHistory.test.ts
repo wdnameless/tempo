@@ -5,8 +5,7 @@ import type { SessionRecord } from '../../types';
 function makeSession(overrides: Partial<SessionRecord> = {}): SessionRecord {
   return {
     id: 's1',
-    mode: 'timer',
-    durationSec: 1500,
+    label: 'Focus session',
     focusedSec: 1500,
     startedAt: new Date(2026, 3, 10, 10, 0, 0).toISOString(),
     endedAt: new Date(2026, 3, 10, 10, 25, 0).toISOString(),

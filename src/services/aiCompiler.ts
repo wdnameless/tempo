@@ -1,4 +1,4 @@
-import { AISettings, DynamicUIConfig, AlarmItem, Schedule } from '../types';
+import { AISettings, DynamicUIConfig, AlarmItem } from '../types';
 import { asArray, asBoolean, asNumber, asString, isRecord, oneOf } from '../types/guards';
 import { AIGateway } from './aiGateway';
 import type { HistoryDigest } from './aiHistory';
@@ -54,8 +54,6 @@ function isLocalUiCommand(lowerPrompt: string): boolean {
   return hasAction && hasTarget;
 }
 
-/** A parsed draft carries the pasted text and the assistant note for the card. */
-export type ScheduleDraft = Schedule & { sourceText: string; note: string };
 
 export interface DirectionDraft {
   name: string;
@@ -78,11 +76,6 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   mutation?: AIPlatformMutation;
-  /**
-   * Present when this message carries a parsed schedule awaiting confirmation.
-   * The user reviews it as a card and saves it in one action.
-   */
-  scheduleDraft?: ScheduleDraft;
 }
 
 /**

@@ -77,26 +77,26 @@ export const ResizeHandles: React.FC = () => {
       {/* Right border */}
       <div
         onPointerDown={handleResizeDrag('right')}
-        className="absolute top-3 bottom-3 right-0 w-2 cursor-ew-resize hover:bg-white/15 active:bg-white/30 z-50 transition-colors"
+        className="absolute top-3 bottom-3 right-0 w-2 cursor-ew-resize hover:bg-[var(--surface)] active:bg-[var(--elevated)] z-50 transition-colors"
         title="Потяните для изменения ширины"
       />
       {/* Bottom border */}
       <div
         onPointerDown={handleResizeDrag('bottom')}
-        className="absolute left-3 right-3 bottom-0 h-2 cursor-ns-resize hover:bg-white/15 active:bg-white/30 z-50 transition-colors"
+        className="absolute left-3 right-3 bottom-0 h-2 cursor-ns-resize hover:bg-[var(--surface)] active:bg-[var(--elevated)] z-50 transition-colors"
         title="Потяните для изменения высоты"
       />
       {/* Bottom-Right corner */}
       <div
         onPointerDown={handleResizeDrag('bottom-right')}
-        className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-50 flex items-end justify-end p-1 hover:bg-white/20 active:bg-white/40 rounded-br-2xl transition-colors group"
+        className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-50 flex items-end justify-end p-1 hover:bg-[var(--surface)] active:bg-[var(--elevated)] rounded-br-2xl transition-colors group"
         title="Потяните угол для свободного масштабирования"
       >
         <svg
           width="8"
           height="8"
           viewBox="0 0 8 8"
-          className="text-white/30 group-hover:text-white/80 transition-colors"
+          className="text-[var(--text-faint)] group-hover:text-[var(--text-muted)] transition-colors"
         >
           <path d="M7 1L1 7M7 4L4 7M7 7H7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>

@@ -59,12 +59,15 @@ pub fn stage(bytes: Vec<u8>) -> Result<PathBuf, String> {
                 .by_index(i)
                 .map_err(|e| format!("cannot read file in zip archive: {e}"))?;
             let name = file.name().to_string();
-            // Match either the exact exe name or common names like alarmer / alarmer.exe
+            // The exe-name matching must accept both tempo / tempo.exe AND legacy alarmer / alarmer.exe
+            // so in-flight updates across the product rename find their binary.
             let is_match = name.ends_with(&target_name)
+                || name.ends_with("tempo.exe")
+                || name.ends_with("/tempo")
+                || name == "tempo"
                 || name.ends_with("alarmer.exe")
                 || name.ends_with("/alarmer")
                 || name == "alarmer";
-
             if is_match && !name.ends_with('/') {
                 let mut out = std::fs::File::create(&staged)
                     .map_err(|e| format!("cannot write extracted binary: {e}"))?;
@@ -113,7 +116,7 @@ pub fn launch_swap_and_restart() -> Result<(), String> {
             staged = staged.display(),
             dest = dir.join(&exe).display(),
         );
-        let script_path = dir.join("alarmer-update.ps1");
+        let script_path = dir.join("tempo-update.ps1");
         std::fs::write(&script_path, script)
             .map_err(|e| format!("cannot write the update helper: {e}"))?;
 
@@ -137,7 +140,7 @@ pub fn launch_swap_and_restart() -> Result<(), String> {
             staged = staged.display(),
             dest = dir.join(&exe).display(),
         );
-        let script_path = dir.join("alarmer-update.sh");
+        let script_path = dir.join("tempo-update.sh");
         std::fs::write(&script_path, script)
             .map_err(|e| format!("cannot write the update helper: {e}"))?;
 
@@ -237,9 +240,9 @@ pub fn has_staged_update() -> bool {
 const PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ3NzBCNDFGRDUyMjE3NjEKUldSaEZ5TFZIN1J3UnpZV2pWWmhTeXdiWmVZMlpZdFJnbnVGSFEyS1lBb1lxa0FIRVVHY3ZBak8K";
 
 /// Where the release manifest lives. Same file the installed build reads.
+/// Kept on wdnameless/Alarmer because the GitHub repository is not being renamed.
 const MANIFEST_URL: &str =
     "https://github.com/wdnameless/Alarmer/releases/latest/download/latest.json";
-
 /// Decodes the public key Tauri ships (base64 of a minisign `key` file).
 fn decode_public_key() -> Result<minisign_verify::PublicKey, String> {
     let raw = base64::engine::general_purpose::STANDARD
@@ -377,7 +380,7 @@ mod tests {
     /// the custom `portable` section.
     const MANIFEST: &str = r#"{
       "version": "0.2.0",
-      "notes": "Alarmer 0.2.0",
+      "notes": "Tempo 0.2.0",
       "pub_date": "2026-09-17T08:00:00Z",
       "platforms": {
         "windows-x86_64": { "signature": "sig", "url": "https://example.test/a.exe" },
@@ -426,6 +429,7 @@ mod tests {
 
     #[test]
     fn the_environment_variable_marks_a_portable_build() {
+        // ALARMER_PORTABLE is the legacy environment variable supported alongside TEMPO_PORTABLE.
         // Set and removed around the check so the test does not leak state.
         std::env::set_var("ALARMER_PORTABLE", "1");
         assert!(is_portable());
@@ -457,8 +461,26 @@ mod tests {
         {
             let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
             let options = zip::write::SimpleFileOptions::default();
-            zip.start_file("alarmer/alarmer.exe", options).unwrap();
+            // Portable archives now use tempo/tempo.exe
+            zip.start_file("tempo/tempo.exe", options).unwrap();
             zip.write_all(b"fake-exe-content").unwrap();
+            zip.start_file("tempo/portable", options).unwrap();
+            zip.write_all(b"").unwrap();
+            zip.finish().unwrap();
+        }
+        assert!(buf.len() >= 4 && &buf[0..4] == b"PK\x03\x04");
+    }
+
+    #[test]
+    fn stage_extracts_legacy_binary_from_zip_archive() {
+        use std::io::Write;
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            let options = zip::write::SimpleFileOptions::default();
+            // Legacy archives used alarmer/alarmer.exe
+            zip.start_file("alarmer/alarmer.exe", options).unwrap();
+            zip.write_all(b"legacy-exe-content").unwrap();
             zip.start_file("alarmer/portable", options).unwrap();
             zip.write_all(b"").unwrap();
             zip.finish().unwrap();

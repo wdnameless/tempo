@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Plus, Trash2, Pin, PinOff, Edit3 } from 'lucide-react';
-import type { AlarmItem, NoteItem, Schedule, ThemeColors } from '../types';
+import type { AlarmItem, NoteItem, ThemeColors } from '../types';
 import { renderMarkdown } from '../services/markdown';
 import { soundService } from '../services/sound';
 
@@ -8,8 +8,7 @@ interface NotesViewProps {
   theme: ThemeColors;
   notes: NoteItem[];
   onUpdateNotes: (notes: NoteItem[]) => void;
-  alarms: AlarmItem[];
-  schedules: Schedule[];
+  alarms?: AlarmItem[];
 }
 
 let noteSeq = 0;
@@ -21,7 +20,6 @@ function createNoteId(): string {
 /** Human label for what a note is attached to. */
 function attachmentLabel(note: NoteItem): string | null {
   if (note.alarmId) return 'будильник';
-  if (note.stepId) return 'шаг программы';
   return null;
 }
 
@@ -37,8 +35,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
   theme,
   notes,
   onUpdateNotes,
-  alarms,
-  schedules,
+  alarms = [],
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -62,9 +59,7 @@ export const NotesView: React.FC<NotesViewProps> = ({
     setEditingId(note ? note.id : 'new');
     setTitle(note?.title ?? '');
     setBody(note?.body ?? '');
-    setAttachTo(note?.alarmId ? `alarm:${note.alarmId}`
-      : note?.stepId ? `step:${note.scheduleId}:${note.stepId}`
-      : 'none');
+    setAttachTo(note?.alarmId ? `alarm:${note.alarmId}` : 'none');
   };
 
   const save = () => {
@@ -112,32 +107,21 @@ export const NotesView: React.FC<NotesViewProps> = ({
     onUpdateNotes(notes.map((n) => (n.id === id ? { ...n, pinned: !n.pinned } : n)));
   };
 
-  /** "none" | "alarm:<id>" | "step:<scheduleId>:<stepId>" → attachment fields. */
-  function parseAttachment(value: string): Pick<NoteItem, 'alarmId' | 'scheduleId' | 'stepId'> {
-    if (value === 'none') return { alarmId: undefined, scheduleId: undefined, stepId: undefined };
-    const parts = value.split(':');
-    if (parts[0] === 'alarm') return { alarmId: parts[1], scheduleId: undefined, stepId: undefined };
-    if (parts[0] === 'step') {
-      return { alarmId: undefined, scheduleId: parts[1], stepId: parts.slice(2).join(':') };
+  /** "none" | "alarm:<id>" → attachment fields. */
+  function parseAttachment(value: string): Pick<NoteItem, 'alarmId' | 'scheduleId'> {
+    if (value.startsWith('alarm:')) {
+      return { alarmId: value.slice('alarm:'.length), scheduleId: undefined };
     }
-    return { alarmId: undefined, scheduleId: undefined, stepId: undefined };
+    return { alarmId: undefined, scheduleId: undefined };
   }
 
   const attachOptions = useMemo(() => {
     const options: Array<{ value: string; label: string }> = [{ value: 'none', label: 'Без привязки' }];
     for (const alarm of alarms) {
-      options.push({ value: `alarm:${alarm.id}`, label: `Будильник · ${alarm.label || alarm.title}` });
-    }
-    for (const schedule of schedules) {
-      for (const step of schedule.steps) {
-        options.push({
-          value: `step:${schedule.id}:${step.id}`,
-          label: `${schedule.name} · ${step.label}`,
-        });
-      }
+      options.push({ value: `alarm:${alarm.id}`, label: `Будильник · ${alarm.label || alarm.title || alarm.time}` });
     }
     return options;
-  }, [alarms, schedules]);
+  }, [alarms]);
 
   return (
     <div className="flex flex-col w-full max-w-[340px] px-1 space-y-3">

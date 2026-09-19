@@ -15,6 +15,7 @@ mod credentials;
 mod portable_update;
 mod scheduler;
 mod timer;
+pub mod storage;
 
 /// Whether this build keeps its data beside the executable.
 #[tauri::command]
@@ -310,7 +311,7 @@ async fn toggle_mini_overlay(app: tauri::AppHandle, open: Option<bool>) -> Resul
         LABEL,
         tauri::WebviewUrl::App("index.html?window=mini-overlay".into()),
     )
-    .title("Alarmer — Мини")
+    .title("Tempo — Мини")
     .inner_size(200.0, 100.0)
     .position(x, y)
     .resizable(false)
@@ -461,6 +462,7 @@ pub fn has_portable_marker() -> bool {
     is_portable_running()
 }
 
+
 /// Passed to the executable when the OS starts it, so the app can come up in the
 /// tray instead of throwing a window at someone who has not asked for one.
 const START_MINIMIZED_FLAG: &str = "--minimized";
@@ -483,6 +485,7 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .manage(storage::DbState(std::sync::Mutex::new(None)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -527,10 +530,23 @@ pub fn run() {
             timer::timer_get_state,
             register_shortcuts,
             toggle_mini_overlay,
+            storage::db_path,
+            storage::db_ready,
+            storage::db_list,
+            storage::db_get,
+            storage::db_insert,
+            storage::db_update,
+            storage::db_delete,
+            storage::db_changed_since,
+            storage::db_pref_get,
+            storage::db_pref_set,
+            storage::db_search,
+            storage::db_reindex,
+            storage::load_legacy_store,
         ])
         .setup(|app| {
             // Build Tray Menu
-            let show_i = MenuItem::with_id(app, "show", "Показать Alarmer", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Показать Tempo", true, None::<&str>)?;
             let hide_i = MenuItem::with_id(app, "hide", "Скрыть в трей", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &hide_i, &quit_i])?;
@@ -540,7 +556,7 @@ pub fn run() {
             // Setup Tray Icon
             let mut builder = TrayIconBuilder::new()
                 .menu(&menu)
-                .tooltip("Alarmer — Умный будильник и таймер");
+                .tooltip("Tempo — Умный таймер");
             let hourglass_bytes = include_bytes!("../icons/icon.ico");
             if let Ok(icon) = tauri::image::Image::from_bytes(hourglass_bytes) {
                 builder = builder.icon(icon.clone());

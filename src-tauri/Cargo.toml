@@ -1,8 +1,8 @@
 [package]
-name = "alarmer"
+name = "tempo"
 version = "0.3.3"
-description = "Alarmer backend: alarm scheduler, countdown timer, alarm audio and AI gateway"
-authors = ["Alarmer"]
+description = "Tempo backend: alarm scheduler, countdown timer, alarm audio and AI gateway"
+authors = ["Tempo"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -11,7 +11,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "alarmer_lib"
+name = "tempo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -44,6 +44,8 @@ tauri-plugin-updater = "2.11.0"
 tauri-plugin-process = "2.3.1"
 minisign-verify = "0.2"
 zip = { version = "4.6.1", default-features = false, features = ["deflate"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

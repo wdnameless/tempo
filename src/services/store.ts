@@ -1,636 +1,652 @@
-import { LazyStore } from '@tauri-apps/plugin-store';
-import { invoke } from '@tauri-apps/api/core';
-import { DEFAULT_AI_SETTINGS, DEFAULT_SCHEDULES } from '../constants/defaults';
-import { DEFAULT_DYNAMIC_UI, DynamicUIConfig } from '../types/dynamicUi';
-import { DIRECTION_COLORS, Direction } from '../types/focus';
-import { AISettings, AlarmItem, Schedule, ScheduleStep, ExerciseStep, TaskItem, SessionRecord, NoteItem } from '../types';
-import { asArray, asBoolean, asNumber, asString, isRecord, oneOf } from '../types/guards';
-
 /**
- * Persistence layer for the whole application.
+ * Bridge layer for StoreService.
  *
- * Backs onto the native Tauri store file (survives WebView cache clears, unlike
- * localStorage) and falls back to localStorage when running in a plain browser
- * so the dev server keeps working.
- *
- * Every value is read through `hydrate()` / validated before use, and imports go
- * through the same sanitiser — a corrupted or stale file can never crash the
- * render tree.
+ * NOTE: This file is a temporary migration bridge that redirects legacy
+ * StoreService calls to the SQLite database and settings layer.
+ * This file will be deleted in the wave where its last consumer goes.
  */
 
-export const SCHEMA_VERSION = 6;
+import { invoke } from '@tauri-apps/api/core';
+import type {
+  AlarmItem,
+  TaskItem,
+  SessionRecord,
+  AISettings,
+  NoteItem,
+  ChatMessage,
+} from '../types';
+import { asString, asNumber, isRecord } from '../types/guards';
+import { repo, type EntityMeta } from './db';
+import { DEFAULT_DYNAMIC_UI, type DynamicUIConfig } from '../types/dynamicUi';
+import { getPref, setPref, subscribePrefs, resetSettingsCacheForTesting } from './settings';
 
-const STORE_FILE = 'alarmer.json';
+export interface TaskRow extends EntityMeta {
+  title: string;
+  note: string | null;
+  status: string;
+  list_id: string | null;
+  parent_id: string | null;
+  priority: number;
+  due_date: string | null;
+  start_at: string | null;
+  planned_minutes: number | null;
+  completed_at: string | null;
+  position: number | null;
+}
 
-export interface StoredChatMessage {
-  id: string;
-  sender: string;
-  text: string;
-  timestamp: string;
+export interface AlarmRow extends EntityMeta {
+  label: string;
+  time: string;
+  days: string;
+  repeat: string;
+  enabled: number;
+  sound: string;
+  voice_prompt: string | null;
+  note: string | null;
+  duration_minutes: number;
+}
+
+export interface NoteRow extends EntityMeta {
+  title: string;
+  body_md: string;
+  pinned: number;
+}
+
+export interface ChatMessageRow extends EntityMeta {
+  role: string;
+  content: string;
+  created_at?: string;
 }
 
 export interface PersistedState {
   schemaVersion: number;
   alarms: AlarmItem[];
-  schedules: Schedule[];
   tasks: TaskItem[];
   sessions: SessionRecord[];
   aiSettings: AISettings;
+  /**
+   * The dial/typography/layout config the timer and the radial dial read.
+   *
+   * Shell state (which screen is open, whether the sidebar is collapsed, the
+   * accent) is NOT here: it lives in `preferences` under its own keys, because
+   * those are read during render before this object is hydrated.
+   */
   dynamicUi: DynamicUIConfig;
-  chatMessages: StoredChatMessage[];
+  chatMessages: ChatMessage[];
   preferences: Record<string, unknown>;
   notes: NoteItem[];
-  /** Areas of focus with weekly block budgets. */
-  directions: Direction[];
 }
 
-
-export const PREFERENCE_KEYS = [
-  'alarmer_click_volume',
-  'alarmer_alarm_volume',
-  'alarmer_voice_volume',
-  'alarmer_ui_clicks',
-  'alarmer_countdown_ticks',
-  'alarmer_clock_tick',
-  'alarmer_sound_profile',
-  'alarmer_voice_id',
-  'alarmer_left_pane_width',
-  'alarmer_custom_alarm_sound',
-  'alarmer_custom_alarm_filename',
-  'alarmer_lang',
-  'alarmer_theme',
-  'alarmer_alarm_enabled',
-  'alarmer_timer_mode',
-  'alarmer_window_width',
-  'alarmer_window_height',
-  'alarmer_clock_style',
-  'alarmer_sidebar_collapsed',
-  'alarmer_dashboard_widgets',
-] as const;
-
-let storePromise: Promise<LazyStore> | null = null;
-let cache: PersistedState | null = null;
-
-function isTauri(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-}
-
-function getStore(): Promise<LazyStore> {
-  if (!storePromise) {
-    storePromise = (async () => {
-      // A portable build keeps the data file beside the executable, so the store
-      // path comes from the backend, which knows where the binary actually lives.
-      let path = STORE_FILE;
-      try {
-        if (isTauri()) {
-          const dir = await invoke<string>('store_dir');
-          path = `${dir}/${STORE_FILE}`;
-        }
-      } catch (e) {
-        console.warn('Could not resolve the store directory; using the default location:', e);
-      }
-      return new LazyStore(path);
-    })();
-  }
-  return storePromise;
-}
-
-function sanitizeAlarm(raw: unknown, index: number): AlarmItem | null {
-  if (!isRecord(raw)) return null;
-  const time = asString(raw.time, '');
-  if (!/^\d{1,2}:\d{2}$/.test(time)) return null;
-  const label = asString(raw.label, asString(raw.title, 'Будильник'));
-  const days = asArray<unknown>(raw.days, [1, 2, 3, 4, 5]).filter(
-    (d): d is number => typeof d === 'number' && d >= 0 && d <= 6,
-  );
-  // Files written before `repeat` existed used an empty day list for a one-off
-  // and a populated one for specific days. Reading them back that way keeps an
-  // existing one-off alarm a one-off instead of arming it daily.
-  const repeat = oneOf(
-    raw.repeat,
-    ['once', 'daily', 'days'] as const,
-    days.length === 0 ? 'once' : 'days',
-  );
-  // `days` mode with no days matches no weekday at all: the alarm would sit in
-  // the list labelled "Каждый день" and never ring. Such a file is healed into
-  // a daily alarm rather than left silently broken.
-  const healedRepeat = repeat === 'days' && days.length === 0 ? 'daily' : repeat;
-  return {
-    id: asString(raw.id, `alarm_${index}`),
-    title: asString(raw.title, label),
-    label,
-    time: time.padStart(5, '0'),
-    days,
-    repeat: healedRepeat,
-    note: typeof raw.note === 'string' ? raw.note : undefined,
-    enabled: asBoolean(raw.enabled, true),
-    sound: asString(raw.sound, 'gentle'),
-    voicePrompt: typeof raw.voicePrompt === 'string' ? raw.voicePrompt : undefined,
-    voiceAnnouncement: typeof raw.voiceAnnouncement === 'string' ? raw.voiceAnnouncement : undefined,
-    scheduleId: typeof raw.scheduleId === 'string' ? raw.scheduleId : undefined,
-  };
-}
-
-/**
- * Reads the model connection settings.
- *
- * The API key that used to live here is deliberately not carried over. Keeping
- * it worked against the reason it was moved out: this file is exactly what the
- * app exports as a backup, so a key still in it travels to whoever receives that
- * export — and through any bug report that happens to include the file. The key
- * now lives in the OS credential store, and a legacy one is cleared here rather
- * than left behind. `StoreService.hydrate` hands it to the credential store
- * first, so the user does not have to type it again.
- */
-function sanitizeAiSettings(raw: unknown): AISettings {
-  if (!isRecord(raw)) return { ...DEFAULT_AI_SETTINGS };
-  return {
-    apiKey: '',
-    baseUrl: asString(raw.baseUrl, DEFAULT_AI_SETTINGS.baseUrl),
-    model: asString(raw.model, DEFAULT_AI_SETTINGS.model),
-    systemPrompt: typeof raw.systemPrompt === 'string' ? raw.systemPrompt : undefined,
-    enabled: asBoolean(raw.enabled, true),
-    autoAdjustIntervals: asBoolean(raw.autoAdjustIntervals, false),
-  };
-}
-
-/** A key left in a plaintext file by a version that stored it there. */
-export function legacyApiKey(raw: unknown): string | null {
-  if (!isRecord(raw) || !isRecord(raw.aiSettings)) return null;
-  const key = raw.aiSettings.apiKey;
-  return typeof key === 'string' && key.trim().length > 0 ? key : null;
-}
-
-function sanitizeNote(raw: unknown, index: number): NoteItem | null {
-  if (!isRecord(raw)) return null;
-  const body = asString(raw.body, '');
-  const title = asString(raw.title, '');
-  // A note with neither title nor body is nothing to keep.
-  if (!body.trim() && !title.trim()) return null;
-  return {
-    id: asString(raw.id, `note_${index}`),
-    title,
-    body,
-    alarmId: typeof raw.alarmId === 'string' ? raw.alarmId : undefined,
-    scheduleId: typeof raw.scheduleId === 'string' ? raw.scheduleId : undefined,
-    stepId: typeof raw.stepId === 'string' ? raw.stepId : undefined,
-    pinned: asBoolean(raw.pinned, false),
-    createdAt: asString(raw.createdAt, new Date().toISOString()),
-    updatedAt: asString(raw.updatedAt, new Date().toISOString()),
-  };
-}
-
-/**
- * Copies only the keys that are present and are strings.
- *
- * Used for override maps where a missing key means "inherit", so absent keys
- * must stay absent rather than being filled with a default.
- */
-function pickStrings(
-  source: Record<string, unknown>,
-  keys: readonly string[],
-): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const key of keys) {
-    const value = source[key];
-    if (typeof value === 'string' && value.trim() !== '') out[key] = value;
-  }
-  return out;
-}
-
-/**
- * The palette that `DEFAULT_DYNAMIC_UI.colors` used to ship, byte for byte.
- *
- * Kept only so the v5 migration can recognise it on disk. Values matching these
- * were never a choice the user made — they were the default that overrode every
- * theme — so they are dropped on sight.
- */
-const LEGACY_DEFAULT_COLORS: Record<string, string> = {
-  bg: '#050505',
-  surface: '#0a0a0a',
-  cardBg: '#0f0f0f',
-  border: '#27272a',
-  text: '#fafafa',
-  subtext: '#a1a1aa',
-  accent: '#ff7a1a',
-  accentGlow: 'rgba(255, 122, 26, 0.28)',
-  ringTrack: '#1c1c1f',
-  ringProgress: '#ff7a1a',
-  ticks: '#3f3f46',
+export const DEFAULT_AI_SETTINGS: AISettings = {
+  apiKey: '',
+  baseUrl: 'https://api.openai.com/v1',
+  model: 'gpt-4o-mini',
+  systemPrompt: 'You are an AI assistant helping with time management.',
+  enabled: false,
+  autoAdjustIntervals: false,
 };
 
-/**
- * Drops overrides that only repeat the old shipped default.
- *
- * A colour the user genuinely picked (via the AI) differs from the default and
- * survives; the untouched default does not.
- */
-function dropLegacyDefaultColors(
-  colors: DynamicUIConfig['colors'],
-): DynamicUIConfig['colors'] {
-  const out: DynamicUIConfig['colors'] = {};
-  for (const [key, value] of Object.entries(colors)) {
-    if (value === undefined) continue;
-    if (LEGACY_DEFAULT_COLORS[key] === value) continue;
-    (out as Record<string, string>)[key] = value;
-  }
-  return out;
-}
+export const DEFAULT_STATE: PersistedState = {
+  schemaVersion: 1,
+  alarms: [],
+  tasks: [],
+  sessions: [],
+  aiSettings: DEFAULT_AI_SETTINGS,
+  dynamicUi: DEFAULT_DYNAMIC_UI,
+  chatMessages: [],
+  preferences: {},
+  notes: [],
+};
 
-function sanitizeDynamicUi(raw: unknown): DynamicUIConfig {
-  const base = DEFAULT_DYNAMIC_UI;
-  if (!isRecord(raw)) return structuredClone(base);
-  const colors = isRecord(raw.colors) ? raw.colors : {};
-  const dial = isRecord(raw.dial) ? raw.dial : {};
-  const typography = isRecord(raw.typography) ? raw.typography : {};
-  const layout = isRecord(raw.layout) ? raw.layout : {};
+// Row ↔ Entity Pure Mappers
 
-  return {
-    // Only colours the file actually sets survive. Filling the gaps with
-    // defaults here is exactly how a stale Winter palette got re-stamped onto
-    // every user's config and overrode their theme choice.
-    colors: pickStrings(colors, [
-      'bg', 'surface', 'cardBg', 'border', 'text', 'subtext',
-      'accent', 'accentGlow', 'ringTrack', 'ringProgress', 'ticks',
-    ]),
-    typography: {
-      fontFamily: asString(typography.fontFamily, base.typography.fontFamily),
-      timeScale: asNumber(typography.timeScale, base.typography.timeScale),
-    },
-    dial: {
-      size: asNumber(dial.size, base.dial.size),
-      showTicks: asBoolean(dial.showTicks, base.dial.showTicks),
-      tickLength: oneOf(dial.tickLength, ['short', 'normal', 'long'] as const, base.dial.tickLength),
-      glowIntensity: oneOf(
-        dial.glowIntensity,
-        ['none', 'subtle', 'high'] as const,
-        base.dial.glowIntensity,
-      ),
-      stylePreset: oneOf(
-        dial.stylePreset,
-        ['neon', 'vintage', 'chronograph', 'minimal'] as const,
-        base.dial.stylePreset ?? 'neon',
-      ),
-    },
-    layout: {
-      showPresetButtons: asBoolean(layout.showPresetButtons, base.layout.showPresetButtons),
-      showSubtimer: asBoolean(layout.showSubtimer, base.layout.showSubtimer),
-      buttonStyle: oneOf(
-        layout.buttonStyle,
-        ['rounded', 'square', 'pill'] as const,
-        base.layout.buttonStyle,
-      ),
-      contentAlignment: oneOf(
-        layout.contentAlignment,
-        ['center', 'top', 'compact'] as const,
-        base.layout.contentAlignment,
-      ),
-      showSleepButton: asBoolean(layout.showSleepButton, true),
-      showAiScheduleButton: asBoolean(layout.showAiScheduleButton, true),
-      showCurrentTimeBadge: asBoolean(layout.showCurrentTimeBadge, true),
-    },
-  };
-}
+export function taskFromRow(rawRow: Partial<TaskRow> | Record<string, unknown>): TaskItem {
+  const row = rawRow as Record<string, unknown>;
+  const status = asString(row.status, 'open');
+  const priority = typeof row.priority === 'number' ? row.priority : 0;
+  void priority;
+  const dueDate = row.due_date != null ? asString(row.due_date, '') : undefined;
+  void dueDate;
+  const startAt = row.start_at != null ? asString(row.start_at, '') : undefined;
+  void startAt;
+  const plannedMinutes = typeof row.planned_minutes === 'number' ? row.planned_minutes : undefined;
+  void plannedMinutes;
 
-function sanitizeExercise(raw: unknown, index: number): ExerciseStep | null {
-  if (!isRecord(raw)) return null;
-  const duration = asNumber(raw.durationSec, 0);
-  if (duration <= 0) return null;
-  const name = asString(raw.name, `Упражнение ${index + 1}`);
-  return {
-    id: asString(raw.id, `ex_${index}`),
-    name,
-    durationSec: Math.round(duration),
-    kind: oneOf(raw.kind, ['work', 'rest', 'prepare', 'cooldown'] as const, 'work'),
-    voicePrompt: typeof raw.voicePrompt === 'string' ? raw.voicePrompt : undefined,
-  };
-}
-
-function sanitizeStep(raw: unknown, index: number): ScheduleStep | null {
-  if (!isRecord(raw)) return null;
-  const time = asString(raw.time, '');
-  if (!/^\d{1,2}:\d{2}$/.test(time)) return null;
-  const normalizedTime = time.padStart(5, '0');
-  const label = asString(raw.label, `Шаг ${index + 1}`);
-  const voicePrompt = typeof raw.voicePrompt === 'string' ? raw.voicePrompt : undefined;
-
-  if (raw.kind === 'block') {
-    const exercises = asArray<unknown>(raw.exercises, [])
-      .map(sanitizeExercise)
-      .filter((e): e is ExerciseStep => e !== null);
-    // A block with no usable exercises is not a block.
-    if (exercises.length === 0) return null;
-    return {
-      id: asString(raw.id, `step_${index}`),
-      kind: 'block',
-      time: normalizedTime,
-      label,
-      exercises,
-      voicePrompt,
-      note: typeof raw.note === 'string' ? raw.note : undefined,
+  let timer: TaskItem['timer'] = undefined;
+  if (isRecord(row.timer)) {
+    const rawTimer = row.timer;
+    timer = {
+      enabled: typeof rawTimer.enabled === 'boolean' ? rawTimer.enabled : false,
+      type: rawTimer.type === 'time' ? 'time' : 'interval',
+      intervalMinutes: typeof rawTimer.intervalMinutes === 'number' ? rawTimer.intervalMinutes : undefined,
+      time: typeof rawTimer.time === 'string' ? rawTimer.time : undefined,
+      sound: typeof rawTimer.sound === 'string' ? rawTimer.sound : undefined,
+      voicePrompt: typeof rawTimer.voicePrompt === 'string' ? rawTimer.voicePrompt : undefined,
     };
   }
 
+  const updatedAt = asString(row.updated_at, new Date().toISOString());
+  const createdAt = asString(row.created_at, asString(row.createdAt, updatedAt));
+
   return {
-    id: asString(raw.id, `step_${index}`),
-    kind: 'moment',
-    time: normalizedTime,
+    id: asString(row.id, ''),
+    title: asString(row.title, ''),
+    note: typeof row.note === 'string' ? row.note : undefined,
+    done: status === 'done',
+    timer,
+    createdAt,
+    completedAt:
+      typeof row.completed_at === 'string'
+        ? row.completed_at
+        : typeof row.completedAt === 'string'
+          ? row.completedAt
+          : undefined,
+  };
+}
+
+export function taskToRow(task: TaskItem): Omit<TaskRow, keyof EntityMeta> & { id?: string } {
+  const status = task.done ? 'done' : 'open';
+  const priority = 0;
+  const dueDate = null;
+  const startAt = null;
+  const plannedMinutes = null;
+
+  return {
+    ...(task.id ? { id: task.id } : {}),
+    title: task.title,
+    note: task.note || null,
+    status,
+    list_id: null,
+    parent_id: null,
+    priority,
+    due_date: dueDate,
+    start_at: startAt,
+    planned_minutes: plannedMinutes,
+    completed_at: task.completedAt || null,
+    position: null,
+  };
+}
+
+export function alarmFromRow(rawRow: Partial<AlarmRow> | Record<string, unknown>): AlarmItem {
+  const row = rawRow as Record<string, unknown>;
+  const durationMinutes = asNumber(row.duration_minutes, asNumber(row.durationMinutes, 0));
+  void durationMinutes;
+
+  const rawDays = row.days;
+  let days: number[] = [];
+  if (Array.isArray(rawDays)) {
+    days = rawDays.map((d) => Number(d)).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+  } else if (typeof rawDays === 'string') {
+    try {
+      const parsed = JSON.parse(rawDays);
+      if (Array.isArray(parsed)) {
+        days = parsed.map((d) => Number(d)).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+      }
+    } catch {
+      days = [];
+    }
+  }
+
+  const repeatRaw = asString(row.repeat, '');
+  let repeat: 'once' | 'daily' | 'days' = 'once';
+  if (repeatRaw === 'daily' || repeatRaw === 'days' || repeatRaw === 'once') {
+    repeat = repeatRaw;
+  } else if (days.length > 0) {
+    repeat = 'days';
+  }
+
+  const label = asString(row.label, asString(row.title, ''));
+
+  return {
+    id: asString(row.id, ''),
+    title: label,
     label,
-    voicePrompt,
-    sound: typeof raw.sound === 'string' ? raw.sound : undefined,
-    note: typeof raw.note === 'string' ? raw.note : undefined,
+    time: asString(row.time, '00:00'),
+    days,
+    repeat,
+    enabled: typeof row.enabled === 'boolean' ? row.enabled : row.enabled === 1 || row.enabled === '1',
+    sound: asString(row.sound, 'gentle'),
+    voicePrompt:
+      typeof row.voice_prompt === 'string'
+        ? row.voice_prompt
+        : typeof row.voicePrompt === 'string'
+          ? row.voicePrompt
+          : undefined,
+    voiceAnnouncement:
+      typeof row.voice_announcement === 'string'
+        ? row.voice_announcement
+        : typeof row.voiceAnnouncement === 'string'
+          ? row.voiceAnnouncement
+          : undefined,
+    note: typeof row.note === 'string' ? row.note : undefined,
+    scheduleId:
+      typeof row.schedule_id === 'string'
+        ? row.schedule_id
+        : typeof row.scheduleId === 'string'
+          ? row.scheduleId
+          : undefined,
   };
 }
 
-function sanitizeSchedule(raw: unknown, index: number): Schedule | null {
-  if (!isRecord(raw)) return null;
-  const name = asString(raw.name, '');
-  if (!name) return null;
-  const steps = asArray<unknown>(raw.steps, [])
-    .map(sanitizeStep)
-    .filter((s): s is ScheduleStep => s !== null);
-  if (steps.length === 0) return null;
-
+export function alarmToRow(alarm: AlarmItem): Omit<AlarmRow, keyof EntityMeta> & { id?: string } {
+  const durationMinutes = 0;
   return {
-    id: asString(raw.id, `sched_${index}`),
-    name,
-    days: asArray<unknown>(raw.days, [])
-      .filter((d): d is number => typeof d === 'number' && d >= 0 && d <= 6),
-    enabled: asBoolean(raw.enabled, true),
-    steps,
-    sourceText: typeof raw.sourceText === 'string' ? raw.sourceText : undefined,
-    createdAt: asString(raw.createdAt, new Date().toISOString()),
+    ...(alarm.id ? { id: alarm.id } : {}),
+    label: alarm.title || alarm.label || '',
+    time: alarm.time,
+    days: JSON.stringify(alarm.days || []),
+    repeat: alarm.repeat,
+    enabled: alarm.enabled ? 1 : 0,
+    sound: alarm.sound || 'gentle',
+    voice_prompt: alarm.voicePrompt || null,
+    note: alarm.note || null,
+    duration_minutes: durationMinutes,
   };
 }
 
-function sanitizeMessages(raw: unknown): StoredChatMessage[] {
-  return asArray<unknown>(raw, [])
-    .filter(isRecord)
-    .map((m, i) => ({
-      id: asString(m.id, `msg_${i}`),
-      sender: asString(m.sender, 'assistant'),
-      text: asString(m.text, ''),
-      timestamp: asString(m.timestamp, ''),
-    }))
-    .filter((m) => m.text.length > 0);
-}
-
-function sanitizeTask(raw: unknown, index: number): TaskItem | null {
-  if (!isRecord(raw)) return null;
-  const title = asString(raw.title, '').trim();
-  if (!title) return null;
+export function noteFromRow(rawRow: Partial<NoteRow> | Record<string, unknown>): NoteItem {
+  const row = rawRow as Record<string, unknown>;
+  const updatedAt = asString(row.updated_at, asString(row.updatedAt, new Date().toISOString()));
+  const createdAt = asString(row.created_at, asString(row.createdAt, updatedAt));
   return {
-    id: asString(raw.id, `task_${index}`),
-    title,
-    note: typeof raw.note === 'string' ? raw.note : undefined,
-    done: asBoolean(raw.done, false),
-    stepId: typeof raw.stepId === 'string' ? raw.stepId : undefined,
-    scheduleId: typeof raw.scheduleId === 'string' ? raw.scheduleId : undefined,
-    createdAt: asString(raw.createdAt, new Date().toISOString()),
-    completedAt: typeof raw.completedAt === 'string' ? raw.completedAt : undefined,
+    id: asString(row.id, ''),
+    title: asString(row.title, ''),
+    body: asString(row.body_md, asString(row.body, '')),
+    pinned: typeof row.pinned === 'boolean' ? row.pinned : row.pinned === 1 || row.pinned === '1',
+    createdAt,
+    updatedAt,
+    alarmId:
+      typeof row.alarm_id === 'string'
+        ? row.alarm_id
+        : typeof row.alarmId === 'string'
+          ? row.alarmId
+          : undefined,
   };
 }
 
-function sanitizeSession(raw: unknown, index: number): SessionRecord | null {
-  if (!isRecord(raw)) return null;
-  const focused = asNumber(raw.focusedSec, 0);
-  if (focused <= 0) return null;
-
-  // Quality is 1..10 by definition. A stored 0, 42 or "great" is corruption, and
-  // keeping it would skew every average — so it is dropped, not clamped: a
-  // clamped 10 would read as a deliberate top score the user never gave.
-  const quality = asNumber(raw.quality, 0);
-  const hasQuality = Number.isInteger(quality) && quality >= 1 && quality <= 10;
-
-  // Blocks are fractional and non-negative. Absent stays absent.
-  const blocks = asNumber(raw.blocks, -1);
-  const hasBlocks = blocks > 0;
-
+export function noteToRow(note: NoteItem): Omit<NoteRow, keyof EntityMeta> & { id?: string } {
   return {
-    id: asString(raw.id, `session_${index}`),
-    scheduleId: typeof raw.scheduleId === 'string' ? raw.scheduleId : undefined,
-    stepId: typeof raw.stepId === 'string' ? raw.stepId : undefined,
-    label: asString(raw.label, 'Сессия'),
-    focusedSec: Math.round(focused),
-    startedAt: asString(raw.startedAt, new Date().toISOString()),
-    endedAt: asString(raw.endedAt, new Date().toISOString()),
-    completed: asBoolean(raw.completed, true),
-    directionId: typeof raw.directionId === 'string' && raw.directionId !== ''
-      ? raw.directionId
-      : undefined,
-    quality: hasQuality ? quality : undefined,
-    blocks: hasBlocks ? blocks : undefined,
+    ...(note.id ? { id: note.id } : {}),
+    title: note.title,
+    body_md: note.body,
+    pinned: note.pinned ? 1 : 0,
   };
 }
 
-function sanitizeDirection(raw: unknown, index: number): Direction | null {
-  if (!isRecord(raw)) return null;
-  const name = asString(raw.name, '').trim();
-  if (!name) return null;
-  const budget = Math.round(asNumber(raw.weeklyBlockBudget, 0));
+export function chatMessageFromRow(rawRow: Partial<ChatMessageRow> | Record<string, unknown>): ChatMessage {
+  const row = rawRow as Record<string, unknown>;
+  const role = asString(row.role, 'user');
+  const sender: 'user' | 'assistant' | 'system' =
+    role === 'assistant' ? 'assistant' : role === 'system' ? 'system' : 'user';
   return {
-    id: asString(raw.id, `direction_${index}`),
-    name,
-    color: asString(raw.color, DIRECTION_COLORS[index % DIRECTION_COLORS.length]),
-    // A zero-block budget would render every direction permanently over, so the
-    // floor is one block.
-    weeklyBlockBudget: Math.min(200, Math.max(1, budget || 1)),
-    archived: asBoolean(raw.archived, false),
+    id: asString(row.id, ''),
+    sender,
+    text: asString(row.content, asString(row.text, '')),
+    timestamp: asString(row.created_at, asString(row.timestamp, new Date().toISOString())),
   };
 }
+
+export function chatMessageToRow(msg: ChatMessage): Omit<ChatMessageRow, keyof EntityMeta> & { id?: string } {
+  return {
+    ...(msg.id ? { id: msg.id } : {}),
+    role: msg.sender,
+    content: msg.text,
+  };
+}
+
+let cachedSnapshot: PersistedState = { ...DEFAULT_STATE };
+let isHydratedState = false;
+
+// Repos
+const alarmsRepo = repo<AlarmRow>('alarms');
+const tasksRepo = repo<TaskRow>('tasks');
+const notesRepo = repo<NoteRow>('notes');
+const chatRepo = repo<ChatMessageRow>('chat_messages');
 
 /**
- * Brings any stored payload up to the current schema. Unknown or corrupt fields
- * are replaced with defaults rather than propagated.
- *
- * v1 -> v2: introduced `schedules` as the primary object. Existing standalone
- * alarms are preserved as-is so nobody loses the alarms they already rely on.
- *
- * v2 -> v3: added `tasks` and `sessions`. Both start empty: an existing user has
- * no history to import, and inventing one would be a lie in the statistics.
- *
- * v3 -> v4: added `notes`. Also starts empty; the key scrub is unchanged.
- *
- * v5 -> v6: added `directions`. Existing sessions gain no direction and no
- * quality — those fields simply stay absent, so old work counts toward total
- * focus while no budget claims it. Nothing is dropped or back-filled.
- *
- * v4 -> v5: `dynamicUi.colors` became an override layer over the chosen theme.
- * Older files store the entire Winter palette there, which used to be spread
- * over the theme at render time and silently beat it — so every theme button
- * appeared dead. Values that merely repeat the old shipped default are dropped;
- * anything the user (or the AI) actually chose differently is kept.
+ * Migration 0.7: Run once at startup if the database is empty.
+ * Reads legacy JSON and migrates alarms, tasks, notes, chat messages, preferences.
+ * Does NOT delete the legacy file. Schedules and directions are dropped.
  */
-export function migrate(raw: unknown): PersistedState {
-  const record = isRecord(raw) ? raw : {};
-  const version = asNumber(record.schemaVersion, 0);
+export async function runLegacyMigration(): Promise<void> {
+  try {
+    const existingAlarms = await alarmsRepo.all();
+    const existingTasks = await tasksRepo.all();
+    if (existingAlarms.length > 0 || existingTasks.length > 0) {
+      return;
+    }
 
-  const dynamicUi = sanitizeDynamicUi(record.dynamicUi);
-  if (version < 5) {
-    dynamicUi.colors = dropLegacyDefaultColors(dynamicUi.colors);
-  }
-
-  const schedules = asArray<unknown>(record.schedules, [])
-    .map(sanitizeSchedule)
-    .filter((s): s is Schedule => s !== null);
-
-  // A fresh install (or a v1 file with no schedules yet) gets the sample
-  // schedule so the product's core flow is visible on first launch.
-  const withSchedules = schedules.length === 0 && version < 2 ? DEFAULT_SCHEDULES : schedules;
-
-  return {
-    schemaVersion: SCHEMA_VERSION,
-    alarms: asArray<unknown>(record.alarms, [])
-      .map(sanitizeAlarm)
-      .filter((a): a is AlarmItem => a !== null),
-    schedules: withSchedules,
-    tasks: asArray<unknown>(record.tasks, [])
-      .map(sanitizeTask)
-      .filter((t): t is TaskItem => t !== null),
-    sessions: asArray<unknown>(record.sessions, [])
-      .map(sanitizeSession)
-      .filter((s): s is SessionRecord => s !== null),
-    notes: asArray<unknown>(record.notes, [])
-      .map(sanitizeNote)
-      .filter((n): n is NoteItem => n !== null),
-    aiSettings: sanitizeAiSettings(record.aiSettings),
-    dynamicUi,
-    chatMessages: sanitizeMessages(record.chatMessages),
-    preferences: isRecord(record.preferences) ? record.preferences : {},
-    directions: asArray<unknown>(record.directions, [])
-      .map(sanitizeDirection)
-      .filter((d): d is Direction => d !== null),
-  };
-}
-
-function readLegacyPreferences(): Record<string, unknown> {
-  const prefs: Record<string, unknown> = {};
-  if (typeof localStorage === 'undefined') return prefs;
-  for (const key of PREFERENCE_KEYS) {
-    const value = localStorage.getItem(key);
-    if (value !== null) prefs[key] = value;
-  }
-  return prefs;
-}
-
-export class StoreService {
-  /** Loads persisted state once, migrating and validating whatever is on disk. */
-  static async hydrate(): Promise<PersistedState> {
-    if (cache) return cache;
-
-    let raw: unknown = null;
+    let legacyJsonStr: string | null = null;
     try {
-      if (isTauri()) {
-        const store = await getStore();
-        raw = await store.get('state');
-      } else if (typeof localStorage !== 'undefined') {
-        const legacy = localStorage.getItem('alarmer_state');
-        if (legacy) raw = JSON.parse(legacy);
-      }
-    } catch (e) {
-      console.warn('Store hydrate failed, starting from defaults:', e);
-      raw = null;
+      legacyJsonStr = await invoke<string>('load_legacy_store');
+    } catch {
+      // No legacy store found or load command failed
+      return;
     }
 
-    // A key stored by an older version is moved into the credential store before
-    // the file is rewritten without it, so the user keeps their connection and
-    // the key stops travelling inside every backup export.
-    const legacyKey = legacyApiKey(raw);
+    if (!legacyJsonStr) return;
 
-    const migrated = migrate(raw);
-    if (Object.keys(migrated.preferences).length === 0) {
-      migrated.preferences = readLegacyPreferences();
+    let legacyData: unknown;
+    try {
+      legacyData = JSON.parse(legacyJsonStr);
+    } catch {
+      return;
     }
-    cache = migrated;
 
-    if (legacyKey && isTauri()) {
-      try {
-        await invoke('set_api_key', { key: legacyKey });
-        migrated.aiSettings.enabled = true;
-        // Re-persist so the plaintext copy is gone from disk, not just ignored.
-        await StoreService.persist(migrated);
-      } catch (e) {
-        console.warn('Could not migrate the stored API key:', e);
+    if (!isRecord(legacyData)) return;
+
+    // Migrate alarms
+    if (Array.isArray(legacyData.alarms)) {
+      for (const item of legacyData.alarms) {
+        if (!isRecord(item)) continue;
+        const alarm = alarmFromRow(item);
+        if (alarm.id && alarm.time) {
+          try {
+            await alarmsRepo.insert(alarmToRow(alarm));
+          } catch {
+            // Continue on error
+          }
+        }
       }
     }
 
-    return cache;
-  }
+    // Migrate tasks
+    if (Array.isArray(legacyData.tasks)) {
+      for (const item of legacyData.tasks) {
+        if (!isRecord(item)) continue;
+        const task = taskFromRow(item);
+        if (task.id && task.title) {
+          try {
+            await tasksRepo.insert(taskToRow(task));
+          } catch {
+            // Continue on error
+          }
+        }
+      }
+    }
 
-  /** Synchronous snapshot of the hydrated state (defaults before hydrate completes). */
-  static snapshot(): PersistedState {
-    return cache ?? migrate(null);
-  }
+    // Migrate notes
+    if (Array.isArray(legacyData.notes)) {
+      for (const item of legacyData.notes) {
+        if (!isRecord(item)) continue;
+        const note = noteFromRow(item);
+        if (note.id) {
+          try {
+            await notesRepo.insert(noteToRow(note));
+          } catch {
+            // Continue on error
+          }
+        }
+      }
+    }
 
-  static async persist(partial: Partial<Omit<PersistedState, 'schemaVersion'>>): Promise<void> {
-    const next: PersistedState = {
-      ...StoreService.snapshot(),
-      ...partial,
-      schemaVersion: SCHEMA_VERSION,
+    // Migrate chat messages
+    if (Array.isArray(legacyData.chatMessages)) {
+      for (const item of legacyData.chatMessages) {
+        if (!isRecord(item)) continue;
+        const msg = chatMessageFromRow(item);
+        if (msg.id && msg.text) {
+          try {
+            await chatRepo.insert(chatMessageToRow(msg));
+          } catch {
+            // Continue on error
+          }
+        }
+      }
+    }
+
+    // Migrate preferences (convert alarmer_* to tempo_*)
+    if (isRecord(legacyData.preferences)) {
+      for (const [k, v] of Object.entries(legacyData.preferences)) {
+        const targetKey = k.startsWith('alarmer_') ? k.replace(/^alarmer_/, 'tempo_') : k;
+        await setPref(targetKey, v);
+      }
+    }
+  } catch (err) {
+    console.error('runLegacyMigration failed:', err);
+  }
+}
+
+export const StoreService = {
+  async hydrate(): Promise<PersistedState> {
+    try {
+      await runLegacyMigration();
+
+      const [alarmRows, taskRows, noteRows, chatRows] = await Promise.all([
+        alarmsRepo.all(),
+        tasksRepo.all(),
+        notesRepo.all(),
+        chatRepo.all(),
+      ]);
+
+      const alarms: AlarmItem[] = alarmRows.map(alarmFromRow);
+      const tasks: TaskItem[] = taskRows.map(taskFromRow);
+      const notes: NoteItem[] = noteRows.map(noteFromRow);
+      const chatMessages: ChatMessage[] = chatRows.map(chatMessageFromRow);
+
+      const aiSettings: AISettings = {
+        apiKey: '',
+        baseUrl: getPref<string>('tempo_ai_base_url', DEFAULT_AI_SETTINGS.baseUrl),
+        model: getPref<string>('tempo_ai_model', DEFAULT_AI_SETTINGS.model),
+        systemPrompt: getPref<string>('tempo_ai_system_prompt', DEFAULT_AI_SETTINGS.systemPrompt || ''),
+        enabled: getPref<boolean>('tempo_ai_enabled', DEFAULT_AI_SETTINGS.enabled ?? false),
+        autoAdjustIntervals: getPref<boolean>('tempo_ai_auto_adjust', DEFAULT_AI_SETTINGS.autoAdjustIntervals ?? false),
+      };
+
+      const dynamicUi = getPref<DynamicUIConfig>('tempo_dynamic_ui', DEFAULT_DYNAMIC_UI);
+
+      cachedSnapshot = {
+        schemaVersion: 1,
+        alarms,
+        tasks,
+        sessions: [],
+        aiSettings,
+        dynamicUi,
+        chatMessages,
+        preferences: {},
+        notes,
+      };
+
+      isHydratedState = true;
+      return cachedSnapshot;
+    } catch (err) {
+      console.error('StoreService.hydrate failed:', err);
+      return cachedSnapshot;
+    }
+  },
+
+  getSnapshot(): PersistedState {
+    return cachedSnapshot;
+  },
+
+  snapshot(): PersistedState {
+    return cachedSnapshot;
+  },
+
+  isHydrated(): boolean {
+    return isHydratedState;
+  },
+
+  async persist(patch: Partial<PersistedState>): Promise<void> {
+    if (patch.alarms) {
+      cachedSnapshot.alarms = patch.alarms;
+      const existing = await alarmsRepo.all();
+      const existingIds = new Set(existing.map((r) => r.id));
+
+      for (const a of patch.alarms) {
+        const row = alarmToRow(a);
+        if (existingIds.has(a.id)) {
+          await alarmsRepo.update(a.id, row);
+          existingIds.delete(a.id);
+        } else {
+          await alarmsRepo.insert(row);
+        }
+      }
+      for (const id of existingIds) {
+        await alarmsRepo.remove(id);
+      }
+    }
+
+    if (patch.tasks) {
+      cachedSnapshot.tasks = patch.tasks;
+      const existing = await tasksRepo.all();
+      const existingIds = new Set(existing.map((r) => r.id));
+
+      for (const t of patch.tasks) {
+        const row = taskToRow(t);
+        if (existingIds.has(t.id)) {
+          await tasksRepo.update(t.id, row);
+          existingIds.delete(t.id);
+        } else {
+          await tasksRepo.insert(row);
+        }
+      }
+      for (const id of existingIds) {
+        await tasksRepo.remove(id);
+      }
+    }
+
+    if (patch.notes) {
+      cachedSnapshot.notes = patch.notes;
+      const existing = await notesRepo.all();
+      const existingIds = new Set(existing.map((r) => r.id));
+
+      for (const n of patch.notes) {
+        const row = noteToRow(n);
+        if (existingIds.has(n.id)) {
+          await notesRepo.update(n.id, row);
+          existingIds.delete(n.id);
+        } else {
+          await notesRepo.insert(row);
+        }
+      }
+      for (const id of existingIds) {
+        await notesRepo.remove(id);
+      }
+    }
+
+    if (patch.chatMessages) {
+      cachedSnapshot.chatMessages = patch.chatMessages;
+      const existing = await chatRepo.all();
+      const existingIds = new Set(existing.map((r) => r.id));
+
+      for (const m of patch.chatMessages) {
+        const row = chatMessageToRow(m);
+        if (existingIds.has(m.id)) {
+          await chatRepo.update(m.id, row);
+          existingIds.delete(m.id);
+        } else {
+          await chatRepo.insert(row);
+        }
+      }
+      for (const id of existingIds) {
+        await chatRepo.remove(id);
+      }
+    }
+
+    if (patch.aiSettings) {
+      cachedSnapshot.aiSettings = patch.aiSettings;
+      if (patch.aiSettings.baseUrl !== undefined) {
+        await setPref('tempo_ai_base_url', patch.aiSettings.baseUrl);
+      }
+      if (patch.aiSettings.model !== undefined) {
+        await setPref('tempo_ai_model', patch.aiSettings.model);
+      }
+      if (patch.aiSettings.systemPrompt !== undefined) {
+        await setPref('tempo_ai_system_prompt', patch.aiSettings.systemPrompt);
+      }
+      if (patch.aiSettings.enabled !== undefined) {
+        await setPref('tempo_ai_enabled', patch.aiSettings.enabled);
+      }
+      if (patch.aiSettings.autoAdjustIntervals !== undefined) {
+        await setPref('tempo_ai_auto_adjust', patch.aiSettings.autoAdjustIntervals);
+      }
+    }
+
+    if (patch.dynamicUi) {
+      cachedSnapshot.dynamicUi = { ...cachedSnapshot.dynamicUi, ...patch.dynamicUi };
+      await setPref('tempo_dynamic_ui', cachedSnapshot.dynamicUi);
+    }
+  },
+
+  getPreference<T>(key: string, fallback: T): T {
+    const canonicalKey = key.startsWith('alarmer_') ? key.replace(/^alarmer_/, 'tempo_') : key;
+    return getPref<T>(canonicalKey, getPref<T>(key, fallback));
+  },
+
+  async setPreference<T>(key: string, value: T): Promise<void> {
+    const canonicalKey = key.startsWith('alarmer_') ? key.replace(/^alarmer_/, 'tempo_') : key;
+    await setPref(canonicalKey, value);
+  },
+
+  subscribePreference<T>(key: string, callback: (value: T) => void): () => void {
+    return subscribePrefs((k, val) => {
+      const canonicalKey = key.startsWith('alarmer_') ? key.replace(/^alarmer_/, 'tempo_') : key;
+      if (k === key || k === canonicalKey) {
+        callback(val as T);
+      }
+    });
+  },
+
+  async exportJson(): Promise<string> {
+    const snap = this.snapshot();
+    const exportData = {
+      schemaVersion: 1,
+      alarms: snap.alarms,
+      tasks: snap.tasks,
+      sessions: snap.sessions,
+      aiSettings: {
+        ...snap.aiSettings,
+        apiKey: '',
+      },
+      dynamicUi: snap.dynamicUi,
+      chatMessages: snap.chatMessages,
+      preferences: snap.preferences,
+      notes: snap.notes,
     };
-    cache = next;
-    try {
-      if (isTauri()) {
-        const store = await getStore();
-        await store.set('state', next);
-        await store.save();
-      } else if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('alarmer_state', JSON.stringify(next));
-      }
-    } catch (e) {
-      console.warn('Store persist failed:', e);
-    }
-  }
+    return JSON.stringify(exportData, null, 2);
+  },
 
-  static getPreference<T extends string | number | boolean>(key: string, fallback: T): T {
-    const value = StoreService.snapshot().preferences[key];
-    if (value === undefined) return fallback;
-    if (typeof fallback === 'number') {
-      const parsed = typeof value === 'number' ? value : parseFloat(String(value));
-      return (Number.isFinite(parsed) ? parsed : fallback) as T;
-    }
-    if (typeof fallback === 'boolean') {
-      return (value !== 'false' && value !== false) as T;
-    }
-    return String(value) as T;
-  }
-
-  static setPreference(key: string, value: unknown): void {
-    const prefs = { ...StoreService.snapshot().preferences, [key]: value };
-    void StoreService.persist({ preferences: prefs });
-  }
-
-  /** Exports the full state as a JSON string for user-facing backup. */
-  static exportJson(): string {
-    return JSON.stringify(StoreService.snapshot(), null, 2);
-  }
-
-  /**
-   * Validates and imports a backup. Throws with a readable message when the
-   * payload is not a well-formed Alarmer backup.
-   */
-  static async importJson(text: string): Promise<PersistedState> {
+  async importJson(jsonString: string): Promise<PersistedState> {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(jsonString);
     } catch {
-      throw new Error('Файл не является корректным JSON');
+      throw new Error('Указанный файл не является корректным JSON.');
     }
+
     if (!isRecord(parsed)) {
-      throw new Error('Ожидался объект с резервной копией Alarmer');
-    }
-    if (!('alarms' in parsed) && !('aiSettings' in parsed) && !('dynamicUi' in parsed)) {
-      throw new Error('Файл не похож на резервную копию Alarmer');
+      throw new Error('Файл не похож на резервную копию Alarmer.');
     }
 
-    const next = migrate(parsed);
-    cache = next;
-    await StoreService.persist(next);
-    return next;
-  }
+    if (!('alarms' in parsed || 'tasks' in parsed || 'preferences' in parsed || 'notes' in parsed)) {
+      throw new Error('Файл не похож на резервную копию Alarmer.');
+    }
 
-  /** Test seam: clears the memoized state. */
-  static resetCache(): void {
-    cache = null;
-  }
-}
+    const patch: Partial<PersistedState> = {};
+    if (Array.isArray(parsed.alarms)) {
+      patch.alarms = parsed.alarms.filter(isRecord).map(alarmFromRow);
+    }
+    if (Array.isArray(parsed.tasks)) {
+      patch.tasks = parsed.tasks.filter(isRecord).map(taskFromRow);
+    }
+    if (Array.isArray(parsed.notes)) {
+      patch.notes = parsed.notes.filter(isRecord).map(noteFromRow);
+    }
+    if (Array.isArray(parsed.chatMessages)) {
+      patch.chatMessages = parsed.chatMessages.filter(isRecord).map(chatMessageFromRow);
+    }
+
+    await this.persist(patch);
+    return this.snapshot();
+  },
+
+  resetCache(): void {
+    cachedSnapshot = { ...DEFAULT_STATE };
+    isHydratedState = false;
+    // The preference cache lives in its own module and would otherwise outlive
+    // the snapshot, so a reset would leave half the state behind — which is how
+    // the sidebar collapsed flag leaked between tests.
+    resetSettingsCacheForTesting();
+  },
+};

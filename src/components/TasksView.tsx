@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Check, Circle, CalendarDays, Timer, Clock, ChevronDown, ChevronUp, X } from 'lucide-react';
-import type { Schedule, TaskItem, TaskTimerConfig, ThemeColors } from '../types';
+import { Plus, Trash2, Check, Circle, Timer, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import type { TaskItem, TaskTimerConfig, ThemeColors } from '../types';
 import { taskProgress } from '../services/stats';
 import { soundService } from '../services/sound';
 
@@ -8,7 +8,6 @@ interface TasksViewProps {
   theme: ThemeColors;
   tasks: TaskItem[];
   onUpdateTasks: (tasks: TaskItem[]) => void;
-  schedules: Schedule[];
 }
 
 const createTaskId = () => `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -17,14 +16,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
   theme,
   tasks,
   onUpdateTasks,
-  schedules,
 }) => {
   const [draft, setDraft] = useState('');
-  const [dismissedSteps, setDismissedSteps] = useState<Record<string, boolean>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('alarmer_dismissed_steps') || '{}');
-    } catch (e) { void e; return {}; }
-  });
   const [showTimerOptions, setShowTimerOptions] = useState(false);
   const [timerType, setTimerType] = useState<'interval' | 'time'>('interval');
   const [intervalMinutes, setIntervalMinutes] = useState(60);
@@ -32,13 +25,6 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
   const { done, total } = taskProgress(tasks);
 
-  const availableSteps = schedules
-    .filter((s) => s.enabled)
-    .flatMap((schedule) =>
-      schedule.steps
-        .filter((step) => !tasks.some((t) => t.stepId === step.id) && !dismissedSteps[step.id])
-        .map((step) => ({ schedule, step })),
-    );
 
   const addTask = (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,31 +56,6 @@ export const TasksView: React.FC<TasksViewProps> = ({
     setShowTimerOptions(false);
   };
 
-  const addFromStep = (schedule: Schedule, stepId: string, label: string) => {
-    soundService.playCountdownTick();
-    onUpdateTasks([
-      ...tasks,
-      {
-        id: createTaskId(),
-        title: label,
-        done: false,
-        scheduleId: schedule.id,
-        stepId,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-  };
-
-  const dismissStep = (stepId: string) => {
-    soundService.playCountdownTick();
-    setDismissedSteps((prev) => {
-      const next = { ...prev, [stepId]: true };
-      try {
-        localStorage.setItem('alarmer_dismissed_steps', JSON.stringify(next));
-      } catch (e) { void e; }
-      return next;
-    });
-  };
 
   const toggleTask = (id: string) => {
     soundService.playCountdownTick();
@@ -270,45 +231,6 @@ export const TasksView: React.FC<TasksViewProps> = ({
         </div>
       )}
 
-      {/* Steps from the user's own programs */}
-      {availableSteps.length > 0 && (
-        <div className="flex flex-col space-y-1.5">
-          <span className="text-[10px] uppercase tracking-wider flex items-center gap-1" style={{ color: theme.subtext }}>
-            <CalendarDays size={11} /> Из расписания
-          </span>
-          {availableSteps.map(({ schedule, step }) => (
-            <div
-              key={step.id}
-              className="flex items-center justify-between p-2 rounded-xl border text-xs"
-              style={{ backgroundColor: theme.surface, borderColor: theme.border }}
-            >
-              <span className="truncate flex-1 mr-2" style={{ color: theme.text }}>
-                {step.label}
-              </span>
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => addFromStep(schedule, step.id, step.label)}
-                  title={`Добавить «${step.label}» из «${schedule.name}»`}
-                  className="px-2 py-0.5 rounded text-[11px] font-medium transition-colors hover:opacity-80 shrink-0"
-                  style={{ backgroundColor: theme.accent, color: '#0a0a0a' }}
-                >
-                  В задачи
-                </button>
-                <button
-                  type="button"
-                  onClick={() => dismissStep(step.id)}
-                  title="Скрыть из предложенных"
-                  aria-label={`Скрыть «${step.label}»`}
-                  className="p-1 rounded transition-colors hover:bg-white/10 text-white/40 hover:text-white/80"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Task list with timers */}
       <div className="flex flex-col space-y-1.5">

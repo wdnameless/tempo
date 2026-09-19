@@ -93,7 +93,7 @@ describe('AlarmCenter', () => {
 
   it('pushes the effective schedule to the backend', async () => {
     render(
-      <AlarmCenter theme={theme} firings={[alarm]} schedules={[]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated>
+      <AlarmCenter theme={theme} firings={[alarm]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated>
         <div />
       </AlarmCenter>,
     );
@@ -109,7 +109,7 @@ describe('AlarmCenter', () => {
     // that fired while the user was on any other screen made no sound and no
     // visible takeover. Children here stand in for that other screen.
     render(
-      <AlarmCenter theme={theme} firings={[alarm]} schedules={[]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated>
+      <AlarmCenter theme={theme} firings={[alarm]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated>
         <div data-testid="other-screen">Сегодня</div>
       </AlarmCenter>,
     );
@@ -125,7 +125,7 @@ describe('AlarmCenter', () => {
 
   it('tells the backend to dismiss and closes the takeover on Stop', async () => {
     render(
-      <AlarmCenter theme={theme} firings={[alarm]} schedules={[]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated>
+      <AlarmCenter theme={theme} firings={[alarm]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated>
         <div />
       </AlarmCenter>,
     );
@@ -141,7 +141,7 @@ describe('AlarmCenter', () => {
 
   it('snoozes for the chosen number of minutes', async () => {
     render(
-      <AlarmCenter theme={theme} firings={[alarm]} schedules={[]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated>
+      <AlarmCenter theme={theme} firings={[alarm]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated>
         <div />
       </AlarmCenter>,
     );
@@ -158,7 +158,7 @@ describe('AlarmCenter', () => {
   it('mirrors a consumed one-shot alarm as switched off', async () => {
     const onDisable = vi.fn();
     render(
-      <AlarmCenter theme={theme} firings={[alarm]} schedules={[]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated onDisableAlarm={onDisable}>
+      <AlarmCenter theme={theme} firings={[alarm]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated onDisableAlarm={onDisable}>
         <div />
       </AlarmCenter>,
     );
@@ -168,59 +168,13 @@ describe('AlarmCenter', () => {
     expect(onDisable).toHaveBeenCalledWith('a1');
   });
 
-  it('offers to run an interval block straight from its ring', async () => {
-    const blockAlarm: AlarmItem = { ...alarm, id: 'sched:s1:st2', label: 'Разминка' };
-    const schedule = {
-      id: 's1',
-      name: 'Утро',
-      days: [],
-      enabled: true,
-      createdAt: '2026-01-01T00:00:00.000Z',
-      steps: [
-        {
-          id: 'st2',
-          kind: 'block' as const,
-          time: '07:15',
-          label: 'Разминка',
-          exercises: [
-            { id: 'e1', name: 'Шея', durationSec: 60, kind: 'prepare' as const },
-            { id: 'e2', name: 'Плечи', durationSec: 90, kind: 'work' as const },
-          ],
-        },
-      ],
-    };
-
-    render(
-      <AlarmCenter theme={theme} firings={[blockAlarm]} schedules={[schedule]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated>
-        <div />
-      </AlarmCenter>,
-    );
-
-    await fireAlarm({ id: 'sched:s1:st2', label: 'Разминка' });
-
-    // The whole point of a block is that it is runnable; making the user go find
-    // it while the alarm is ringing is how the feature gets missed.
-    expect(screen.getByText('Начать блок')).toBeDefined();
-  });
-
-  it('does not offer a block player for a plain moment alarm', async () => {
-    render(
-      <AlarmCenter theme={theme} firings={[alarm]} schedules={[]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated>
-        <div />
-      </AlarmCenter>,
-    );
-
-    await fireAlarm();
-
-    expect(screen.queryByText('Начать блок')).toBeNull();
-  });
 
   it('silences the backend ringer before the webview starts its own', async () => {
     // Regression: the backend rings only while the window is hidden, then
     // reveals it — at which point this listener fires and played a second copy
     // of the alarm over the first.
     render(
-      <AlarmCenter theme={theme} firings={[alarm]} schedules={[]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated>
+      <AlarmCenter theme={theme} firings={[alarm]} alarmVolume={0.8} alarmEnabled missed={[]} onDismissMissed={() => {}} hydrated>
         <div />
       </AlarmCenter>,
     );
@@ -239,7 +193,6 @@ describe('AlarmCenter', () => {
       <AlarmCenter
         theme={theme}
         firings={[]}
-        schedules={[]}
         alarmVolume={0.8}
         alarmEnabled
         missed={missed}
@@ -260,7 +213,6 @@ describe('AlarmCenter', () => {
       <AlarmCenter
         theme={theme}
         firings={[]}
-        schedules={[]}
         alarmVolume={0.8}
         alarmEnabled
         missed={[{ id: 'a9', label: 'X', time: '07:15', late_by_minutes: 30 }]}
@@ -283,7 +235,6 @@ describe('AlarmCenter', () => {
       <AlarmCenter
         theme={theme}
         firings={[alarm]}
-        schedules={[]}
         alarmVolume={0.8}
         alarmEnabled
         missed={[{ id: 'a9', label: 'X', time: '07:15', late_by_minutes: 30 }]}

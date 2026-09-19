@@ -1,296 +1,339 @@
-import { describe, expect, it, beforeEach } from 'vitest';
-import { StoreService, SCHEMA_VERSION, migrate, legacyApiKey } from '../store';
-import { DEFAULT_DYNAMIC_UI } from '../../types/dynamicUi';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import {
+  StoreService,
+  taskFromRow,
+  taskToRow,
+  alarmFromRow,
+  alarmToRow,
+  noteFromRow,
+  noteToRow,
+  chatMessageFromRow,
+  chatMessageToRow,
+} from '../store';
+import type { TaskItem, AlarmItem } from '../../types';
+
+const mockInvoke = vi.fn();
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => mockInvoke(...args),
+}));
+
 
 /**
- * Minimal in-memory localStorage so the store module works outside a browser.
+ * The row the fake backend answers a write with.
+ *
+ * The layer reads the id and `updated_at` back from this row — that is how it
+ * learns what it stamped — so a mock that resolves `undefined` makes every
+ * write fail. The IPC argument arrives as `unknown`, so it is narrowed here
+ * instead of cast: the test then fails loudly if the argument shape changes.
  */
-function installLocalStorage(): void {
-  const map = new Map<string, string>();
-  const storage = {
-    getItem: (k: string) => map.get(k) ?? null,
-    setItem: (k: string, v: string) => void map.set(k, String(v)),
-    removeItem: (k: string) => void map.delete(k),
-    clear: () => map.clear(),
-    key: (i: number) => [...map.keys()][i] ?? null,
-    get length() {
-      return map.size;
-    },
-  };
-  Object.defineProperty(globalThis, 'localStorage', {
-    value: storage,
-    configurable: true,
-    writable: true,
-  });
+function tableOf(args: unknown): string | undefined {
+  if (!args || typeof args !== 'object' || !('table' in args)) return undefined;
+  return typeof args.table === 'string' ? args.table : undefined;
 }
 
-describe('store schema migration', () => {
+function writtenRow(args: unknown): Record<string, unknown> {
+  const empty: Record<string, unknown> = {};
+  if (!args || typeof args !== 'object') return empty;
+  const written = 'row' in args ? args.row : 'patch' in args ? args.patch : undefined;
+  if (!written || typeof written !== 'object') return empty;
+  return { id: 'gen-1', updated_at: '2026-09-19T00:00:00Z', deleted_at: null, ...written };
+}
+
+describe('StoreService and Row Mappers', () => {
   beforeEach(() => {
-    installLocalStorage();
+    vi.clearAllMocks();
     StoreService.resetCache();
   });
 
-  it('produces a valid default state from nothing', () => {
-    const state = migrate(null);
-    expect(state.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(state.aiSettings.apiKey).toBe('');
-  });
+  describe('Pure entity ↔ row mapping', () => {
+    it('maps taskFromRow and taskToRow bidirectional', () => {
+      const dbRow = {
+        id: 't-123',
+        title: 'Complete task',
+        note: 'Some notes',
+        status: 'done',
+        priority: 2,
+        due_date: '2026-09-20',
+        start_at: '2026-09-19',
+        planned_minutes: 45,
+        updated_at: '2026-09-19T12:00:00Z',
+        deleted_at: null,
+      };
 
-  it('ships no colour overrides, so the chosen theme shows through', () => {
-    // A default palette here spreads over the base theme at render time and
-    // beats it — which made every theme button appear dead.
-    expect(DEFAULT_DYNAMIC_UI.colors).toEqual({});
+      const entity = taskFromRow(dbRow);
+      expect(entity.id).toBe('t-123');
+      expect(entity.title).toBe('Complete task');
+      expect(entity.note).toBe('Some notes');
+      expect(entity.done).toBe(true);
+      expect(entity.createdAt).toBe('2026-09-19T12:00:00Z');
+      expect(entity).not.toHaveProperty('priority');
+      expect(entity).not.toHaveProperty('dueDate');
+      expect(entity).not.toHaveProperty('plannedMinutes');
 
-    const state = migrate(null);
-    expect(state.dynamicUi.colors).toEqual({});
-  });
-
-  it('keeps colours the user chose but drops the old default palette', () => {
-    // A v4 file carries the whole Winter palette, none of which the user picked.
-    // Their one real choice (the accent the AI set) must survive.
-    const state = migrate({
-      schemaVersion: 4,
-      dynamicUi: {
-        colors: {
-          bg: '#050505', // the old shipped default — not a choice
-          surface: '#0a0a0a',
-          cardBg: '#0f0f0f',
-          border: '#27272a',
-          text: '#fafafa',
-          subtext: '#a1a1aa',
-          accentGlow: 'rgba(255, 122, 26, 0.28)',
-          ringTrack: '#1c1c1f',
-          ringProgress: '#ff7a1a',
-          ticks: '#3f3f46',
-          accent: '#abcdef', // genuinely chosen
-        },
-      },
+      const convertedRow = taskToRow(entity);
+      expect(convertedRow.title).toBe('Complete task');
+      expect(convertedRow.note).toBe('Some notes');
+      expect(convertedRow.status).toBe('done');
+      expect(convertedRow.priority).toBe(0);
+      expect(convertedRow.due_date).toBeNull();
     });
 
-    expect(state.dynamicUi.colors).toEqual({ accent: '#abcdef' });
-  });
+    it('maps alarmFromRow and alarmToRow bidirectional', () => {
+      const dbRow = {
+        id: 'a-123',
+        label: 'Wake up',
+        time: '07:30',
+        days: '[1,2,3,4,5]',
+        repeat: 'days',
+        enabled: 1,
+        sound: 'gentle',
+        voice_prompt: 'Time to get up',
+        duration_minutes: 15,
+        updated_at: '2026-09-19T00:00:00Z',
+        deleted_at: null,
+      };
 
-  it('does not strip a colour that only coincidentally matches the default', () => {
-    // After v5 the same value is a real choice and must not be rewritten.
-    const state = migrate({
-      schemaVersion: SCHEMA_VERSION,
-      dynamicUi: { colors: { bg: '#050505' } },
+      const entity = alarmFromRow(dbRow);
+      expect(entity.id).toBe('a-123');
+      expect(entity.title).toBe('Wake up');
+      expect(entity.label).toBe('Wake up');
+      expect(entity.time).toBe('07:30');
+      expect(entity.days).toEqual([1, 2, 3, 4, 5]);
+      expect(entity.repeat).toBe('days');
+      expect(entity.enabled).toBe(true);
+      expect(entity.sound).toBe('gentle');
+      expect(entity.voicePrompt).toBe('Time to get up');
+      expect(entity).not.toHaveProperty('durationMinutes');
+
+      const convertedRow = alarmToRow(entity);
+      expect(convertedRow.label).toBe('Wake up');
+      expect(convertedRow.time).toBe('07:30');
+      expect(convertedRow.days).toBe('[1,2,3,4,5]');
+      expect(convertedRow.repeat).toBe('days');
+      expect(convertedRow.enabled).toBe(1);
+      expect(convertedRow.sound).toBe('gentle');
+      expect(convertedRow.voice_prompt).toBe('Time to get up');
+      expect(convertedRow.duration_minutes).toBe(0);
     });
 
-    expect(state.dynamicUi.colors.bg).toBe('#050505');
-  });
+    it('maps noteFromRow and noteToRow bidirectional', () => {
+      const dbRow = {
+        id: 'n-123',
+        title: 'Meeting Notes',
+        body_md: '# Notes\nContent here',
+        pinned: 1,
+        updated_at: '2026-09-19T10:00:00Z',
+        created_at: '2026-09-19T09:00:00Z',
+        deleted_at: null,
+      };
 
-  it('falls back to defaults for corrupt nested UI config', () => {
-    const state = migrate({
-      dynamicUi: {
-        colors: { accent: '#abcdef' },
-        dial: { tickLength: 'enormous', glowIntensity: 42, showTicks: false },
-        layout: { buttonStyle: 'hexagon' },
-      },
-    });
-    expect(state.dynamicUi.colors.accent).toBe('#abcdef');
-    expect(state.dynamicUi.dial.tickLength).toBe(DEFAULT_DYNAMIC_UI.dial.tickLength);
-    expect(state.dynamicUi.dial.showTicks).toBe(false);
-    expect(state.dynamicUi.layout.buttonStyle).toBe(DEFAULT_DYNAMIC_UI.layout.buttonStyle);
-  });
+      const entity = noteFromRow(dbRow);
+      expect(entity.id).toBe('n-123');
+      expect(entity.title).toBe('Meeting Notes');
+      expect(entity.body).toBe('# Notes\nContent here');
+      expect(entity.pinned).toBe(true);
+      expect(entity.createdAt).toBe('2026-09-19T09:00:00Z');
+      expect(entity.updatedAt).toBe('2026-09-19T10:00:00Z');
 
-  it('rejects alarms with a malformed time instead of trusting them', () => {
-    const state = migrate({
-      alarms: [
-        { id: 'ok', time: '07:30', title: 'Подъём' },
-        { id: 'bad', time: 'не время', title: 'Мусор' },
-        { id: 'nope' },
-      ],
-    });
-    expect(state.alarms.map((a) => a.id)).toEqual(['ok']);
-  });
-
-  it('normalises single-digit hours and keeps only valid weekday numbers', () => {
-    const state = migrate({
-      alarms: [{ id: 'a', time: '7:30', days: [1, 9, -1, 5, 'x'] }],
-    });
-    expect(state.alarms[0].time).toBe('07:30');
-    expect(state.alarms[0].days).toEqual([1, 5]);
-  });
-
-
-  it('keeps legacy sessions and gives them no direction', () => {
-    // A v5 file has sessions with no direction or quality. Dropping them would
-    // lose real history; inventing values would be worse.
-    const state = migrate({
-      schemaVersion: 5,
-      sessions: [
-        { id: 's1', label: 'Утро', focusedSec: 1800, startedAt: '2026-09-14T07:00:00Z', endedAt: '2026-09-14T07:30:00Z', completed: true },
-      ],
+      const convertedRow = noteToRow(entity);
+      expect(convertedRow.title).toBe('Meeting Notes');
+      expect(convertedRow.body_md).toBe('# Notes\nContent here');
+      expect(convertedRow.pinned).toBe(1);
     });
 
-    expect(state.sessions).toHaveLength(1);
-    expect(state.sessions[0].directionId).toBeUndefined();
-    expect(state.sessions[0].quality).toBeUndefined();
-    expect(state.sessions[0].blocks).toBeUndefined();
+    it('maps chatMessageFromRow and chatMessageToRow', () => {
+      const dbRow = {
+        id: 'msg-1',
+        role: 'user',
+        content: 'Hello assistant',
+        created_at: '2026-09-19T10:00:00Z',
+        updated_at: '2026-09-19T10:00:00Z',
+        deleted_at: null,
+      };
+
+      const entity = chatMessageFromRow(dbRow);
+      expect(entity.id).toBe('msg-1');
+      expect(entity.sender).toBe('user');
+      expect(entity.text).toBe('Hello assistant');
+      expect(entity.timestamp).toBe('2026-09-19T10:00:00Z');
+
+      const convertedRow = chatMessageToRow(entity);
+      expect(convertedRow.role).toBe('user');
+      expect(convertedRow.content).toBe('Hello assistant');
+    });
   });
 
-  it('starts a v5 file with no directions at all', () => {
-    const state = migrate({ schemaVersion: 5 });
-    expect(state.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(state.directions).toEqual([]);
-  });
+  describe('Hydrate and Persist', () => {
+    it('hydrate loads DB rows and maps them to canonical entities', async () => {
+      mockInvoke.mockImplementation((cmd, args) => {
+        if (cmd === 'db_insert' || cmd === 'db_update') return Promise.resolve(writtenRow(args));
+        if (cmd === 'db_list') {
+          const table = tableOf(args);
+          if (table === 'alarms') {
+            return Promise.resolve([
+              {
+                id: 'a1',
+                label: 'Test Alarm',
+                time: '08:00',
+                days: '[]',
+                repeat: 'once',
+                enabled: 1,
+                sound: 'gentle',
+                updated_at: '2026-09-19T00:00:00Z',
+                deleted_at: null,
+              },
+            ]);
+          }
+          if (table === 'tasks') {
+            return Promise.resolve([
+              {
+                id: 't1',
+                title: 'Test Task',
+                status: 'open',
+                updated_at: '2026-09-19T00:00:00Z',
+                deleted_at: null,
+              },
+            ]);
+          }
+          if (table === 'notes') {
+            return Promise.resolve([
+              {
+                id: 'n1',
+                title: 'Note',
+                body_md: 'Body',
+                pinned: 0,
+                updated_at: '2026-09-19T00:00:00Z',
+                deleted_at: null,
+              },
+            ]);
+          }
+          if (table === 'chat_messages') {
+            return Promise.resolve([
+              {
+                id: 'c1',
+                role: 'assistant',
+                content: 'Hello!',
+                created_at: '2026-09-19T00:00:00Z',
+                updated_at: '2026-09-19T00:00:00Z',
+                deleted_at: null,
+              },
+            ]);
+          }
+          return Promise.resolve([]);
+        }
+        return Promise.resolve(undefined);
+      });
 
-  it('round-trips directions, quality and blocks', () => {
-    const state = migrate({
-      schemaVersion: SCHEMA_VERSION,
-      directions: [{ id: 'd1', name: 'Учёба', color: '#22c55e', weeklyBlockBudget: 30, archived: false }],
-      sessions: [
-        { id: 's1', label: 'Блок', focusedSec: 3000, startedAt: '2026-09-15T09:00:00Z', endedAt: '2026-09-15T09:50:00Z', completed: true, directionId: 'd1', quality: 8, blocks: 1 },
-      ],
+      const state = await StoreService.hydrate();
+      expect(state.alarms).toHaveLength(1);
+      expect(state.alarms[0]?.id).toBe('a1');
+      expect(state.alarms[0]?.title).toBe('Test Alarm');
+
+      expect(state.tasks).toHaveLength(1);
+      expect(state.tasks[0]?.id).toBe('t1');
+      expect(state.tasks[0]?.done).toBe(false);
+
+      expect(state.notes).toHaveLength(1);
+      expect(state.notes[0]?.body).toBe('Body');
+
+      expect(state.chatMessages).toHaveLength(1);
+      expect(state.chatMessages[0]?.sender).toBe('assistant');
+      expect(state.chatMessages[0]?.text).toBe('Hello!');
+      expect(state.aiSettings.apiKey).toBe('');
     });
 
-    expect(state.directions).toEqual([
-      { id: 'd1', name: 'Учёба', color: '#22c55e', weeklyBlockBudget: 30, archived: false },
-    ]);
-    expect(state.sessions[0].quality).toBe(8);
-    expect(state.sessions[0].blocks).toBe(1);
-    expect(state.sessions[0].directionId).toBe('d1');
-  });
+    it('persist writes canonical entities back to DB rows', async () => {
+      mockInvoke.mockImplementation((cmd, args) => {
+        if (cmd === 'db_list') return Promise.resolve([]);
+        if (cmd === 'db_insert' || cmd === 'db_update') return Promise.resolve(writtenRow(args));
+        return Promise.resolve(undefined);
+      });
 
-  it('drops a corrupt quality rather than clamping it', () => {
-    // A clamped 10 would read as a deliberate top score the user never gave.
-    const state = migrate({
-      schemaVersion: SCHEMA_VERSION,
-      sessions: [
-        { id: 's1', label: 'a', focusedSec: 600, startedAt: '2026-09-15T09:00:00Z', endedAt: '2026-09-15T09:10:00Z', completed: true, quality: 42 },
-      ],
-    });
-    expect(state.sessions[0].quality).toBeUndefined();
-  });
+      const sampleTask: TaskItem = {
+        id: 't2',
+        title: 'New Task',
+        done: true,
+        createdAt: '2026-09-19T01:00:00Z',
+      };
 
-  it('keeps a fractional block value', () => {
-    const state = migrate({
-      schemaVersion: SCHEMA_VERSION,
-      sessions: [
-        { id: 's1', label: 'a', focusedSec: 1500, startedAt: '2026-09-15T09:00:00Z', endedAt: '2026-09-15T09:25:00Z', completed: true, blocks: 0.5 },
-      ],
-    });
-    expect(state.sessions[0].blocks).toBe(0.5);
-  });
+      const sampleAlarm: AlarmItem = {
+        id: 'a2',
+        title: 'Alarm 2',
+        label: 'Alarm 2',
+        time: '09:00',
+        days: [0, 6],
+        repeat: 'days',
+        enabled: true,
+        sound: 'soft',
+      };
 
-  it('drops a nameless direction and floors a zero budget', () => {
-    const state = migrate({
-      schemaVersion: SCHEMA_VERSION,
-      directions: [
-        { id: 'a', name: '   ', weeklyBlockBudget: 5 },
-        { id: 'b', name: 'Спорт', weeklyBlockBudget: 0 },
-      ],
-    });
+      await StoreService.persist({
+        tasks: [sampleTask],
+        alarms: [sampleAlarm],
+      });
 
-    expect(state.directions).toHaveLength(1);
-    expect(state.directions[0].name).toBe('Спорт');
-    // Zero would render the direction permanently over budget.
-    expect(state.directions[0].weeklyBlockBudget).toBe(1);
-    expect(state.directions[0].color).toBeTruthy();
-  });
+      expect(mockInvoke).toHaveBeenCalledWith(
+        'db_insert',
+        expect.objectContaining({
+          table: 'tasks',
+          row: expect.objectContaining({
+            title: 'New Task',
+            status: 'done',
+          }),
+        })
+      );
 
-  it('drops chat messages without text', () => {
-    const state = migrate({
-      chatMessages: [
-        { id: '1', sender: 'user', text: 'привет' },
-        { id: '2', sender: 'assistant', text: '' },
-        'garbage',
-      ],
-    });
-    expect(state.chatMessages).toHaveLength(1);
-    expect(state.chatMessages[0].text).toBe('привет');
-  });
-
-  it('rejects a non-JSON import with a readable error', async () => {
-    await expect(StoreService.importJson('{not json')).rejects.toThrow('не является корректным JSON');
-  });
-
-  it('rejects a JSON payload that is not an Alarmer backup', async () => {
-    await expect(StoreService.importJson('{"foo":1}')).rejects.toThrow(
-      'не похож на резервную копию Alarmer',
-    );
-  });
-
-  it('round-trips a valid backup through export and import', async () => {
-    await StoreService.persist({
-      alarms: [],
-      aiSettings: { apiKey: '', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-      chatMessages: [],
-      preferences: {},
-    });
-    const exported = StoreService.exportJson();
-    StoreService.resetCache();
-    const imported = await StoreService.importJson(exported);
-    expect(imported.aiSettings.model).toBe('gpt-4o-mini');
-  });
-
-  it('never writes an API key into the exported backup', async () => {
-    // The export is the file a user mails to someone else; a key in it leaks
-    // their credential. The key belongs in the OS credential store, and this is
-    // the contract that keeps it out.
-    const state = migrate({
-      aiSettings: { apiKey: 'sk-leaked', baseUrl: 'https://api.openai.com/v1', model: 'm' },
+      expect(mockInvoke).toHaveBeenCalledWith(
+        'db_insert',
+        expect.objectContaining({
+          table: 'alarms',
+          row: expect.objectContaining({
+            label: 'Alarm 2',
+            time: '09:00',
+            days: '[0,6]',
+            repeat: 'days',
+            enabled: 1,
+          }),
+        })
+      );
     });
 
-    expect(state.aiSettings.apiKey).toBe('');
+    it('preference alarmer_* to tempo_* rename happens correctly', async () => {
+      StoreService.setPreference('alarmer_theme', 'dark');
+      expect(mockInvoke).toHaveBeenCalledWith('db_pref_set', {
+        key: 'tempo_theme',
+        value: '"dark"',
+      });
 
-    await StoreService.persist(state);
-    expect(StoreService.exportJson()).not.toContain('sk-leaked');
-  });
-
-  it('still finds a legacy key so it can be migrated out of the file', () => {
-    // Dropping the key silently would make an existing user re-enter it, so the
-    // value is read once — by the migration that moves it into the credential
-    // store — and then left out of the state entirely.
-    expect(legacyApiKey({ aiSettings: { apiKey: 'sk-old' } })).toBe('sk-old');
-    expect(legacyApiKey({ aiSettings: { apiKey: '   ' } })).toBeNull();
-    expect(legacyApiKey({ aiSettings: {} })).toBeNull();
-    expect(legacyApiKey(null)).toBeNull();
-  });
-
-  it('heals an alarm that could never ring', () => {
-    // "days" mode with no days matches no weekday: the alarm would show as
-    // "Каждый день" and stay silent. Reading it back as a daily alarm keeps it
-    // working instead of leaving a silently broken entry in the list.
-    const state = migrate({
-      alarms: [{ id: 'dead', time: '07:00', repeat: 'days', days: [] }],
+      expect(StoreService.getPreference('alarmer_theme', 'system')).toBe('dark');
+      expect(StoreService.getPreference('tempo_theme', 'system')).toBe('dark');
     });
 
-    expect(state.alarms[0].repeat).toBe('daily');
-  });
-
-  it('leaves a one-off alarm a one-off', () => {
-    const state = migrate({
-      alarms: [{ id: 'once', time: '07:00', repeat: 'once', days: [] }],
+    it('exportJson strips apiKey', async () => {
+      mockInvoke.mockResolvedValue(undefined);
+      const json = await StoreService.exportJson();
+      const parsed = JSON.parse(json) as { aiSettings?: { apiKey?: string } };
+      expect(parsed.aiSettings?.apiKey).toBe('');
     });
 
-    expect(state.alarms[0].repeat).toBe('once');
-  });
+    it('importJson accepts valid backup and rejects invalid JSON', async () => {
+      await expect(StoreService.importJson('{ invalid')).rejects.toThrow(/не является корректным JSON/);
+      await expect(StoreService.importJson('{"random": 123}')).rejects.toThrow(/не похож на резервную копию/);
 
-  it('leaves a real day selection alone', () => {
-    const state = migrate({
-      alarms: [{ id: 'wk', time: '07:00', repeat: 'days', days: [1, 3, 5] }],
+      mockInvoke.mockImplementation((cmd, args) => {
+        if (cmd === 'db_list') return Promise.resolve([]);
+        if (cmd === 'db_insert') return Promise.resolve(writtenRow(args));
+        return Promise.resolve(undefined);
+      });
+
+      const validBackup = JSON.stringify({
+        alarms: [{ id: 'a3', label: 'Imported', time: '10:00', days: [], repeat: 'once', enabled: 1 }],
+        tasks: [{ id: 't3', title: 'Imported task', status: 'open' }],
+      });
+
+      const imported = await StoreService.importJson(validBackup);
+      expect(imported.alarms.some((a) => a.id === 'a3')).toBe(true);
+      expect(imported.tasks.some((t) => t.id === 't3')).toBe(true);
     });
-
-    expect(state.alarms[0].repeat).toBe('days');
-    expect(state.alarms[0].days).toEqual([1, 3, 5]);
-  });
-
-  it('persists preferences with numeric, boolean and string coercion', () => {
-    // persist() updates the in-memory snapshot before its first await, so the
-    // written value is readable synchronously right after setPreference returns.
-    StoreService.setPreference('alarmer_click_volume', 0.35);
-    expect(StoreService.getPreference('alarmer_click_volume', 0.5)).toBeCloseTo(0.35);
-
-    StoreService.setPreference('alarmer_ui_clicks', 'false');
-    expect(StoreService.getPreference('alarmer_ui_clicks', true)).toBe(false);
-
-    StoreService.setPreference('alarmer_voice_id', 'ru-RU-DmitryNeural');
-    expect(StoreService.getPreference('alarmer_voice_id', 'none')).toBe('ru-RU-DmitryNeural');
-  });
-
-  it('returns the fallback for an unknown preference key', () => {
-    expect(StoreService.getPreference('alarmer_missing', 42)).toBe(42);
   });
 });

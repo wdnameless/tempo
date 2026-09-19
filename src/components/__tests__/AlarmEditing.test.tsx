@@ -44,8 +44,6 @@ function Harness({ initial = [] as AlarmItem[] }) {
     <Alarms
       theme={theme}
       alarms={alarms}
-      schedules={[]}
-      onUpdateSchedules={() => {}}
       onUpdateAlarms={setAlarms}
       dynamicUi={undefined as never}
     />
@@ -93,8 +91,6 @@ describe('creating an alarm with specific weekdays', () => {
         <Alarms
           theme={theme}
           alarms={alarms}
-          schedules={[]}
-          onUpdateSchedules={() => {}}
           onUpdateAlarms={setAlarms}
           dynamicUi={undefined as never}
         />
@@ -138,8 +134,6 @@ describe('editing an existing alarm', () => {
         <Alarms
           theme={theme}
           alarms={alarms}
-          schedules={[]}
-          onUpdateSchedules={() => {}}
           onUpdateAlarms={setAlarms}
           dynamicUi={undefined as never}
         />
@@ -166,8 +160,6 @@ describe('editing an existing alarm', () => {
         <Alarms
           theme={theme}
           alarms={alarms}
-          schedules={[]}
-          onUpdateSchedules={() => {}}
           onUpdateAlarms={setAlarms}
           dynamicUi={undefined as never}
         />
@@ -194,8 +186,6 @@ describe('editing an existing alarm', () => {
         <Alarms
           theme={theme}
           alarms={alarms}
-          schedules={[]}
-          onUpdateSchedules={() => {}}
           onUpdateAlarms={setAlarms}
           dynamicUi={undefined as never}
         />
@@ -224,8 +214,6 @@ describe('editing an existing alarm', () => {
         <Alarms
           theme={theme}
           alarms={alarms}
-          schedules={[]}
-          onUpdateSchedules={() => {}}
           onUpdateAlarms={setAlarms}
           dynamicUi={undefined as never}
         />
@@ -285,8 +273,6 @@ describe('an alarm that could never ring', () => {
         <Alarms
           theme={theme}
           alarms={alarms}
-          schedules={[]}
-          onUpdateSchedules={() => {}}
           onUpdateAlarms={setAlarms}
           dynamicUi={undefined as never}
         />
@@ -313,8 +299,6 @@ describe('an alarm that could never ring', () => {
         <Alarms
           theme={theme}
           alarms={alarms}
-          schedules={[]}
-          onUpdateSchedules={() => {}}
           onUpdateAlarms={setAlarms}
           dynamicUi={undefined as never}
         />
@@ -340,8 +324,6 @@ describe('an alarm that could never ring', () => {
         <Alarms
           theme={theme}
           alarms={alarms}
-          schedules={[]}
-          onUpdateSchedules={() => {}}
           onUpdateAlarms={setAlarms}
           dynamicUi={undefined as never}
         />
@@ -376,8 +358,6 @@ describe('rows derived from a program', () => {
       <Alarms
         theme={theme}
         alarms={[derived]}
-        schedules={[]}
-        onUpdateSchedules={() => {}}
         onUpdateAlarms={() => {}}
         dynamicUi={undefined as never}
       />,

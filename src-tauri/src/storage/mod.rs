@@ -59,6 +59,24 @@ where
     f(conn)
 }
 
+/// Reads the legacy JSON store, if one is still lying beside the database.
+///
+/// Returns `None` when there is nothing to migrate, which is the normal state
+/// for a fresh install. The file is only read, never deleted: it stays the
+/// user's backup until the migration is proven on a real install.
+#[tauri::command]
+pub fn load_legacy_store(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let db = PathBuf::from(db_path(app)?);
+    let Some(dir) = db.parent() else {
+        return Ok(None);
+    };
+    let legacy = dir.join("alarmer.json");
+    if !legacy.is_file() {
+        return Ok(None);
+    }
+    std::fs::read_to_string(&legacy).map(Some).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn db_ready(app: tauri::AppHandle) -> Result<bool, String> {
     with_db(&app, |_conn| Ok(true))

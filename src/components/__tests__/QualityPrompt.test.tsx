@@ -1,11 +1,11 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { QualityPrompt } from '../QualityPrompt';
-import { THEMES } from '../../constants/themes';
+import { themeFromTokens } from '../../constants/themes';
 
 // The real palette: a hand-written partial theme drifts from ThemeColors and
 // hides the drift behind a cast.
-const mockTheme = THEMES.winter;
+const mockTheme = themeFromTokens('amber');
 
 describe('QualityPrompt', () => {
   it('renders rating buttons 1 through 10', () => {

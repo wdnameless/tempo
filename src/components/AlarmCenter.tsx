@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Bell, BellOff } from 'lucide-react';
-import type { AlarmItem, Schedule, SessionRecord, ThemeColors } from '../types';
+import type { AlarmItem, ThemeColors } from '../types';
 import { soundService } from '../services/sound';
 import { StoreService } from '../services/store';
 import { isTauri } from '../services/platform';
@@ -30,15 +30,12 @@ interface AlarmCenterProps {
   theme: ThemeColors;
   /** Every firing the backend should enforce, schedules already expanded. */
   firings: AlarmItem[];
-  schedules?: Schedule[];
   /** Alarm volume 0..1, mirrored to the backend ringer. */
   alarmVolume: number;
   /** Whether alarms make a sound at all; muting passes volume 0. */
   alarmEnabled: boolean;
   /** A one-shot alarm switched itself off after ringing. */
   onDisableAlarm?: (id: string) => void;
-  /** A finished interval block, so its focus time can be recorded. */
-  onSession?: (session: SessionRecord) => void;
   /** Alarms whose moment passed without ringing, so they can be shown. */
   missed: MissedAlarm[];
   /** Acknowledges the missed list. */
@@ -68,11 +65,9 @@ export interface MissedAlarm {
 export const AlarmCenter: React.FC<AlarmCenterProps> = ({
   theme,
   firings,
-  schedules,
   alarmVolume,
   alarmEnabled,
   onDisableAlarm,
-  onSession,
   missed,
   onDismissMissed,
   hydrated,

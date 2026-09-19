@@ -68,16 +68,7 @@ export const Alarms: React.FC<AlarmsProps> = ({
     onUpdateAlarms(alarms.map((a) => (a.id === id ? { ...a, ...patch } : a)));
   };
 
-  /**
-   * True when this row is derived from a schedule rather than a real alarm.
-   *
-   * The list is built from schedules expanded into firings, and those firings
-   * are recomputed on every render — editing one would write to an object that
-   * is thrown away immediately. Such rows are read-only and point at the
-   * program that owns them.
-   */
-  const isDerived = (_alarm: AlarmItem) => false;
-
+  const isDerived = (alarm: AlarmItem) => Boolean(alarm.scheduleId);
   /** Changes an alarm's time, rejecting anything that is not a clock time. */
   const editAlarmTime = (id: string, value: string) => {
     if (!/^\d{1,2}:\d{2}$/.test(value)) return;
@@ -131,19 +122,6 @@ export const Alarms: React.FC<AlarmsProps> = ({
 
   const deleteAlarm = (id: string) => {
     soundService.playCountdownTick();
-    const match = findStepByFiringId(schedules, id);
-    if (match) {
-      const { schedule, step } = match;
-      const steps = schedule.steps.filter((st) => st.id !== step.id);
-      if (steps.length === 0) {
-        onUpdateSchedules(schedules.filter((s) => s.id !== schedule.id));
-      } else {
-        onUpdateSchedules(
-          schedules.map((s) => (s.id === schedule.id ? { ...s, steps } : s))
-        );
-      }
-      return;
-    }
     onUpdateAlarms(alarms.filter((a) => a.id !== id));
   };
 

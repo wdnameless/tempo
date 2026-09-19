@@ -27,7 +27,7 @@ const theme = {
 function Harness({ initial = [] as NoteItem[] }: { initial?: NoteItem[] }) {
   const [notes, setNotes] = useState(initial);
   return (
-    <NotesView theme={theme} notes={notes} onUpdateNotes={setNotes} alarms={[]} schedules={[]} />
+    <NotesView theme={theme} notes={notes} onUpdateNotes={setNotes} alarms={[]} />
   );
 }
 
