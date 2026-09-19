@@ -35,6 +35,36 @@ export interface Translations {
   titleStats: string;
   titleSettings: string;
 
+  // Pomodoro (wave 1)
+  pomodoroFocus: string;
+  pomodoroShortRest: string;
+  pomodoroLongRest: string;
+  pomodoroIdle: string;
+  pomodoroStopwatch: string;
+  pomodoroMode: string;
+  pomodoroOf: string;
+  pomodoroToday: string;
+  pomodoroStart: string;
+  pomodoroPause: string;
+  pomodoroReset: string;
+  pomodoroSkip: string;
+  pomodoroSettings: string;
+  pomodoroFocusLength: string;
+  pomodoroShortRestLength: string;
+  pomodoroLongRestLength: string;
+  pomodoroAutoStart: string;
+  pomodoroAutoStartHint: string;
+  pomodoroCycleHint: string;
+  focusAudio: string;
+  focusAudioHint: string;
+  focusSoundNone: string;
+  focusSoundBrown: string;
+  focusSoundWhite: string;
+  focusSoundRain: string;
+  focusSoundCafe: string;
+  dynamicBackground: string;
+  dynamicBackgroundHint: string;
+
   // Settings section names
   settingsGeneral: string;
   settingsAppearance: string;
@@ -103,6 +133,34 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     titleSettings: 'Настройки',
 
     // Settings section names
+    pomodoroFocus: 'Фокус',
+    pomodoroShortRest: 'Перерыв',
+    pomodoroLongRest: 'Длинный перерыв',
+    pomodoroIdle: 'Готов',
+    pomodoroStopwatch: 'Стоп-вотч',
+    pomodoroMode: 'Режим',
+    pomodoroOf: 'из',
+    pomodoroToday: 'Сегодня',
+    pomodoroStart: 'Старт',
+    pomodoroPause: 'Пауза',
+    pomodoroReset: 'Сброс',
+    pomodoroSkip: 'Пропустить фазу',
+    pomodoroSettings: 'Помодоро',
+    pomodoroFocusLength: 'Длительность фокуса',
+    pomodoroShortRestLength: 'Короткий перерыв',
+    pomodoroLongRestLength: 'Длинный перерыв',
+    pomodoroAutoStart: 'Автостарт фокуса',
+    pomodoroAutoStartHint: 'Начинать следующий фокус самому после перерыва. Перерыв стартует сам всегда.',
+    pomodoroCycleHint: 'После четвёртого помодоро идёт длинный перерыв.',
+    focusAudio: 'Звук фокуса',
+    focusAudioHint: 'Играет во время фокуса и замолкает на перерыве.',
+    focusSoundNone: 'Без звука',
+    focusSoundBrown: 'Коричневый шум',
+    focusSoundWhite: 'Белый шум',
+    focusSoundRain: 'Дождь',
+    focusSoundCafe: 'Кофейня',
+    dynamicBackground: 'Динамический фон',
+    dynamicBackgroundHint: 'Оттенок фона следует за фазой таймера и временем суток.',
     settingsGeneral: 'Основные',
     settingsAppearance: 'Внешний вид',
     settingsSound: 'Звук',
@@ -169,6 +227,34 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     titleSettings: 'Settings',
 
     // Settings section names
+    pomodoroFocus: 'Focus',
+    pomodoroShortRest: 'Break',
+    pomodoroLongRest: 'Long break',
+    pomodoroIdle: 'Ready',
+    pomodoroStopwatch: 'Stopwatch',
+    pomodoroMode: 'Mode',
+    pomodoroOf: 'of',
+    pomodoroToday: 'Today',
+    pomodoroStart: 'Start',
+    pomodoroPause: 'Pause',
+    pomodoroReset: 'Reset',
+    pomodoroSkip: 'Skip phase',
+    pomodoroSettings: 'Pomodoro',
+    pomodoroFocusLength: 'Focus length',
+    pomodoroShortRestLength: 'Short break',
+    pomodoroLongRestLength: 'Long break',
+    pomodoroAutoStart: 'Auto-start focus',
+    pomodoroAutoStartHint: 'Start the next focus by itself after a break. Breaks always start on their own.',
+    pomodoroCycleHint: 'A long break follows every fourth pomodoro.',
+    focusAudio: 'Focus audio',
+    focusAudioHint: 'Plays during focus and falls silent on a break.',
+    focusSoundNone: 'No sound',
+    focusSoundBrown: 'Brown noise',
+    focusSoundWhite: 'White noise',
+    focusSoundRain: 'Rain',
+    focusSoundCafe: 'Cafe',
+    dynamicBackground: 'Dynamic background',
+    dynamicBackgroundHint: 'The hue follows the timer phase and the time of day.',
     settingsGeneral: 'General',
     settingsAppearance: 'Appearance',
     settingsSound: 'Sound',

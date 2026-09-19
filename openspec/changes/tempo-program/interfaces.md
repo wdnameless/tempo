@@ -322,3 +322,88 @@ export function themeFromTokens(accent: AccentId): ThemeColors;
 
 Почему так: это единственный способ показать новый стиль в волне 0, не переписывая
 одновременно девятнадцать экранов, и при этом не тащить шесть тем дальше в программу.
+
+## 12. Помодоро — владелец: Wave 1 (Rust), используют Wave 1 (UI), Wave 9 (статистика)
+
+Режимы таймера: `pomodoro` и `stopwatch` **вместо** `countdown/flow/block`. Фаза: `focus`,
+`short_rest`, `long_rest`. Старые имена удаляются целиком, не остаются алиасами.
+
+```rust
+pub enum TimerMode { Pomodoro, Stopwatch }          // serde snake_case
+pub enum Phase { Focus, ShortRest, LongRest }        // serde snake_case
+
+pub struct TimerSnapshot {
+    pub total_secs: u64,        // длина текущей фазы
+    pub remaining_secs: u64,    // помодоро: до конца фазы; стоп-вотч: 0
+    pub elapsed_secs: u64,      // стоп-вотч: сколько идёт; помодоро: сколько прошло в фазе
+    pub running: bool,
+    pub mode: TimerMode,
+    pub phase: Phase,           // у стоп-вотча всегда Focus
+    pub pomodoro_index: u32,    // 1..=4 — место в текущем цикле, что видит пользователь
+    pub completed_today: u32,   // завершённые помодоро за сегодня
+    pub focus_min: u32, pub short_rest_min: u32, pub long_rest_min: u32,
+    pub auto_start: bool,
+}
+```
+
+Цикл: фокус → `short_rest` → фокус … после **четвёртого** фокуса → `long_rest`, затем
+`pomodoro_index` возвращается к 1. Перерыв MUST стартовать сам (R04) — это не настройка.
+`auto_start` управляет только тем, стартует ли сам следующий **фокус** после перерыва.
+
+Команды (старые `timer_set_block_settings`/`timer_set_direction` удаляются):
+
+```rust
+timer_get_state() -> TimerSnapshot
+timer_start() / timer_pause() / timer_reset()
+timer_skip_phase()                       // завершить фазу досрочно и перейти к следующей
+timer_set_mode(mode)                     // pomodoro | stopwatch
+timer_set_duration(secs)                 // длина ФОКУСА, clamp 10..120 мин; пере-взводит, если стоит
+timer_shift_minutes(delta)               // то же ±минуты, clamp 10..120
+timer_set_pomodoro_settings(focus_min, short_rest_min, long_rest_min, auto_start)
+```
+
+Запись сессий (1.3): **Rust пишет в SQLite сам** через `storage::with_db` в тик-цикле, где уже
+дренируются `pending_sessions`. Почему не фронтенд: скрытое окно не увидит завершение фазы, а
+сессия — факт про часы, которые живут в процессе. Строка `sessions`:
+
+```
+kind = 'pomodoro' | 'stopwatch'      started_at/ended_at = ISO local
+duration_sec = секунды фазы           completed = 1 если фаза дошла до нуля
+task_id = NULL                        id = UUID v4, updated_at = now
+```
+
+Записывается только фаза **фокуса**; перерывы в статистику не идут. Сброс и пауза закрывают
+сессию как `completed = 0` — «прерванная сессия учитывается отдельно» (сценарий спеки).
+
+## 13. Динамический фон — владелец: Wave 1 (Background)
+
+```ts
+// src/components/DynamicBackground.tsx
+export function DynamicBackground(): JSX.Element | null;
+```
+
+Компонент **сам** подписывается на `TimerService` и сам читает настройку
+`tempo_dynamic_background` (по умолчанию `true`), поэтому в `App.tsx` это одна строка
+`<DynamicBackground />` без пропсов. Выключен — возвращает `null`, фон остаётся статичным.
+
+Правила: оттенок выбирается по фазе (`focus` / `short_rest` / `long_rest` / простой) и по часу
+суток; переход — CSS-`transition` на 2 секунды. **Никакого JS-цикла анимации**: покой должен
+укладываться в ≤2% CPU (R46), а `requestAnimationFrame` этого не даёт. `prefers-reduced-motion`
+MUST отключать переход.
+
+## 14. Focus Audio — владелец: Wave 1 (FocusAudio)
+
+```ts
+// src/services/focusAudio.ts
+export type FocusSoundId = 'none' | 'brown' | 'white' | 'rain' | 'cafe';
+export interface FocusSound { id: FocusSoundId; label: string }
+export const FOCUS_SOUNDS: readonly FocusSound[];
+export function startFocusAudio(id: FocusSoundId): void;   // идемпотентно; 'none' останавливает
+export function stopFocusAudio(): void;
+export function currentFocusSound(): FocusSoundId;          // читает tempo_focus_sound
+```
+
+Звуки **генерируются** в WebAudio (шумовые буферы с фильтрами), а не скачиваются: ноль
+лицензионных вопросов и ноль веса в сборке (решение пользователя). Существующая ссылка на
+YouTube остаётся отдельной строкой и играет через `MusicService`, как сейчас. Apple Music
+отсутствует (R21). Настройка `tempo_focus_sound` сохраняется между запусками.

@@ -94,6 +94,21 @@ export const TYPE = {
   },
 } as const;
 
+/**
+ * The hue each timer phase paints with.
+ *
+ * One source for the background gradient, the dial arc and the mini overlay, so
+ * a break cannot look like focus in one place and like rest in another.
+ */
+export const PHASE_COLORS = {
+  focus: '#F59E0B',
+  short_rest: '#14B8A6',
+  long_rest: '#6366F1',
+  idle: '#6B7280',
+} as const;
+
+export type PhaseColorKey = keyof typeof PHASE_COLORS;
+
 export function hexToRgba(hex: string, alpha: number): string {
   const clean = hex.replace('#', '');
   const r = parseInt(clean.substring(0, 2), 16);
