@@ -1,8 +1,12 @@
-export type AppMode = 'dashboard' | 'ai' | 'settings';
-
-export type ThemeId = 'winter' | 'dark-neon' | 'cyberpunk' | 'amoled' | 'nordic' | 'sunset';
+/**
+ * @deprecated Legacy theme id kept for the themeFromTokens bridge (wave 12 removes it).
+ */
+export type ThemeId = string;
 export * from './dynamicUi';
 export * from './focus';
+
+/** Re-exported so screens import their chat types from one place. */
+export type { ChatMessage } from '../services/aiCompiler';
 
 export interface ThemeColors {
   id: ThemeId;
@@ -18,69 +22,6 @@ export interface ThemeColors {
   ringTrack: string;
   ringProgress: string;
   ticks: string;
-}
-
-/**
- * One exercise inside an interval block.
- */
-export interface ExerciseStep {
-  id: string;
-  name: string;
-  durationSec: number;
-  kind: 'work' | 'rest' | 'prepare' | 'cooldown';
-  /** Spoken when this exercise starts; falls back to `name`. */
-  voicePrompt?: string;
-}
-
-/**
- * A step of a schedule is either a moment in time that rings, or a block of
- * timed exercises that runs as a sequence.
- */
-export type ScheduleStep =
-  | {
-      id: string;
-      kind: 'moment';
-      /** "HH:MM" local time. */
-      time: string;
-      label: string;
-      /** Announced when the moment rings. */
-      voicePrompt?: string;
-      sound?: string;
-      /** A short description the user wrote, shown when the step rings. */
-      note?: string;
-    }
-  | {
-      id: string;
-      kind: 'block';
-      /** "HH:MM" local time at which the block begins. */
-      time: string;
-      label: string;
-      exercises: ExerciseStep[];
-      /** Spoken once when the block starts. */
-      voicePrompt?: string;
-      /** A short description shown while the block plays. */
-      note?: string;
-    };
-
-/**
- * A saved, reusable schedule — the primary object of the product.
- *
- * Unlike a bare alarm, a schedule can be named, toggled as a whole, edited and
- * reused every week. Its steps expand into firings for the scheduler.
- */
-export interface Schedule {
-  id: string;
-  name: string;
-  /**
-   * Weekdays this schedule runs on; 0 = Sunday. Empty means every day — a
-   * schedule is a routine, so "no days chosen" is "all of them".
-   */
-  days: number[];
-  enabled: boolean;
-  steps: ScheduleStep[];
-  /** The pasted text this schedule was built from, kept verbatim. */
-  sourceText?: string;
-  createdAt: string;
 }
 
 /**
