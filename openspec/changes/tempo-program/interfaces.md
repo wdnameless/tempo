@@ -69,6 +69,50 @@ pub fn soft_delete(conn: &Connection, table: &str, id: &str) -> Result<(), Strin
 pub fn changed_since(conn: &Connection, table: &str, iso: &str) -> Result<Vec<serde_json::Value>, String>;
 ```
 
+DDL (полный; миграция `0001_init`, порядок создания таблиц обязателен):
+
+```sql
+CREATE TABLE tasks (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL, note TEXT, status TEXT NOT NULL DEFAULT 'open',
+  list_id TEXT, parent_id TEXT, priority INTEGER DEFAULT 0,
+  due_date TEXT, start_at TEXT, planned_minutes INTEGER,
+  completed_at TEXT, position REAL NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL, deleted_at TEXT
+);
+CREATE TABLE lists (id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT, position REAL,
+  updated_at TEXT NOT NULL, deleted_at TEXT);
+CREATE TABLE notes (id TEXT PRIMARY KEY, title TEXT, body_md TEXT NOT NULL DEFAULT '',
+  pinned INTEGER DEFAULT 0, updated_at TEXT NOT NULL, deleted_at TEXT);
+CREATE TABLE drawings (id TEXT PRIMARY KEY, title TEXT, scene_json TEXT NOT NULL,
+  preview_path TEXT, updated_at TEXT NOT NULL, deleted_at TEXT);
+CREATE TABLE recordings (id TEXT PRIMARY KEY, title TEXT,
+  kind TEXT NOT NULL,                       -- audio | screen
+  file_path TEXT NOT NULL, duration_sec INTEGER, transcript TEXT, transcript_status TEXT,
+  updated_at TEXT NOT NULL, deleted_at TEXT);
+CREATE TABLE events (id TEXT PRIMARY KEY, source TEXT NOT NULL,   -- local | google
+  google_id TEXT, calendar_id TEXT, title TEXT, start_at TEXT, end_at TEXT,
+  all_day INTEGER DEFAULT 0, location TEXT, task_id TEXT,
+  updated_at TEXT NOT NULL, deleted_at TEXT);
+CREATE TABLE calendars_meta (calendar_id TEXT PRIMARY KEY, sync_token TEXT, last_sync_at TEXT);
+CREATE TABLE sessions (id TEXT PRIMARY KEY, kind TEXT NOT NULL,    -- pomodoro | stopwatch
+  started_at TEXT, ended_at TEXT, duration_sec INTEGER, completed INTEGER, task_id TEXT,
+  updated_at TEXT NOT NULL, deleted_at TEXT);
+CREATE TABLE links (from_kind TEXT, from_id TEXT, to_kind TEXT, to_id TEXT,
+  updated_at TEXT NOT NULL, PRIMARY KEY (from_kind, from_id, to_kind, to_id));
+CREATE TABLE alarms (id TEXT PRIMARY KEY, label TEXT, time TEXT, days TEXT, repeat TEXT,
+  enabled INTEGER, sound TEXT, voice_prompt TEXT, note TEXT,
+  updated_at TEXT NOT NULL, deleted_at TEXT);
+CREATE TABLE chat_messages (id TEXT PRIMARY KEY, role TEXT NOT NULL, content TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT);
+CREATE TABLE preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE sync_outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, row_id TEXT,
+  op TEXT, payload TEXT, created_at TEXT NOT NULL);
+CREATE VIRTUAL TABLE search_fts USING fts5(kind UNINDEXED, row_id UNINDEXED, title, body,
+  tokenize='unicode61');
+```
+
+`chat_messages` — сюда переезжает история копилота из `alarmer.json` (R44); `role` — `user` | `assistant`.
+
 Команды (имена фиксированы, добавляются в `invoke_handler`):
 
 ```rust
