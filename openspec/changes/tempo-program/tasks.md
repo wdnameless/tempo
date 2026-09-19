@@ -11,12 +11,15 @@
 - [ ] 0.3 Новый каркас `src/App.tsx`: сайдбар-навигация как в референсе (иконка + подпись, активная пилюля),
       сворачивание (⌘S), роутер экранов, `TitleBar` остаётся (drag, пин, мини-оверлей)
 - [ ] 0.4 Акцентный цвет: палитра из 8 оттенков в настройках, применяется через CSS-переменную
-- [ ] 0.5 SQLite: `tauri-plugin-sql` (sqlx) + миграции; `data/tempo.db` рядом с exe в portable-режиме,
-      `%APPDATA%` в установке; DDL из `interfaces.md`
-- [ ] 0.6 Слой доступа `src/services/db.ts`: типизированные репозитории, `updated_at`/`deleted_at`
-      автоматически, никаких SQL-строк в компонентах
+- [ ] 0.5 SQLite на `rusqlite` (bundled, проверено: сборка 12 с, FTS5 с `unicode61` находит русский
+      текст) + миграции; `data/tempo.db` рядом с exe в portable-режиме, `%APPDATA%` в установке;
+      весь SQL живёт в Rust, белый список таблиц — `storage/schema.rs` (interfaces §2)
+- [ ] 0.6 `src/services/db.ts` — типизированные репозитории поверх Rust-команд, **без SQL-строк**;
+      `updated_at`/`deleted_at` ставит Rust; плюс `src/services/settings.ts` поверх `preferences`
 - [ ] 0.7 Перенос данных: при отсутствии `tempo.db` читаем `alarmer.json` — будильники, задачи, заметки,
-      настройки переносим; программы и направления отбрасываем (R30, R31)
+      настройки переносим; программы и направления отбрасываем (R30, R31).
+      Экран будильников, задач, заметок и настроек переключается на БД в этой же волне: иначе правки
+      волн 1–2 уйдут в JSON мимо БД и потеряются к волне 3
 - [ ] 0.8 Удаление: `SchedulesPanel`, `BlockPlayer`, `DirectionEditor`, `JournalView`, `scheduleParser`,
       `scheduleEngine`, `focusBudget`, `TodayView` + их тесты; `scheduler.rs` теряет раскрытие программ
 - [ ] 0.9 Переименование: `productName` Tempo, `identifier` app.tempo.desktop, `tempo.exe`,

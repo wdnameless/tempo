@@ -42,61 +42,73 @@ IconButton({ icon, label, onClick, active? })
 
 ## 2. Хранилище — владелец: Wave 0 (Storage)
 
-`src/services/db.ts` — единственная точка SQL. Компоненты и прочие сервисы SQL не пишут.
+**Решение (проверено на этой машине): `rusqlite` с фичей `bundled`.** Пользователь выбрал rusqlite;
+проба показала, что `rusqlite 0.32 bundled` + `fts5` + `tokenize='unicode61'` собирается за 12 секунд
+и находит русский текст. `tauri-plugin-sql`/sqlx тянет тяжёлый async-стек и не даёт ничего сверх этого.
+
+**Весь SQL живёт в Rust.** JS не содержит ни одной SQL-строки: он зовёт типизированные команды,
+Rust строит запрос из белого списка таблиц и колонок. Почему так: SQL-ошибки ловятся в `cargo test`
+против настоящей БД, а не в подделанном драйвере на стороне JS; и схема имеет одного владельца.
+
+Rust (`src-tauri/src/storage/`):
+
+```rust
+// schema.rs — единственный белый список: таблица -> колонки и их типы
+pub struct TableSchema { pub name: &'static str, pub columns: &'static [(&'static str, ColType)], pub soft_delete: bool }
+pub fn table(name: &str) -> Option<&'static TableSchema>;
+
+// migrations.rs — DDL версионируется, применяется по порядку, идемпотентно
+pub fn migrate(conn: &Connection) -> Result<u32, String>;   // возвращает текущую версию
+
+// repo.rs — обобщённый CRUD; имена таблиц и колонок проходят через schema::table()
+pub fn list(conn: &Connection, table: &str, include_deleted: bool) -> Result<Vec<serde_json::Value>, String>;
+pub fn get(conn: &Connection, table: &str, id: &str) -> Result<Option<serde_json::Value>, String>;
+pub fn insert(conn: &Connection, table: &str, data: &serde_json::Value) -> Result<serde_json::Value, String>;
+pub fn update(conn: &Connection, table: &str, id: &str, patch: &serde_json::Value) -> Result<serde_json::Value, String>;
+pub fn soft_delete(conn: &Connection, table: &str, id: &str) -> Result<(), String>;
+pub fn changed_since(conn: &Connection, table: &str, iso: &str) -> Result<Vec<serde_json::Value>, String>;
+```
+
+Команды (имена фиксированы, добавляются в `invoke_handler`):
+
+```rust
+db_path()            -> String                       // data/tempo.db рядом с exe в portable, иначе app_data_dir
+db_ready()           -> u32                          // версия схемы; открывает файл и прогоняет миграции
+db_list(table, include_deleted)      -> Vec<Value>
+db_get(table, id)                    -> Option<Value>
+db_insert(table, data)               -> Value
+db_update(table, id, patch)          -> Value
+db_delete(table, id)                 -> ()           // мягкое: deleted_at = now
+db_changed_since(table, iso)         -> Vec<Value>   // для синка
+db_pref_get(key)                     -> Option<String>
+db_pref_set(key, value)              -> ()
+db_search(q, limit)                  -> Vec<SearchHit>   // FTS5; SearchHit { kind, row_id, title, body, rank }
+db_reindex(kind)                     -> u32              // перестроить индекс; kind=None -> всё
+```
+
+JS (`src/services/db.ts`) — тонкая типизированная обёртка, **без SQL**:
 
 ```ts
-export interface EntityMeta {
-  id: string;               // UUID v4
-  updated_at: string;       // ISO, ставится слоем автоматически
-  deleted_at: string | null;// мягкое удаление, обязательно для синка
-}
+export interface EntityMeta { id: string; updated_at: string; deleted_at: string | null }
 export interface Repo<T extends EntityMeta> {
-  all(): Promise<T[]>;                       // без удалённых
+  all(): Promise<T[]>;
   byId(id: string): Promise<T | null>;
   insert(data: Omit<T, keyof EntityMeta>): Promise<T>;
   update(id: string, patch: Partial<Omit<T, keyof EntityMeta>>): Promise<T>;
-  remove(id: string): Promise<void>;         // ставит deleted_at
-  changedSince(iso: string): Promise<T[]>;   // для синка
+  remove(id: string): Promise<void>;          // мягкое удаление
+  changedSince(iso: string): Promise<T[]>;
 }
 export function repo<T extends EntityMeta>(table: Table): Repo<T>;
-export function dbPath(): Promise<string>;   // data/tempo.db | app_data_dir
-export function migrate(): Promise<void>;
+export function dbReady(): Promise<number>;   // вызывается один раз при старте, до первого экрана
+export function dbPath(): Promise<string>;
+export const SCHEMA_VERSION: number;
 ```
 
-DDL (сокращённо; полный — в миграции `0001_init`):
+`src/services/settings.ts` — типизированные настройки поверх `preferences`:
+`getPref<T>(key, fallback)`, `setPref<T>(key, value)`, `subscribePrefs(cb)`.
 
-```sql
-CREATE TABLE tasks (
-  id TEXT PRIMARY KEY, title TEXT NOT NULL, note TEXT, status TEXT NOT NULL DEFAULT 'open',
-  list_id TEXT, parent_id TEXT, priority INTEGER DEFAULT 0,
-  due_date TEXT, start_at TEXT, planned_minutes INTEGER,
-  completed_at TEXT, position REAL NOT NULL DEFAULT 0,
-  updated_at TEXT NOT NULL, deleted_at TEXT
-);
-CREATE TABLE lists (id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT, position REAL, updated_at TEXT NOT NULL, deleted_at TEXT);
-CREATE TABLE notes (id TEXT PRIMARY KEY, title TEXT, body_md TEXT NOT NULL DEFAULT '', pinned INTEGER DEFAULT 0, updated_at TEXT NOT NULL, deleted_at TEXT);
-CREATE TABLE drawings (id TEXT PRIMARY KEY, title TEXT, scene_json TEXT NOT NULL, preview_path TEXT, updated_at TEXT NOT NULL, deleted_at TEXT);
-CREATE TABLE recordings (id TEXT PRIMARY KEY, title TEXT, kind TEXT NOT NULL, -- audio|screen
-  file_path TEXT NOT NULL, duration_sec INTEGER, transcript TEXT, transcript_status TEXT, updated_at TEXT NOT NULL, deleted_at TEXT);
-CREATE TABLE events (id TEXT PRIMARY KEY, source TEXT NOT NULL, -- local|google
-  google_id TEXT, calendar_id TEXT, title TEXT, start_at TEXT, end_at TEXT, all_day INTEGER DEFAULT 0,
-  location TEXT, task_id TEXT, updated_at TEXT NOT NULL, deleted_at TEXT);
-CREATE TABLE calendars_meta (calendar_id TEXT PRIMARY KEY, sync_token TEXT, last_sync_at TEXT);
-CREATE TABLE sessions (id TEXT PRIMARY KEY, kind TEXT NOT NULL, -- pomodoro|stopwatch
-  started_at TEXT, ended_at TEXT, duration_sec INTEGER, completed INTEGER, task_id TEXT,
-  updated_at TEXT NOT NULL, deleted_at TEXT);
-CREATE TABLE links (from_kind TEXT, from_id TEXT, to_kind TEXT, to_id TEXT, updated_at TEXT NOT NULL,
-  PRIMARY KEY (from_kind, from_id, to_kind, to_id));
-CREATE TABLE alarms (id TEXT PRIMARY KEY, label TEXT, time TEXT, days TEXT, repeat TEXT, enabled INTEGER,
-  sound TEXT, voice_prompt TEXT, note TEXT, updated_at TEXT NOT NULL, deleted_at TEXT);
-CREATE TABLE preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
-CREATE TABLE sync_outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, row_id TEXT, op TEXT,
-  payload TEXT, created_at TEXT NOT NULL);
-CREATE VIRTUAL TABLE search_fts USING fts5(kind UNINDEXED, row_id UNINDEXED, title, body, tokenize='unicode61');
-```
-
-Правила: любое изменение строки попадает в `sync_outbox` триггером; удаление — только
-`deleted_at`; `id` — UUID v4 всегда (никаких `Date.now()`).
+Правила: `id` — UUID v4 (никаких `Date.now()`); `updated_at` ставит Rust при каждой записи;
+удаление — только `deleted_at`; любое изменение строки попадает в `sync_outbox` триггером.
 
 ## 3. Rust-команды — владелец: Wave 0 (Native)
 
