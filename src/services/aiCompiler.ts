@@ -4,6 +4,7 @@ import { AIGateway } from './aiGateway';
 import { listTasks, createTask, listLists, createList } from './tasks';
 import { listNotes, createNote } from './notes';
 import { buildDay, dayKey } from './day';
+import { listRecordings } from './recordings';
 
 export type { ChatMessage } from '../types';
 
@@ -52,16 +53,21 @@ export interface ExecutionOutcome {
   answer?: string;
   error?: string;
 }
+const SYSTEM_PROMPT = `Ты — встроенный персональный ассистент приложения Tempo. Твоя задача: анализировать запрос пользователя и возвращать строго структурированное действие в формате JSON.
 
-const SYSTEM_PROMPT = `Ты — встроенный интеллектуальный помощник приложения Tempo.
-Твоя задача — помогать пользователю управлять задачами, списками, заметками и планом дня.
 Ты умеешь:
 1. Создавать задачу (title, dueDate в формате YYYY-MM-DD, listName, priority: 0, 1, 2, 3).
 2. Создавать список (name, color).
 3. Создавать заметку (title, body).
 4. Составлять план дня из текста («распланируй утро: зарядка, отчёт, созвон»).
-5. Отвечать на вопросы по задачам, спискам и расписанию дня на основе предоставленного контекста.
+5. Отвечать на вопросы по задачам, спискам, записям и расписанию дня на основе предоставленного контекста.
 
+В контексте тебе передаются:
+- tasks: активные задачи пользователя.
+- lists: списки.
+- notes: заметки.
+- recordings: массив записей (аудио/видео) пользователя с названиями (title), транскриптами (transcript) и признаком hasTranscript. Если пользователь спрашивает, что он говорил на встрече или о чём была запись, используй поле transcript соответствующей записи. Если у записи нет транскрипта (hasTranscript = false), честно ответь, что для этой записи транскрипт пока отсутствует.
+- dayScheduleItems: массив пунктов расписания на сегодня.
 Никогда не предлагай удалённые сущности. Отвечай СТРОГО в формате JSON без markdown блоков (или внутри json блока):
 {
   "action": "create_task" | "create_list" | "create_note" | "build_plan" | "answer" | "noop",
@@ -154,12 +160,12 @@ export class AICompilerService {
     if (settings.apiKey && settings.apiKey.trim().length > 0) {
       try {
         // Collect active (non-deleted) context
-        const [activeTasks, activeLists, activeNotes] = await Promise.all([
+        const [activeTasks, activeLists, activeNotes, activeRecordings] = await Promise.all([
           listTasks(),
           listLists(),
           listNotes(),
+          listRecordings().catch(() => []),
         ]);
-
         const todayStr = dayKey(now);
         const daySchedule = buildDay({
           date: now,
@@ -172,6 +178,12 @@ export class AICompilerService {
           tasks: activeTasks.map((t) => ({ id: t.id, title: t.title, dueDate: t.dueDate, done: t.done })),
           lists: activeLists.map((l) => ({ id: l.id, name: l.name })),
           notes: activeNotes.map((n) => ({ id: n.id, title: n.title })),
+          recordings: activeRecordings.map((r) => ({
+            id: r.id,
+            title: r.title,
+            transcript: r.transcript || null,
+            hasTranscript: Boolean(r.transcript && r.transcript.trim().length > 0),
+          })),
           dayScheduleItems: daySchedule.map((i) => ({ title: i.title, startMin: i.startMin, done: i.done })),
         });
 
@@ -305,14 +317,27 @@ export class AICompilerService {
       };
     }
 
-    // 5. Query about tasks/plan
+    // 5. Query about recordings/transcripts: "что я говорил на встрече", "какие записи", "что в записи"
+    if (
+      lower.includes('что я говорил') ||
+      lower.includes('на встрече') ||
+      lower.includes('в записи') ||
+      lower.includes('мои записи') ||
+      lower.includes('какие записи')
+    ) {
+      return {
+        action: 'answer',
+        explanation: 'Запрос информации по записям и транскриптам.',
+      };
+    }
+
+    // 6. Query about tasks/plan
     if (lower.includes('какие задачи') || lower.includes('что на сегодня') || lower.includes('план на сегодня') || lower.includes('список задач')) {
       return {
         action: 'answer',
         explanation: 'Запрос информации по задачам.',
       };
     }
-
     // Default no-op
     return {
       action: 'noop',

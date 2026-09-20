@@ -4,9 +4,9 @@
 import { repo, type EntityMeta } from './db';
 import { assetDelete, assetStat } from './assets';
 import type { RecordingResult } from './recorder';
-
+import { reindex } from './search';
 export type RecordingKind = 'audio' | 'screen';
-export type TranscriptStatus = 'pending' | 'completed' | 'failed' | 'none';
+export type TranscriptStatus = 'pending' | 'done' | 'completed' | 'failed' | 'none';
 
 /**
  * SQLite row representation in the 'recordings' table.
@@ -185,6 +185,32 @@ export async function updateRecording(
 }
 
 /**
+ * Updates the transcription text and status for a recording.
+ */
+export async function updateTranscript(
+  id: string,
+  transcript: string,
+  status: 'done' | 'failed' = 'done',
+): Promise<RecordingItem> {
+  return updateRecording(id, {
+    transcript,
+    transcript_status: status,
+  });
+}
+
+/**
+ * Updates only the transcript status (e.g. to 'pending' or 'failed').
+ */
+export async function updateTranscriptStatus(
+  id: string,
+  status: 'pending' | 'done' | 'failed',
+): Promise<RecordingItem> {
+  return updateRecording(id, {
+    transcript_status: status,
+  });
+}
+
+/**
  * Soft-delete a recording row AND delete the media file via assetDelete (R43).
  * A row whose file is gone is invisible garbage.
  */
@@ -218,4 +244,19 @@ export async function recordingBytes(target: string | RecordingItem): Promise<nu
     return 0;
   }
   return assetStat(filePath);
+}
+
+/**
+ * Reindexes the full-text search entries for recordings.
+ *
+ * The index is rebuilt per kind, not per row, so this takes no id — the callers
+ * pass one because it reads naturally at the call site, and an unused parameter
+ * would only suggest it is used.
+ */
+export async function reindexRecordings(): Promise<void> {
+  try {
+    await reindex('recording');
+  } catch {
+    // Non-fatal: search falls back to titles when the index is unavailable.
+  }
 }

@@ -836,3 +836,77 @@ export function googleCalendarStatus(): Promise<IntegrationStatus>;
   обновления.
 - Настройки читаются синхронно из кэша (`getPref`) и пишутся асинхронно (`setPref`): экран
   не должен ждать диск, чтобы нарисовать переключатель.
+
+## 22. Речь в текст — владелец: Wave 11 (R22, R23, R24, R17)
+
+### Движок
+
+`transcribe-cpp` 0.2 (крейт проекта Handy, надстройка над transcribe.cpp на ggml). Собран и
+проверен на этой машине: `cargo check` проходит, сборка ggml занимает ~4.5 минуты. Модели — GGUF.
+
+```rust
+let mut session = transcribe_cpp::Model::load("model.gguf")?.session()?;
+let result = session.run(&pcm_16k_mono_f32, &RunOptions::default())?;
+result.text
+```
+`Model` — `Send + Sync`, `Session` — `Send`; у крейта есть `CancelToken`, поэтому отмена
+транскрипции не требует убивать поток.
+
+### Каталог моделей (R22: размер и качество рядом)
+
+| id | файл | размер | WER (LibriSpeech test-clean) | языки |
+|---|---|---|---|---|
+| `tiny` | `whisper-tiny-Q8_0.gguf` | 46 МБ | 7.52% | 99 |
+| `base` | `whisper-base-Q8_0.gguf` | 85 МБ | 5.12% | 99 |
+| `small` | `whisper-small-Q8_0.gguf` | 270 МБ | 3.33% | 99 |
+| `medium` | `whisper-medium-Q8_0.gguf` | 832 МБ | 2.64% | 99 |
+
+Источник: `https://huggingface.co/handy-computer/whisper-<id>-gguf/resolve/main/whisper-<id>-Q8_0.gguf`
+(проверено: 206 и магия `GGUF`). База переопределяется настройкой-зеркалом — не из вежливости:
+без зеркала установка в сети, где HuggingFace недоступен, не работает вовсе.
+Модели лежат в `<data>/models/`; загрузка идёт во временный файл и переименовывается в конце,
+поэтому оборванная загрузка не оставляет «модель», которая на самом деле половина файла.
+
+### Команды
+
+```rust
+stt_catalog() -> Vec<ModelInfo>            // { id, name, bytes, wer, languages, installed, path }
+stt_download(model_id, mirror: Option<String>) -> ()
+stt_download_progress() -> DownloadProgress // { model_id, received, total, done, error }
+stt_download_cancel() -> ()
+stt_model_delete(model_id) -> ()
+stt_engine() -> { engine: "local" | "cloud", model_id: Option<String>, available: bool }
+stt_set_engine(engine, model_id) -> ()
+stt_start_dictation(mode: "push_to_talk" | "toggle") -> ()
+stt_stop_dictation() -> TranscriptionResult // { text, duration_ms, engine }
+stt_dictation_state() -> { recording: bool, level: f32, since: Option<u64> }
+stt_cancel_dictation() -> ()
+stt_transcribe_file(path) -> { text, language }
+```
+
+### Правила
+
+- **Локальный движок по умолчанию** (R22), облачный — опция с тем же BYOK-ключом, что у копилота
+  (R23). Облачный путь обязан существовать и тогда, когда локальная модель ещё не скачана:
+  человек с ключом не должен ждать 85 МБ.
+- **Диктовка вставляет текст в активное окно** (R24): `SendInput` с сохранением и восстановлением
+  буфера обмена. Буфер — чужая собственность: после вставки в нём должно лежать то, что лежало до
+  неё. Если вставка невозможна (окно с повышенными правами), остаётся копирование в буфер и явное
+  сообщение об этом — молча потерянный текст недопустим.
+- **VAD режет тишину**: захват 16 кГц моно, порог по энергии, уттерэнс начинается после
+  достаточного превышения и заканчивается после паузы. Пустая запись — это не транскрипция
+  пустоты, а честный отказ с текстом «речь не распознана».
+- **Ничего не работает в фоне без нужды** (R46): в покое на главном экране ≤2% CPU. Захват идёт
+  только во время диктовки, модель грузится один раз и выгружается, когда не нужна.
+
+### Транскрипция записей (R17)
+
+```ts
+// src/services/transcribe.ts
+export function transcribeRecording(id: string): Promise<{ text: string; language: string }>;
+export function transcribePending(limit?: number): Promise<{ done: number; failed: number }>;
+export function transcriptSearchText(item: RecordingItem): string;
+```
+Существующие записи до-расшифровываются (`transcribePending`), результат ложится в
+`transcript`/`transcript_status` (колонки уже есть с волны 0), а текст попадает в поиск ⌘K и
+в контекст копилота — иначе расшифровка остаётся файлом, который никто не найдёт.

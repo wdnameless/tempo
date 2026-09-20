@@ -45,6 +45,14 @@ vi.mock('../../services/recordings', () => ({
   deleteRecording: vi.fn(),
   recordingBytes: vi.fn(),
 }));
+vi.mock('../../services/transcribe', () => ({
+  transcribeRecording: vi.fn(),
+  transcribePending: vi.fn(),
+}));
+vi.mock('../../services/stt', () => ({
+  sttErrorKey: vi.fn(() => 'recTranscriptFailed'),
+}));
+import * as transcribeService from '../../services/transcribe';
 
 describe('RecordingsView', () => {
   const t = I18nService.t();
@@ -302,6 +310,147 @@ describe('RecordingsView', () => {
       expect(screen.getByText('Meeting Notes')).toBeDefined();
       expect(screen.getByText(/01:05/)).toBeDefined();
       expect(screen.getByText(new RegExp(`${t.recSize}: —`))).toBeDefined();
+    });
+  });
+
+  it('renders per-row transcript states and allows reading transcript', async () => {
+    vi.mocked(recordingsService.listRecordings).mockResolvedValue([
+      {
+        id: 'rec-done',
+        title: 'Interview',
+        kind: 'audio',
+        file_path: 'audio/interview.wav',
+        duration_sec: 120,
+        transcript: 'Hello and welcome to the team meeting.',
+        transcript_status: 'done',
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'rec-failed',
+        title: 'Voice Note',
+        kind: 'audio',
+        file_path: 'audio/note.wav',
+        duration_sec: 30,
+        transcript: null,
+        transcript_status: 'failed',
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'rec-pending',
+        title: 'Brainstorm',
+        kind: 'audio',
+        file_path: 'audio/brainstorm.wav',
+        duration_sec: 60,
+        transcript: null,
+        transcript_status: 'pending',
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'rec-untranscribed',
+        title: 'Untouched',
+        kind: 'audio',
+        file_path: 'audio/untouched.wav',
+        duration_sec: 45,
+        transcript: null,
+        transcript_status: 'none',
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+
+    render(<RecordingsView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Interview')).toBeDefined();
+      expect(screen.getByText('Voice Note')).toBeDefined();
+      expect(screen.getByText('Brainstorm')).toBeDefined();
+      expect(screen.getByText('Untouched')).toBeDefined();
+    });
+
+    // Check badges
+    expect(screen.getByText(t.recTranscriptDone)).toBeDefined();
+    expect(screen.getByText(t.recTranscriptFailed)).toBeDefined();
+    expect(screen.getByText(t.recTranscriptPending)).toBeDefined();
+
+    // Read the transcript in the row
+    expect(screen.getByText('Hello and welcome to the team meeting.')).toBeDefined();
+  });
+
+  it('invokes transcribeRecording for a single row and transcribePending for batch', async () => {
+    vi.mocked(recordingsService.listRecordings).mockResolvedValue([
+      {
+        id: 'rec-test-1',
+        title: 'Quick Memo',
+        kind: 'audio',
+        file_path: 'audio/memo.wav',
+        duration_sec: 15,
+        transcript: null,
+        transcript_status: 'none',
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+    vi.mocked(transcribeService.transcribeRecording).mockResolvedValue({
+      text: 'Mocked transcription text',
+      language: 'en',
+    });
+    vi.mocked(transcribeService.transcribePending).mockResolvedValue({
+      total: 1,
+      processed: 1,
+      succeeded: 1,
+      failed: 0,
+      errors: {},
+    });
+
+    render(<RecordingsView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Quick Memo')).toBeDefined();
+    });
+
+    // Click single row transcribe button
+    // Click batch transcribe button
+    const batchBtn = screen.getByRole('button', { name: new RegExp(t.recTranscribeAll) });
+    expect(batchBtn).toBeDefined();
+    fireEvent.click(batchBtn);
+
+    await waitFor(() => {
+      expect(transcribeService.transcribePending).toHaveBeenCalled();
+    });
+
+    // Click single row transcribe button
+    const transcribeBtns = screen.getAllByRole('button', { name: t.recTranscribe });
+    expect(transcribeBtns.length).toBeGreaterThan(0);
+    fireEvent.click(transcribeBtns[0]);
+
+    await waitFor(() => {
+      expect(transcribeService.transcribeRecording).toHaveBeenCalledWith('rec-test-1');
+    });
+  });
+
+  it('shows error state when single row transcription fails', async () => {
+    vi.mocked(recordingsService.listRecordings).mockResolvedValue([
+      {
+        id: 'rec-fail-test',
+        title: 'Broken Audio',
+        kind: 'audio',
+        file_path: 'audio/broken.wav',
+        duration_sec: 25,
+        transcript: null,
+        transcript_status: 'none',
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+    vi.mocked(transcribeService.transcribeRecording).mockRejectedValue(new Error('Network failure'));
+
+    render(<RecordingsView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Broken Audio')).toBeDefined();
+    });
+    const transcribeBtns = screen.getAllByRole('button', { name: t.recTranscribe });
+    fireEvent.click(transcribeBtns[0]);
+
+    await waitFor(() => {
+      expect(screen.getAllByText(t.recTranscriptFailed).length).toBeGreaterThan(0);
     });
   });
 });

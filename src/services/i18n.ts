@@ -111,6 +111,28 @@ export interface Translations {
   settingsWhisperBase: string;
   settingsWhisperSmall: string;
   settingsWhisperHint: string;
+  sttErrorNoModel: string;
+  sttErrorNoMic: string;
+  sttErrorCloudRefused: string;
+  sttErrorInjectionFailed: string;
+  sttErrorNetwork: string;
+  sttErrorDiskSpace: string;
+  sttCopiedToClipboard: string;
+  sttInsertedIntoWindow: string;
+  recTranscribe: string;
+  recTranscribeAll: string;
+  recTranscript: string;
+  recTranscriptPending: string;
+  recTranscriptFailed: string;
+  recTranscriptDone: string;
+  sttEngineLocal: string;
+  sttEngineCloud: string;
+  sttDownloadCancel: string;
+  sttDeleteModel: string;
+  sttDownloadModel: string;
+  sttSize: string;
+  sttQuality: string;
+  sttModelInstalled: string;
   settingsShortcutsHint: string;
   settingsShortcutsEmpty: string;
   settingsAboutHint: string;
@@ -451,6 +473,14 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsWhisperBase: 'Whisper Base (~145 МБ)',
     settingsWhisperSmall: 'Whisper Small (~480 МБ)',
     settingsWhisperHint: 'Модель загрузится автоматически при первом включении.',
+    sttErrorNoModel: 'Модель распознавания не загружена',
+    sttErrorNoMic: 'Микрофон недоступен',
+    sttErrorCloudRefused: 'Ошибка облачного распознавания',
+    sttErrorInjectionFailed: 'Не удалось вставить текст в окно (скопировано в буфер)',
+    sttErrorNetwork: 'Сетевая ошибка при загрузке модели или обращении к облаку',
+    sttErrorDiskSpace: 'Недостаточно места на диске для загрузки модели',
+    sttCopiedToClipboard: 'Текст скопирован в буфер обмена',
+    sttInsertedIntoWindow: 'Текст вставлен в активное окно',
     settingsShortcutsHint: 'Список берётся из реестра горячих клавиш',
     settingsShortcutsEmpty: 'Горячие клавиши не зарегистрированы.',
     settingsAboutHint: 'Сборка, портативный режим и подключённые сервисы',
@@ -459,6 +489,20 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsEnvironment: 'Режим окружения',
     settingsEnvironmentHint: 'Портативный каталог или установка',
     settingsPortable: 'Портативный режим',
+    recTranscribe: 'Распознать речь',
+    recTranscribeAll: 'Распознать все записи',
+    recTranscript: 'Транскрипт',
+    recTranscriptPending: 'Ожидает распознавания',
+    recTranscriptFailed: 'Ошибка распознавания',
+    recTranscriptDone: 'Распознано',
+    sttEngineLocal: 'Локальная (Whisper)',
+    sttEngineCloud: 'Облачная (BYOK)',
+    sttDownloadCancel: 'Отменить',
+    sttDeleteModel: 'Удалить модель',
+    sttDownloadModel: 'Скачать модель',
+    sttSize: 'Размер',
+    sttQuality: 'Качество (WER)',
+    sttModelInstalled: 'Установлена',
     settingsInstalled: 'Обычная установка',
     settingsUpdate: 'Обновление',
     settingsUpdateHint: 'Проверить доступные версии',
@@ -757,6 +801,14 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsWhisperModel: 'Whisper Model',
     settingsWhisperSmall: 'Whisper Small (~480 MB)',
     settingsWhisperTiny: 'Whisper Tiny (~75 MB)',
+    sttErrorNoModel: 'Speech recognition model not downloaded',
+    sttErrorNoMic: 'Microphone unavailable',
+    sttErrorCloudRefused: 'Cloud speech service refused',
+    sttErrorInjectionFailed: 'Could not inject text into active window (copied to clipboard)',
+    sttErrorNetwork: 'Network error downloading model or contacting cloud',
+    sttErrorDiskSpace: 'Not enough disk space to download model',
+    sttCopiedToClipboard: 'Text copied to clipboard',
+    sttInsertedIntoWindow: 'Text inserted into active window',
     // Existing keys
     tabAlarms: 'Alarms',
     tabTasks: 'Tasks',
@@ -778,6 +830,20 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     navNotes: 'Notes',
     statsEmptyTitle: 'No statistics yet',
     statsEmptyBody: 'Focus hours, a 12-week activity heat map, productive streaks, and peak hours will appear here.',
+    recTranscribe: 'Transcribe',
+    recTranscribeAll: 'Transcribe all pending',
+    recTranscript: 'Transcript',
+    recTranscriptPending: 'Pending transcription',
+    recTranscriptFailed: 'Transcription failed',
+    recTranscriptDone: 'Transcribed',
+    sttEngineLocal: 'Local (Whisper)',
+    sttEngineCloud: 'Cloud (BYOK)',
+    sttDownloadCancel: 'Cancel',
+    sttDeleteModel: 'Delete model',
+    sttDownloadModel: 'Download model',
+    sttSize: 'Size',
+    sttQuality: 'Quality (WER)',
+    sttModelInstalled: 'Installed',
     statsEmptyHint: 'Complete a timer session to get started',
     statsTitle: 'Statistics',
     statsSubtitle: 'Overview of focus time and completed tasks',

@@ -33,6 +33,7 @@ import { AlarmCenter } from './components/AlarmCenter';
 import { UpdateBanner } from './components/UpdateBanner';
 import { CommandPalette } from './components/CommandPalette';
 
+import { DictationIndicator } from './components/DictationIndicator';
 import { DynamicBackground } from './components/DynamicBackground';
 import { I18nService } from './services/i18n';
 import { loadAccent, migrateLegacyPreferences } from './services/generalSettings';
@@ -633,6 +634,8 @@ function MainShell() {
               </div>
             </button>
           )}
+          {/* Dictation pill indicator: visible only while recording */}
+          <DictationIndicator />
         </div>
       </div>
     </ErrorBoundary>

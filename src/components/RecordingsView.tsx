@@ -13,6 +13,9 @@ import {
   AlertCircle,
   FileAudio,
   FileVideo,
+  FileText,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { I18nService } from '../services/i18n';
@@ -38,6 +41,11 @@ import {
   recordingBytes,
   type RecordingItem,
 } from '../services/recordings';
+import {
+  transcribeRecording,
+  transcribePending,
+} from '../services/transcribe';
+import { sttErrorKey } from '../services/stt';
 
 /**
  * Format elapsed seconds to mm:ss or hh:mm:ss.
@@ -105,6 +113,11 @@ export function RecordingsView(): React.ReactElement {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState<string>('');
   const [playingId, setPlayingId] = useState<string | null>(null);
+  // Transcription state
+  const [transcribingId, setTranscribingId] = useState<string | null>(null);
+  const [isTranscribingBatch, setIsTranscribingBatch] = useState<boolean>(false);
+  const [batchResult, setBatchResult] = useState<{ succeeded: number; failed: number } | null>(null);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
 
   // Timers
   const timerRef = useRef<number | null>(null);
@@ -333,6 +346,39 @@ export function RecordingsView(): React.ReactElement {
     }
   };
 
+  // Transcription actions
+  const handleTranscribeSingle = async (rec: RecordingItem) => {
+    if (transcribingId) return;
+    setTranscribingId(rec.id);
+    setRowErrors((prev) => {
+      const next = { ...prev };
+      delete next[rec.id];
+      return next;
+    });
+    try {
+      await transcribeRecording(rec.id);
+      await refreshLibrary();
+    } catch (err) {
+      const errKey = sttErrorKey(err);
+      const message = (t[errKey] as string | undefined) || t.recTranscriptFailed;
+      setRowErrors((prev) => ({ ...prev, [rec.id]: message }));
+    } finally {
+      setTranscribingId(null);
+    }
+  };
+
+  const handleTranscribePending = async () => {
+    setIsTranscribingBatch(true);
+    try {
+      const res = await transcribePending(50);
+      setBatchResult({ succeeded: res.succeeded, failed: res.failed });
+      await refreshLibrary();
+    } catch (err) {
+      console.error('Batch transcription failed:', err);
+    } finally {
+      setIsTranscribingBatch(false);
+    }
+  };
   const handleDelete = async (id: string) => {
     try {
       await deleteRecording(id);
@@ -626,9 +672,38 @@ export function RecordingsView(): React.ReactElement {
 
       {/* Bottom Half: The Library */}
       <div className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold text-[var(--text)]">
-          {t.navRecordings}
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-[var(--text)]">
+            {t.navRecordings}
+          </h2>
+          {recordings.length > 0 && (
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleTranscribePending}
+                disabled={isTranscribingBatch || !!transcribingId}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-hover)] disabled:opacity-50 transition-colors"
+              >
+                {isTranscribingBatch ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    {t.recTranscribe}
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={13} />
+                    {t.recTranscribeAll}
+                    {batchResult && (
+                      <span className="text-xs opacity-75">
+                        ({batchResult.succeeded} ok / {batchResult.failed} failed)
+                      </span>
+                    )}
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
 
         {recordings.length === 0 ? (
           <div className="p-8 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-center text-sm text-[var(--text-muted)]">
@@ -674,9 +749,27 @@ export function RecordingsView(): React.ReactElement {
                           </button>
                         </div>
                       ) : (
-                        <span className="text-sm font-medium text-[var(--text)] truncate">
-                          {rec.title}
-                        </span>
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="text-sm font-medium text-[var(--text)] truncate">
+                            {rec.title}
+                          </span>
+                          {/* Per-row transcript state: only shown if transcript_status exists */}
+                          {rec.transcript_status === 'pending' && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                              {t.recTranscriptPending}
+                            </span>
+                          )}
+                          {rec.transcript_status === 'done' && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                              {t.recTranscriptDone}
+                            </span>
+                          )}
+                          {rec.transcript_status === 'failed' && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-red-500/10 text-red-500 border border-red-500/20">
+                              {t.recTranscriptFailed}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </div>
 
@@ -691,6 +784,21 @@ export function RecordingsView(): React.ReactElement {
                         {t.recSize}: {formatBytes(sizes[rec.id])}
                       </span>
 
+                      {/* Single Transcribe Action */}
+                      <button
+                        type="button"
+                        onClick={() => handleTranscribeSingle(rec)}
+                        disabled={transcribingId === rec.id || isTranscribingBatch}
+                        className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)] disabled:opacity-50"
+                        aria-label={t.recTranscribe}
+                        title={t.recTranscribe}
+                      >
+                        {transcribingId === rec.id ? (
+                          <Loader2 size={14} className="animate-spin text-primary" />
+                        ) : (
+                          <Sparkles size={14} />
+                        )}
+                      </button>
                       <div className="flex items-center gap-1 pl-2 border-l border-[var(--border)]">
                         <button
                           type="button"
@@ -736,6 +844,26 @@ export function RecordingsView(): React.ReactElement {
                       />
                     )}
                   </div>
+
+                  {/* Error state if single transcription failed */}
+                  {rowErrors[rec.id] && (
+                    <div className="text-xs text-red-500 bg-red-500/10 p-2 rounded border border-red-500/20">
+                      {rowErrors[rec.id]}
+                    </div>
+                  )}
+
+                  {/* Readable Transcript */}
+                  {rec.transcript ? (
+                    <div className="pt-2 border-t border-[var(--border)] flex flex-col gap-1.5">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)]">
+                        <FileText size={13} />
+                        <span>{t.recTranscript}</span>
+                      </div>
+                      <p className="text-xs text-[var(--text)] whitespace-pre-wrap leading-relaxed bg-[var(--bg)] p-3 rounded-lg border border-[var(--border)] select-text">
+                        {rec.transcript}
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
               );
             })}

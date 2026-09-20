@@ -18,6 +18,7 @@ pub mod recording;
 mod scheduler;
 mod timer;
 pub mod storage;
+pub mod stt;
 
 /// Whether this build keeps its data beside the executable.
 #[tauri::command]
@@ -337,7 +338,9 @@ async fn toggle_mini_overlay(app: tauri::AppHandle, open: Option<bool>) -> Resul
 async fn register_shortcuts(app: tauri::AppHandle) -> Result<(), String> {
     use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-    let bindings: Vec<(Shortcut, fn())> = vec![
+    let mut bound = 0usize;
+
+    let timer_bindings: Vec<(Shortcut, fn())> = vec![
         (Shortcut::new(Some(Modifiers::ALT), Code::KeyS), || {
             if timer::snapshot().running {
                 timer::pause();
@@ -354,19 +357,39 @@ async fn register_shortcuts(app: tauri::AppHandle) -> Result<(), String> {
         }),
     ];
 
-    let mut bound = 0usize;
-    for (shortcut, action) in bindings {
-        // A combo already owned by another program must not disable the rest.
+    for (shortcut, action) in timer_bindings {
         match app.global_shortcut().on_shortcut(shortcut, move |app, _shortcut, press| {
             if press.state() == ShortcutState::Pressed {
                 action();
-                // Nudge the UI to re-read the backend state it did not change.
                 let _ = app.emit("timer://changed", ());
             }
         }) {
             Ok(()) => bound += 1,
             Err(e) => eprintln!("shortcut unavailable: {e}"),
         }
+    }
+
+    // Global dictation shortcut: Ctrl+Shift+D (toggle dictation)
+    let dictation_shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyD);
+    match app.global_shortcut().on_shortcut(dictation_shortcut, move |app, _shortcut, press| {
+        if press.state() == ShortcutState::Pressed {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Some(state) = app.try_state::<stt::SttState>() {
+                    let is_active = state.capture_state.is_recording();
+                    if is_active {
+                        if let Ok(res) = stt::stt_stop_dictation(app.clone(), state).await {
+                            let _ = app.emit("stt://dictation_stopped", res);
+                        }
+                    } else if let Ok(()) = stt::stt_start_dictation(state, Some("toggle".to_string())).await {
+                        let _ = app.emit("stt://dictation_started", ());
+                    }
+                }
+            });
+        }
+    }) {
+        Ok(()) => bound += 1,
+        Err(e) => eprintln!("dictation shortcut unavailable: {e}"),
     }
     if bound == 0 {
         return Err("no global shortcuts could be bound".to_string());
@@ -566,6 +589,19 @@ pub fn run() {
             recording::recording_state,
             recording::recording_level,
             recording::recording_preview,
+            stt::stt_catalog,
+            stt::stt_download,
+            stt::stt_download_cancel,
+            stt::stt_model_delete,
+            stt::stt_download_progress,
+            stt::stt_engine,
+            stt::stt_set_engine,
+            stt::stt_start_dictation,
+            stt::stt_stop_dictation,
+            stt::stt_cancel_dictation,
+            stt::stt_dictation_state,
+            stt::stt_transcribe_file,
+            stt::stt_transcribe_cloud,
         ])
         .setup(|app| {
             // Build Tray Menu
@@ -651,6 +687,10 @@ pub fn run() {
                     eprintln!("global shortcuts unavailable: {e}");
                 }
             });
+            let data_dir = stt::resolve_data_dir(app.handle());
+            let stt_state = stt::SttState::new(data_dir);
+            app.manage(stt_state);
+
 
             Ok(())
         })

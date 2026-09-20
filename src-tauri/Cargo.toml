@@ -1,6 +1,6 @@
 [package]
 name = "tempo"
-version = "0.14.0"
+version = "0.15.0"
 description = "Tempo backend: alarm scheduler, countdown timer, alarm audio and AI gateway"
 authors = ["Tempo"]
 edition = "2021"
@@ -29,6 +29,9 @@ cpal = "0.15.3"
 # WAV writing: recordings are files on disk, and a hand-rolled RIFF header is
 # one place where being clever buys nothing.
 hound = "3.5"
+# Local speech-to-text: transcribe.cpp is the engine the reference uses, and it
+# is whisper.cpp-compatible without pulling the whole whisper-rs tree.
+transcribe-cpp = "0.2"
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
@@ -43,7 +46,7 @@ tokio = "1.53.1"
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-global-shortcut = "2.3.2"
 rodio = { version = "0.19", default-features = false, features = ["symphonia-mp3", "symphonia-wav", "symphonia-flac", "wav", "mp3", "flac"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "socks", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "socks", "stream", "multipart"] }
 futures-util = { version = "0.3", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
@@ -62,6 +65,7 @@ zip = { version = "4.6.1", default-features = false, features = ["deflate"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 
+windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_Security", "Win32_System_Threading", "Win32_Storage_FileSystem", "Win32_Foundation"] }
 percent-encoding = "2.3"
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

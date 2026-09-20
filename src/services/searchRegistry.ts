@@ -1,8 +1,6 @@
-import { Bell, CheckSquare, FileText, List, Timer } from 'lucide-react';
+import { Bell, CheckSquare, FileText, List, Mic, Timer } from 'lucide-react';
 import { registerSearchSource, type SearchHit } from './search';
-import { registerDefaultCommands } from './commands';
 import { soundService } from './sound';
-
 /**
  * Registers everything the palette can act on.
  *
@@ -80,7 +78,16 @@ export function installSearchRegistry(): () => void {
         window.dispatchEvent(new CustomEvent('tempo:reveal', { detail: hit }));
       },
     }),
-    registerDefaultCommands(),
+    registerSearchSource({
+      kind: 'recording',
+      labelKey: 'navRecordings',
+      icon: Mic,
+      open: (hit: SearchHit) => {
+        soundService.playUiClick();
+        navigateTo('recordings');
+        window.dispatchEvent(new CustomEvent('tempo:reveal', { detail: hit }));
+      },
+    }),
   ];
 
   return () => {

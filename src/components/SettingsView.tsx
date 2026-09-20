@@ -42,6 +42,19 @@ import {
 import { googleCalendarStatus, type IntegrationStatus } from '../services/integrations';
 import { listShortcuts, type ShortcutDef } from '../services/shortcuts';
 import { assetUsage, assetPrune, DEFAULT_MEDIA_LIMIT_BYTES, type AssetUsage } from '../services/assets';
+import {
+  listModels,
+  downloadModel,
+  downloadProgress,
+  cancelDownload,
+  deleteModel,
+  getEngine,
+  setEngine,
+  sttErrorKey,
+  type ModelInfo,
+  type DownloadProgress,
+  type SttEngineType,
+} from '../services/stt';
 // Settings services
 
 export interface SettingsViewProps {
@@ -88,6 +101,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [general, setGeneral] = useState<GeneralSettings>(() => loadGeneralSettings());
   // Speech Settings state
   const [speech, setSpeech] = useState<SpeechSettings>(() => loadSpeechSettings());
+  // STT / Whisper Engine and Model state
+  const [sttEngineType, setSttEngineType] = useState<SttEngineType>('local');
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [currentProgress, setCurrentProgress] = useState<DownloadProgress | null>(null);
+  const [sttActionError, setSttActionError] = useState<string | null>(null);
   // Integration status state
   const [calendarStatus, setCalendarStatus] = useState<IntegrationStatus>({
     connected: false,
@@ -174,6 +193,129 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     } catch (err) {
       setSaveStatus('error');
       setSaveErrorMessage(err instanceof Error ? err.message : 'Failed to save speech settings');
+    }
+  };
+  // Load STT models and engine state when switching to speech tab
+  useEffect(() => {
+    if (activeSection !== 'speech') return;
+    let mounted = true;
+
+    getEngine().then((engineState) => {
+      if (!mounted) return;
+      setSttEngineType(engineState.engine);
+    }).catch(() => {});
+
+    listModels().then((catalog) => {
+      if (!mounted) return;
+      setModels(catalog);
+    }).catch(() => {});
+
+    return () => {
+      mounted = false;
+    };
+  }, [activeSection]);
+
+  // Poll download progress while downloading
+  useEffect(() => {
+    if (!downloadingId) return;
+    let mounted = true;
+    let timer: number | null = null;
+
+    const poll = async () => {
+      try {
+        const prog = await downloadProgress();
+        if (!mounted) return;
+        setCurrentProgress(prog);
+        if (prog.done) {
+          setDownloadingId(null);
+          setCurrentProgress(null);
+          // Refresh model list
+          listModels().then((catalog) => {
+            if (mounted) setModels(catalog);
+          }).catch(() => {});
+          return;
+        }
+        if (prog.error) {
+          setDownloadingId(null);
+          setCurrentProgress(null);
+          const key = sttErrorKey(prog.error);
+          setSttActionError(t[key] ?? prog.error);
+          return;
+        }
+      } catch {
+        // Continue polling
+      }
+      if (mounted) {
+        timer = window.setTimeout(poll, 300);
+      }
+    };
+
+    poll();
+
+    return () => {
+      mounted = false;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [downloadingId, t]);
+
+  const handleSwitchEngine = async (nextEngine: SttEngineType) => {
+    setSttEngineType(nextEngine);
+    setSttActionError(null);
+    try {
+      await setEngine(nextEngine, speech.modelId || null);
+      notifySaved();
+    } catch (err) {
+      const key = sttErrorKey(err);
+      setSttActionError(t[key] ?? String(err));
+    }
+  };
+
+  const handleSelectModel = async (modelId: string) => {
+    handleSaveSpeech({ modelId });
+    setSttActionError(null);
+    try {
+      await setEngine(sttEngineType, modelId);
+    } catch (err) {
+      const key = sttErrorKey(err);
+      setSttActionError(t[key] ?? String(err));
+    }
+  };
+
+  const handleStartDownload = async (modelId: string) => {
+    setSttActionError(null);
+    setDownloadingId(modelId);
+    setCurrentProgress({ model_id: modelId, received: 0, total: 100, done: false });
+    try {
+      await downloadModel(modelId);
+    } catch (err) {
+      setDownloadingId(null);
+      setCurrentProgress(null);
+      const key = sttErrorKey(err);
+      setSttActionError(t[key] ?? String(err));
+    }
+  };
+
+  const handleCancelDownload = async () => {
+    try {
+      await cancelDownload();
+    } catch {
+      // Silently finish
+    } finally {
+      setDownloadingId(null);
+      setCurrentProgress(null);
+    }
+  };
+
+  const handleDeleteModel = async (modelId: string) => {
+    setSttActionError(null);
+    try {
+      await deleteModel(modelId);
+      const updated = await listModels();
+      setModels(updated);
+      notifySaved();
+    } catch (err) {
+      const key = sttErrorKey(err);
+      setSttActionError(t[key] ?? String(err));
     }
   };
 
@@ -891,7 +1033,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {activeSection === 'speech' && (
           <section id="section-speech" role="tabpanel" aria-label={t.settingsSpeechToText} className="space-y-6">
             <div
-              className="p-5 rounded-lg border space-y-4"
+              className="p-5 rounded-lg border space-y-5"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
             >
               <div>
@@ -901,8 +1043,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </p>
               </div>
 
+              {/* Failure / Status Notification Banner (R45) */}
+              {sttActionError && (
+                <div
+                  data-testid="stt-action-error"
+                  className="p-3 rounded-md border text-xs flex items-start gap-2 bg-destructive/10 border-destructive/30 text-destructive"
+                >
+                  <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <span className="font-medium">{sttActionError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSttActionError(null)}
+                    className="text-xs opacity-70 hover:opacity-100"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
               {/* Enable Toggle */}
-              <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center justify-between pt-1">
                 <div>
                   <div className="text-sm font-medium">{t.settingsSpeechEnable}</div>
                   <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -919,7 +1081,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               {/* Global Hotkey Field */}
-              <div className="pt-2">
+              <div className="pt-1">
                 <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>
                   {t.settingsSpeechHotkey}
                 </label>
@@ -938,30 +1100,189 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 />
               </div>
 
-              {/* Model choice */}
-              <div className="pt-2">
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                  {t.settingsWhisperModel}
-                </label>
-                <select
-                  aria-label={t.settingsWhisperModel}
-                  value={speech.modelId || 'whisper-tiny'}
-                  onChange={(e) => handleSaveSpeech({ modelId: e.target.value })}
-                  className="w-full px-3 py-2 rounded-md border text-sm focus:outline-none"
-                  style={{
-                    backgroundColor: 'var(--elevated)',
-                    borderColor: 'var(--border)',
-                    color: 'var(--text)',
-                  }}
-                >
-                  <option value="whisper-tiny">{t.settingsWhisperTiny}</option>
-                  <option value="whisper-base">{t.settingsWhisperBase}</option>
-                  <option value="whisper-small">{t.settingsWhisperSmall}</option>
-                </select>
-                <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                  {t.settingsWhisperHint}
-                </p>
+              {/* Engine Toggle: Local vs Cloud */}
+              <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <label className="block text-sm font-medium">{t.sttEngineLocal} / {t.sttEngineCloud}</label>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      {t.settingsSpeechHint}
+                    </p>
+                  </div>
+                  <div className="inline-flex rounded-lg border p-1 bg-muted/30" style={{ borderColor: 'var(--border)' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchEngine('local')}
+                      className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${
+                        sttEngineType === 'local'
+                          ? 'bg-surface text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {t.sttEngineLocal}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchEngine('cloud')}
+                      className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${
+                        sttEngineType === 'cloud'
+                          ? 'bg-surface text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {t.sttEngineCloud}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Cloud Mode Explanation */}
+                {sttEngineType === 'cloud' && (
+                  <div className="p-3 rounded-md border text-xs" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--elevated)' }}>
+                    <p style={{ color: 'var(--text-muted)' }}>
+                      {t.settingsSpeechHint}
+                    </p>
+                  </div>
+                )}
               </div>
+
+              {/* Local Model List: Size and Quality Side-by-Side (R22) */}
+              {sttEngineType === 'local' && (
+                <div className="pt-2 border-t space-y-3" style={{ borderColor: 'var(--border)' }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-sm font-medium">{t.settingsWhisperModel}</label>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        {t.settingsWhisperHint}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Active Download Progress Card */}
+                  {downloadingId && (
+                    <div
+                      data-testid="download-progress-card"
+                      className="p-3.5 rounded-lg border space-y-2 bg-muted/20"
+                      style={{ borderColor: 'var(--border)' }}
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium flex items-center gap-2">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                          {t.sttDownloadModel} ({downloadingId})
+                        </span>
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono text-muted-foreground">
+                            {currentProgress && currentProgress.total > 0
+                              ? `${Math.round((currentProgress.received / currentProgress.total) * 100)}%`
+                              : '0%'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleCancelDownload}
+                            className="px-2 py-0.5 rounded text-xs border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                            style={{ borderColor: 'var(--border)' }}
+                          >
+                            {t.sttDownloadCancel}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-150 rounded-full"
+                          style={{
+                            width: currentProgress && currentProgress.total > 0
+                              ? `${Math.min(100, Math.round((currentProgress.received / currentProgress.total) * 100))}%`
+                              : '0%',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Models Table / List */}
+                  <div className="border rounded-lg overflow-hidden divide-y" style={{ borderColor: 'var(--border)' }}>
+                    {models.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-muted-foreground">
+                        <Loader2 className="w-4 h-4 animate-spin mx-auto mb-2 opacity-50" />
+                        {t.searchPlaceholder}
+                      </div>
+                    ) : (
+                      models.map((m) => {
+                        const isSelected = (speech.modelId || 'whisper-tiny') === m.id;
+                        const isDownloading = downloadingId === m.id;
+                        const mbSize = (m.bytes / (1024 * 1024)).toFixed(0);
+
+                        return (
+                          <div
+                            key={m.id}
+                            data-testid={`model-row-${m.id}`}
+                            className={`p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
+                              isSelected ? 'bg-primary/5' : 'hover:bg-muted/30'
+                            }`}
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium">{m.name}</span>
+                                {isSelected && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-primary/20 text-primary">
+                                    {t.settingsActive}
+                                  </span>
+                                )}
+                                {m.installed && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-muted text-muted-foreground">
+                                    {t.sttModelInstalled}
+                                  </span>
+                                )}
+                              </div>
+                              {/* Size and Quality (WER) side-by-side (R22) */}
+                              <div className="flex items-center gap-4 text-xs text-muted-foreground font-mono">
+                                <span>{t.sttSize}: <strong className="text-foreground">{mbSize} MB</strong></span>
+                                <span>•</span>
+                                <span>{t.sttQuality}: <strong className="text-foreground">{m.wer}%</strong></span>
+                              </div>
+                            </div>
+
+                            {/* Actions: Select / Download / Delete */}
+                            <div className="flex items-center gap-2 self-end sm:self-center">
+                              {m.installed ? (
+                                <>
+                                  {!isSelected && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSelectModel(m.id)}
+                                      className="px-3 py-1.5 rounded-md text-xs font-medium border hover:bg-muted transition-colors"
+                                      style={{ borderColor: 'var(--border)' }}
+                                    >
+                                      {t.settingsActive}
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteModel(m.id)}
+                                    className="px-2.5 py-1.5 rounded-md text-xs text-destructive hover:bg-destructive/10 transition-colors"
+                                    title={t.sttDeleteModel}
+                                  >
+                                    {t.sttDeleteModel}
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={isDownloading || Boolean(downloadingId)}
+                                  onClick={() => handleStartDownload(m.id)}
+                                  className="px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                                >
+                                  {isDownloading && <Loader2 className="w-3 h-3 animate-spin" />}
+                                  {t.sttDownloadModel}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         )}
