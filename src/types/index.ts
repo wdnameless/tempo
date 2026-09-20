@@ -99,14 +99,39 @@ export interface TaskItem {
   /** Optional longer note shown while the task is being worked on. */
   note?: string;
   done: boolean;
-  /** Schedule step this task belongs to, when it came from a program. */
-  stepId?: string;
-  scheduleId?: string;
-  /** Optional recurring or scheduled timer attached to this task. */
-  timer?: TaskTimerConfig;
+  /**
+   * The list this task belongs to, when it is a checklist item.
+   *
+   * A list item is the same row as a task: the reference treats Lists as tasks
+   * without dates, and a separate table would have meant a second completion
+   * state, a second search kind and a copy of every mutation.
+   */
+  listId?: string | null;
+  /** Parent task when this is a subtask. */
+  parentId?: string | null;
+  /** 0 none, 1 low, 2 medium, 3 high. */
+  priority: number;
+  /** "YYYY-MM-DD" — the day the task is planned for. */
+  dueDate?: string | null;
+  /** ISO local instant the task is scheduled to start. */
+  startAt?: string | null;
+  /** How long the user expects to spend, in minutes. */
+  plannedMinutes?: number | null;
+  /** Ordering inside its list or its group; fractional so inserts need no renumber. */
+  position: number;
   /** ISO timestamps. */
   createdAt: string;
-  completedAt?: string;
+  completedAt?: string | null;
+}
+
+/** A simple checklist: tasks with a name and no dates. */
+export interface ListItem {
+  id: string;
+  name: string;
+  /** Hex colour used for the list marker. */
+  color?: string | null;
+  position: number;
+  createdAt: string;
 }
 
 /**

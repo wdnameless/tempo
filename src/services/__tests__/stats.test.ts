@@ -210,8 +210,8 @@ describe('presentation', () => {
 
   it('counts completed tasks', () => {
     const tasks: TaskItem[] = [
-      { id: '1', title: 'a', done: true, createdAt: '' },
-      { id: '2', title: 'b', done: false, createdAt: '' },
+      { id: '1', title: 'a', done: true, priority: 0, position: 0, createdAt: '' },
+      { id: '2', title: 'b', done: false, priority: 0, position: 1, createdAt: '' },
     ];
 
     expect(taskProgress(tasks)).toEqual({ done: 1, total: 2 });

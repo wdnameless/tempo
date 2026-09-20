@@ -113,7 +113,6 @@ describe('StoreService and Row Mappers', () => {
       expect(convertedRow.enabled).toBe(1);
       expect(convertedRow.sound).toBe('gentle');
       expect(convertedRow.voice_prompt).toBe('Time to get up');
-      expect(convertedRow.duration_minutes).toBe(0);
     });
 
     it('maps noteFromRow and noteToRow bidirectional', () => {
@@ -253,6 +252,8 @@ describe('StoreService and Row Mappers', () => {
         id: 't2',
         title: 'New Task',
         done: true,
+        priority: 0,
+        position: 0,
         createdAt: '2026-09-19T01:00:00Z',
       };
 

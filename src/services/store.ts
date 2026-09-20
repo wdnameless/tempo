@@ -15,7 +15,7 @@ import type {
   NoteItem,
   ChatMessage,
 } from '../types';
-import { asString, asNumber, isRecord } from '../types/guards';
+import { asString, isRecord } from '../types/guards';
 import { repo, type EntityMeta } from './db';
 import { DEFAULT_DYNAMIC_UI, type DynamicUIConfig } from '../types/dynamicUi';
 import { getPref, setPref, subscribePrefs, resetSettingsCacheForTesting } from './settings';
@@ -43,7 +43,6 @@ export interface AlarmRow extends EntityMeta {
   sound: string;
   voice_prompt: string | null;
   note: string | null;
-  duration_minutes: number;
 }
 
 export interface NoteRow extends EntityMeta {
@@ -100,77 +99,8 @@ export const DEFAULT_STATE: PersistedState = {
 
 // Row ↔ Entity Pure Mappers
 
-export function taskFromRow(rawRow: Partial<TaskRow> | Record<string, unknown>): TaskItem {
-  const row = rawRow as Record<string, unknown>;
-  const status = asString(row.status, 'open');
-  const priority = typeof row.priority === 'number' ? row.priority : 0;
-  void priority;
-  const dueDate = row.due_date != null ? asString(row.due_date, '') : undefined;
-  void dueDate;
-  const startAt = row.start_at != null ? asString(row.start_at, '') : undefined;
-  void startAt;
-  const plannedMinutes = typeof row.planned_minutes === 'number' ? row.planned_minutes : undefined;
-  void plannedMinutes;
-
-  let timer: TaskItem['timer'] = undefined;
-  if (isRecord(row.timer)) {
-    const rawTimer = row.timer;
-    timer = {
-      enabled: typeof rawTimer.enabled === 'boolean' ? rawTimer.enabled : false,
-      type: rawTimer.type === 'time' ? 'time' : 'interval',
-      intervalMinutes: typeof rawTimer.intervalMinutes === 'number' ? rawTimer.intervalMinutes : undefined,
-      time: typeof rawTimer.time === 'string' ? rawTimer.time : undefined,
-      sound: typeof rawTimer.sound === 'string' ? rawTimer.sound : undefined,
-      voicePrompt: typeof rawTimer.voicePrompt === 'string' ? rawTimer.voicePrompt : undefined,
-    };
-  }
-
-  const updatedAt = asString(row.updated_at, new Date().toISOString());
-  const createdAt = asString(row.created_at, asString(row.createdAt, updatedAt));
-
-  return {
-    id: asString(row.id, ''),
-    title: asString(row.title, ''),
-    note: typeof row.note === 'string' ? row.note : undefined,
-    done: status === 'done',
-    timer,
-    createdAt,
-    completedAt:
-      typeof row.completed_at === 'string'
-        ? row.completed_at
-        : typeof row.completedAt === 'string'
-          ? row.completedAt
-          : undefined,
-  };
-}
-
-export function taskToRow(task: TaskItem): Omit<TaskRow, keyof EntityMeta> & { id?: string } {
-  const status = task.done ? 'done' : 'open';
-  const priority = 0;
-  const dueDate = null;
-  const startAt = null;
-  const plannedMinutes = null;
-
-  return {
-    ...(task.id ? { id: task.id } : {}),
-    title: task.title,
-    note: task.note || null,
-    status,
-    list_id: null,
-    parent_id: null,
-    priority,
-    due_date: dueDate,
-    start_at: startAt,
-    planned_minutes: plannedMinutes,
-    completed_at: task.completedAt || null,
-    position: null,
-  };
-}
-
 export function alarmFromRow(rawRow: Partial<AlarmRow> | Record<string, unknown>): AlarmItem {
   const row = rawRow as Record<string, unknown>;
-  const durationMinutes = asNumber(row.duration_minutes, asNumber(row.durationMinutes, 0));
-  void durationMinutes;
 
   const rawDays = row.days;
   let days: number[] = [];
@@ -219,17 +149,10 @@ export function alarmFromRow(rawRow: Partial<AlarmRow> | Record<string, unknown>
           ? row.voiceAnnouncement
           : undefined,
     note: typeof row.note === 'string' ? row.note : undefined,
-    scheduleId:
-      typeof row.schedule_id === 'string'
-        ? row.schedule_id
-        : typeof row.scheduleId === 'string'
-          ? row.scheduleId
-          : undefined,
   };
 }
 
 export function alarmToRow(alarm: AlarmItem): Omit<AlarmRow, keyof EntityMeta> & { id?: string } {
-  const durationMinutes = 0;
   return {
     ...(alarm.id ? { id: alarm.id } : {}),
     label: alarm.title || alarm.label || '',
@@ -240,7 +163,45 @@ export function alarmToRow(alarm: AlarmItem): Omit<AlarmRow, keyof EntityMeta> &
     sound: alarm.sound || 'gentle',
     voice_prompt: alarm.voicePrompt || null,
     note: alarm.note || null,
-    duration_minutes: durationMinutes,
+  };
+}
+
+export function taskFromRow(rawRow: Partial<TaskRow> | Record<string, unknown>): TaskItem {
+  const row = rawRow as Record<string, unknown>;
+  const status = asString(row.status, 'open');
+  const createdAt = asString(row.created_at, asString(row.updated_at, new Date().toISOString()));
+
+  return {
+    id: asString(row.id, ''),
+    title: asString(row.title, ''),
+    note: row.note == null ? undefined : asString(row.note, ''),
+    done: status === 'done',
+    listId: row.list_id == null ? null : asString(row.list_id, ''),
+    parentId: row.parent_id == null ? null : asString(row.parent_id, ''),
+    priority: typeof row.priority === 'number' ? row.priority : 0,
+    dueDate: row.due_date == null ? null : asString(row.due_date, ''),
+    startAt: row.start_at == null ? null : asString(row.start_at, ''),
+    plannedMinutes: typeof row.planned_minutes === 'number' ? row.planned_minutes : null,
+    position: typeof row.position === 'number' ? row.position : 0,
+    createdAt,
+    completedAt: row.completed_at == null ? null : asString(row.completed_at, ''),
+  };
+}
+
+export function taskToRow(task: TaskItem): Omit<TaskRow, keyof EntityMeta> & { id?: string } {
+  return {
+    ...(task.id ? { id: task.id } : {}),
+    title: task.title,
+    note: task.note || null,
+    status: task.done ? 'done' : 'open',
+    list_id: task.listId ?? null,
+    parent_id: task.parentId ?? null,
+    priority: task.priority ?? 0,
+    due_date: task.dueDate ?? null,
+    start_at: task.startAt ?? null,
+    planned_minutes: task.plannedMinutes ?? null,
+    completed_at: task.completedAt ?? null,
+    position: task.position ?? 0,
   };
 }
 
