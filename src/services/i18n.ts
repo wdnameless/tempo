@@ -48,6 +48,25 @@ export interface Translations {
   statsBestStreak: string;
   statsDoneOfTotal: string;
   statsPeakAt: string;
+  syncTitle: string;
+  syncDisabled: string;
+  syncSavePath: string;
+  syncSharedFolder: string;
+  syncSharedFolderPath: string;
+  syncError: string;
+  syncMediaFiles: string;
+  syncMethod: string;
+  syncFolderPlaceholder: string;
+  syncCancel: string;
+  syncConfirmMedia: string;
+  syncEnableMedia: string;
+  syncDeviceIdFull: string;
+  syncLastSync: string;
+  syncNeverSynced: string;
+  syncUnavailable: string;
+  syncMediaWarning: string;
+  syncDriveBlocked: string;
+  syncDriveTitle: string;
   settingsTitle: string;
   settingsSubtitle: string;
   settingsTimerFocus: string;
@@ -410,6 +429,25 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     statsBestStreak: 'Рекорд: {n} дн.',
     statsDoneOfTotal: '{done} из {total} выполнено',
     statsPeakAt: 'Пик: {hour}:00',
+    syncTitle: 'Синхронизация устройств',
+    syncDisabled: 'Выключена',
+    syncSavePath: 'Сохранить путь',
+    syncSharedFolder: 'Общая папка',
+    syncSharedFolderPath: 'Путь к общей папке',
+    syncError: 'Ошибка синхронизации',
+    syncMediaFiles: 'Синхронизировать медиафайлы',
+    syncMethod: 'Способ синхронизации',
+    syncFolderPlaceholder: '/путь/к/папке',
+    syncCancel: 'Отмена',
+    syncConfirmMedia: 'Подтвердите передачу медиафайлов',
+    syncEnableMedia: 'Включить передачу медиа',
+    syncDeviceIdFull: 'Полный идентификатор устройства: {id}',
+    syncLastSync: 'Последняя синхронизация: {when}',
+    syncNeverSynced: 'Ещё не синхронизировалось',
+    syncUnavailable: 'Недоступно',
+    syncMediaWarning: 'При включении аудио и медиафайлы покинут это устройство и попадут в общую папку.',
+    syncDriveBlocked: 'Синхронизация с Google Drive требует вашего Cloud-проекта и OAuth Client ID. Прямая синхронизация с Drive пока недоступна — используйте общую папку, которую синхронизирует клиент Google Drive.',
+    syncDriveTitle: 'Google Drive',
     settingsTitle: 'Настройки',
     settingsSubtitle: 'Поведение, горячие клавиши и интеграции',
     settingsTimerFocus: 'Таймер и фокус',
@@ -789,6 +827,25 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsTestVoice: 'Test Voice',
     settingsTimeZone: 'Time Zone',
     settingsTimerFocus: 'Timer & Focus',
+    syncTitle: 'Device Sync',
+    syncDisabled: 'Disabled',
+    syncSavePath: 'Save Path',
+    syncSharedFolder: 'Shared Folder',
+    syncSharedFolderPath: 'Shared Folder Path',
+    syncError: 'Sync Error',
+    syncMediaFiles: 'Sync Media Files',
+    syncMethod: 'Sync Method',
+    syncFolderPlaceholder: '/path/to/sync-folder',
+    syncCancel: 'Cancel',
+    syncConfirmMedia: 'Confirm Media File Sync',
+    syncEnableMedia: 'Enable Media Sync',
+    syncDeviceIdFull: 'Full device ID: {id}',
+    syncLastSync: 'Last sync: {when}',
+    syncNeverSynced: 'Never synced',
+    syncUnavailable: 'Unavailable',
+    syncMediaWarning: 'With this enabled, audio and media files leave this device to the shared folder.',
+    syncDriveBlocked: 'Google Drive sync requires your own Google Cloud project and OAuth Client ID. Direct Drive sync is currently not available; use a shared folder synced by Google Drive desktop instead.',
+    syncDriveTitle: 'Google Drive',
     settingsTitle: 'Settings',
     settingsUnlinked: 'Unlinked',
     settingsUpdate: 'Software Update',

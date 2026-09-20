@@ -5394,7 +5394,7 @@ dependencies = [
 
 [[package]]
 name = "tempo"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -5420,6 +5420,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-store",
  "tauri-plugin-updater",
+ "tempfile",
  "tokio",
  "transcribe-cpp",
  "uuid",

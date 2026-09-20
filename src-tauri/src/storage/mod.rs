@@ -277,9 +277,9 @@ mod tests {
     fn test_migration_idempotent() {
         let conn = Connection::open_in_memory().unwrap();
         let v1 = migrations::migrate(&conn).unwrap();
-        assert_eq!(v1, 1);
+        assert_eq!(v1, 2);
         let v2 = migrations::migrate(&conn).unwrap();
-        assert_eq!(v2, 1);
+        assert_eq!(v2, 2);
     }
 
     #[test]
@@ -410,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    fn test_outbox_trigger_fires_on_update() {
+    fn test_outbox_journal_fires_on_update() {
         let conn = setup_test_db();
         let task = repo::insert(&conn, "tasks", &json!({ "title": "Buy milk" })).unwrap();
         let id = task["id"].as_str().unwrap();

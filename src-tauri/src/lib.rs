@@ -19,6 +19,7 @@ mod scheduler;
 mod timer;
 pub mod storage;
 pub mod stt;
+pub mod sync;
 
 /// Whether this build keeps its data beside the executable.
 #[tauri::command]
@@ -602,6 +603,11 @@ pub fn run() {
             stt::stt_dictation_state,
             stt::stt_transcribe_file,
             stt::stt_transcribe_cloud,
+            sync::sync_status,
+            sync::sync_set_transport,
+            sync::sync_set_media,
+            sync::sync_now,
+            sync::sync_pending,
         ])
         .setup(|app| {
             // Build Tray Menu

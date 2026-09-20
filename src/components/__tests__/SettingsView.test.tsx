@@ -1,3 +1,5 @@
+import { SyncError } from '../../services/sync';
+import type * as SyncServiceModule from '../../services/sync';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SettingsView } from '../SettingsView';
@@ -138,6 +140,36 @@ vi.mock('../../services/edgeTts', () => ({
   },
   CLOUD_VOICES: [{ id: 'ru-RU-SvetlanaNeural', name: 'Svetlana', lang: 'ru-RU' }],
 }));
+const mockGetSyncStatus = vi.fn().mockResolvedValue({
+  device_id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  transport: 'folder',
+  folder: '/shared/tempo-sync',
+  last_sync: '2026-09-20T12:00:00Z',
+  pending: 3,
+  media: false,
+});
+const mockSetSyncTransport = vi.fn().mockResolvedValue(undefined);
+const mockSetSyncMedia = vi.fn().mockResolvedValue(undefined);
+const mockSyncNow = vi.fn().mockResolvedValue({
+  sent: 2,
+  received: 4,
+  applied: 4,
+  conflicts: 1,
+  media_copied: 0,
+});
+const mockSyncPending = vi.fn().mockResolvedValue(3);
+
+vi.mock('../../services/sync', async (importOriginal) => {
+  const actual = await importOriginal<typeof SyncServiceModule>();
+  return {
+    ...actual,
+    getSyncStatus: () => mockGetSyncStatus(),
+    setSyncTransport: (kind: 'none' | 'folder', folder?: string | null) => mockSetSyncTransport(kind, folder),
+    setSyncMedia: (enabled: boolean) => mockSetSyncMedia(enabled),
+    syncNow: () => mockSyncNow(),
+    syncPending: () => mockSyncPending(),
+  };
+});
 
 describe('SettingsView Component', () => {
   const t = I18nService.t();
@@ -270,6 +302,124 @@ describe('SettingsView Component', () => {
     // 6291456 bytes is 6.0 MB
     await waitFor(() => {
       expect(screen.getByText(/Media Used: 6.0 MB/i)).toBeDefined();
+    });
+  });
+
+  it('the sync block renders the device id and pending count', async () => {
+    render(<SettingsView />);
+
+    const aboutTab = screen.getByRole('tab', { name: t.settingsAboutTab });
+    fireEvent.click(aboutTab);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Device: a1b2c3d4/i)).toBeDefined();
+      expect(screen.getByText(/3 changes pending/i)).toBeDefined();
+    });
+  });
+
+  it('choosing a folder calls the setter', async () => {
+    render(<SettingsView />);
+
+    const aboutTab = screen.getByRole('tab', { name: t.settingsAboutTab });
+    fireEvent.click(aboutTab);
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(t.syncFolderPlaceholder)).toBeDefined();
+    });
+
+    const input = screen.getByPlaceholderText(t.syncFolderPlaceholder);
+    fireEvent.change(input, { target: { value: '/custom/sync/path' } });
+
+    const saveBtn = screen.getByRole('button', { name: /Save Path/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(mockSetSyncTransport).toHaveBeenCalledWith('folder', '/custom/sync/path');
+    });
+  });
+
+  it('"sync now" renders the outcome numbers and conflict resolution explanation', async () => {
+    render(<SettingsView />);
+
+    const aboutTab = screen.getByRole('tab', { name: t.settingsAboutTab });
+    fireEvent.click(aboutTab);
+
+    const syncBtn = await screen.findByRole('button', { name: /Sync Now/i });
+    fireEvent.click(syncBtn);
+
+    await waitFor(() => {
+      expect(mockSyncNow).toHaveBeenCalled();
+      expect(screen.getByText(/Sent: 2/i)).toBeDefined();
+      expect(screen.getByText(/Received: 4/i)).toBeDefined();
+      expect(screen.getByText(/Applied: 4/i)).toBeDefined();
+      expect(screen.getByText(/Media copied: 0/i)).toBeDefined();
+      expect(screen.getByText(/1 change was resolved in favour of the later edit/i)).toBeDefined();
+    });
+  });
+
+  it('a folder error shows its own message', async () => {
+    mockSyncNow.mockRejectedValueOnce(
+      new SyncError('FolderMissing', 'Sync folder does not exist or has been moved: /shared/tempo-sync')
+    );
+
+    render(<SettingsView />);
+
+    const aboutTab = screen.getByRole('tab', { name: t.settingsAboutTab });
+    fireEvent.click(aboutTab);
+
+    const syncBtn = await screen.findByRole('button', { name: /Sync Now/i });
+    fireEvent.click(syncBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Sync folder does not exist or has been moved/i)).toBeDefined();
+    });
+  });
+
+  it('the Drive row offers no connect button', async () => {
+    render(<SettingsView />);
+
+    const aboutTab = screen.getByRole('tab', { name: t.settingsAboutTab });
+    fireEvent.click(aboutTab);
+
+    await waitFor(() => {
+      expect(screen.getByText('Google Drive')).toBeDefined();
+      expect(screen.getByText('Unavailable')).toBeDefined();
+    });
+
+    // Verify honest explanation is present
+    expect(screen.getByText(t.syncDriveBlocked)).toBeDefined();
+    // Must have NO Connect button for Drive
+    expect(screen.queryByRole('button', { name: /Connect Google Drive/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Connect Drive/i })).toBeNull();
+  });
+
+  it('the media toggle warns before enabling', async () => {
+    render(<SettingsView />);
+
+    const aboutTab = screen.getByRole('tab', { name: t.settingsAboutTab });
+    fireEvent.click(aboutTab);
+
+    await waitFor(() => {
+      expect(screen.getByText(t.syncMediaFiles)).toBeDefined();
+    });
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    const mediaCheckbox = checkboxes[checkboxes.length - 1] as HTMLInputElement;
+    expect(mediaCheckbox.checked).toBe(false);
+    // Toggling ON should show confirmation warning banner first
+    fireEvent.click(mediaCheckbox);
+
+    await waitFor(() => {
+      expect(screen.getByText(t.syncConfirmMedia)).toBeDefined();
+      expect(screen.getAllByText(/Files leave this device/i).length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Confirming enables it
+    const confirmBtn = screen.getByRole('button', { name: t.syncEnableMedia });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockSetSyncMedia).toHaveBeenCalledWith(true);
     });
   });
 });

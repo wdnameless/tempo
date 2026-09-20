@@ -25,7 +25,9 @@ pub fn migrate(conn: &Connection) -> Result<u32, String> {
     if current_version < 1 {
         apply_migration_0001(conn)?;
     }
-
+    if current_version < 2 {
+        apply_migration_0002(conn)?;
+    }
     // Return the latest applied version
     let latest_version: u32 = conn
         .query_row(
@@ -217,4 +219,91 @@ END;
         .map_err(|e| format!("Failed to commit migration 0001: {e}"))?;
 
     Ok(())
+}
+fn apply_migration_0002(conn: &Connection) -> Result<(), String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Failed to start transaction for migration 0002: {e}"))?;
+
+    // Drop legacy trigger-based sync_outbox population because journal is now written in repo layer
+    tx.execute_batch(
+        "
+DROP TRIGGER IF EXISTS trg_tasks_insert;
+DROP TRIGGER IF EXISTS trg_tasks_update;
+DROP TRIGGER IF EXISTS trg_lists_insert;
+DROP TRIGGER IF EXISTS trg_lists_update;
+DROP TRIGGER IF EXISTS trg_notes_insert;
+DROP TRIGGER IF EXISTS trg_notes_update;
+DROP TRIGGER IF EXISTS trg_drawings_insert;
+DROP TRIGGER IF EXISTS trg_drawings_update;
+DROP TRIGGER IF EXISTS trg_recordings_insert;
+DROP TRIGGER IF EXISTS trg_recordings_update;
+DROP TRIGGER IF EXISTS trg_events_insert;
+DROP TRIGGER IF EXISTS trg_events_update;
+DROP TRIGGER IF EXISTS trg_sessions_insert;
+DROP TRIGGER IF EXISTS trg_sessions_update;
+DROP TRIGGER IF EXISTS trg_alarms_insert;
+DROP TRIGGER IF EXISTS trg_alarms_update;
+DROP TRIGGER IF EXISTS trg_chat_messages_insert;
+DROP TRIGGER IF EXISTS trg_chat_messages_update;
+        ",
+    )
+    .map_err(|e| format!("Migration 0002 DROP TRIGGERS failed: {e}"))?;
+
+    // Guarded check: add device_id to sync_outbox if missing
+    let has_device_id: bool = {
+        let mut stmt = tx
+            .prepare("PRAGMA table_info(sync_outbox);")
+            .map_err(|e| format!("Failed to inspect sync_outbox pragma: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let col_name: String = row.get(1)?;
+                Ok(col_name)
+            })
+            .map_err(|e| format!("Failed to query table_info: {e}"))?;
+        let mut found = false;
+        for name in rows.flatten() {
+            if name == "device_id" {
+                found = true;
+                break;
+            }
+        }
+        found
+    };
+
+    if !has_device_id {
+        tx.execute("ALTER TABLE sync_outbox ADD COLUMN device_id TEXT;", [])
+            .map_err(|e| format!("Migration 0002 ALTER TABLE failed: {e}"))?;
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    tx.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (?1, ?2);",
+        params![2, now],
+    )
+    .map_err(|e| format!("Failed to record schema version 2: {e}"))?;
+
+    tx.commit()
+        .map_err(|e| format!("Failed to commit migration 0002: {e}"))?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    #[test]
+    fn test_migration_0002_adds_device_id_column() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let mut stmt = conn.prepare("PRAGMA table_info(sync_outbox);").unwrap();
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get(1))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert!(cols.contains(&"device_id".to_string()), "sync_outbox must contain device_id column");
+    }
 }

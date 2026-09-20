@@ -114,12 +114,64 @@ static PREFERENCES_SQL: TableSql = TableSql {
 };
 
 static SYNC_OUTBOX_SQL: TableSql = TableSql {
-    list_active: "SELECT id, table_name, row_id, op, payload, created_at FROM sync_outbox",
-    list_all: "SELECT id, table_name, row_id, op, payload, created_at FROM sync_outbox",
-    get_by_id: "SELECT id, table_name, row_id, op, payload, created_at FROM sync_outbox WHERE id = ?1",
+    list_active: "SELECT id, table_name, row_id, op, payload, created_at, device_id FROM sync_outbox",
+    list_all: "SELECT id, table_name, row_id, op, payload, created_at, device_id FROM sync_outbox",
+    get_by_id: "SELECT id, table_name, row_id, op, payload, created_at, device_id FROM sync_outbox WHERE id = ?1",
     soft_delete: "",
     changed_since: "",
 };
+
+/// Syncable tables that participate in cross-device synchronization journal.
+/// Devices-local preferences, sync_outbox, and internal tables are strictly excluded.
+pub const SYNCABLE_TABLES: &[&str] = &[
+    "tasks",
+    "lists",
+    "notes",
+    "drawings",
+    "recordings",
+    "events",
+    "sessions",
+    "alarms",
+    "chat_messages",
+];
+
+pub fn is_syncable_table(table: &str) -> bool {
+    SYNCABLE_TABLES.contains(&table)
+}
+
+/// Append an entry to sync_outbox within the same connection/transaction.
+pub fn journal_outbox(
+    conn: &Connection,
+    table_name: &str,
+    row_id: &str,
+    op: &str,
+    payload: Option<&str>,
+    created_at: &str,
+) -> Result<(), String> {
+    if !is_syncable_table(table_name) {
+        return Ok(());
+    }
+    let dev_id = pref_device_id(conn)?;
+    conn.execute(
+        "INSERT INTO sync_outbox (table_name, row_id, op, payload, created_at, device_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![table_name, row_id, op, payload, created_at, dev_id],
+    )
+    .map_err(|e| format!("Failed to record sync journal in outbox: {e}"))?;
+    Ok(())
+}
+
+/// Retrieve or generate tempo_device_id stored in preferences.
+pub fn pref_device_id(conn: &Connection) -> Result<String, String> {
+    if let Some(id) = pref_get(conn, "tempo_device_id")? {
+        if !id.trim().is_empty() {
+            return Ok(id);
+        }
+    }
+    let new_id = uuid::Uuid::new_v4().to_string();
+    pref_set(conn, "tempo_device_id", &new_id)?;
+    Ok(new_id)
+}
 
 fn get_table_sql(table: &str) -> Option<&'static TableSql> {
     match table {
@@ -202,10 +254,13 @@ pub fn insert(conn: &Connection, table_name: &str, data: &Value) -> Result<Value
         obj.insert("id".to_string(), Value::String(new_id));
     }
 
-    // Auto-generate updated_at
+    // Auto-generate updated_at if missing
     let now = chrono::Utc::now().to_rfc3339();
     if schema.columns.iter().any(|(col, _)| *col == "updated_at") {
-        obj.insert("updated_at".to_string(), Value::String(now.clone()));
+        let has_updated_at = obj.get("updated_at").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
+        if !has_updated_at {
+            obj.insert("updated_at".to_string(), Value::String(now.clone()));
+        }
     }
     // For chat_messages, if created_at is missing, set it to now
     if table_name == "chat_messages" && (!obj.contains_key("created_at") || obj["created_at"].is_null()) {
@@ -252,15 +307,26 @@ pub fn insert(conn: &Connection, table_name: &str, data: &Value) -> Result<Value
     }
 
     // Return the inserted row
-    if let Some(id_val) = obj.get("id").and_then(|v| v.as_str()) {
+    let inserted_val = if let Some(id_val) = obj.get("id").and_then(|v| v.as_str()) {
         get(conn, table_name, id_val)?
-            .ok_or_else(|| "Inserted row could not be re-read".to_string())
+            .ok_or_else(|| "Inserted row could not be re-read".to_string())?
     } else if let Some(key_val) = obj.get("key").and_then(|v| v.as_str()) {
         get(conn, table_name, key_val)?
-            .ok_or_else(|| "Inserted row could not be re-read".to_string())
+            .ok_or_else(|| "Inserted row could not be re-read".to_string())?
     } else {
-        Ok(Value::Object(obj))
-    }
+        Value::Object(obj)
+    };
+
+    let row_id_str = inserted_val.get("id").and_then(|v| v.as_str())
+        .or_else(|| inserted_val.get("key").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    let created_at_str = inserted_val.get("updated_at").and_then(|v| v.as_str())
+        .or_else(|| inserted_val.get("created_at").and_then(|v| v.as_str()))
+        .unwrap_or(&now);
+    let payload_json = serde_json::to_string(&inserted_val).ok();
+    journal_outbox(conn, table_name, row_id_str, "insert", payload_json.as_deref(), created_at_str)?;
+
+    Ok(inserted_val)
 }
 
 pub fn update(conn: &Connection, table_name: &str, id: &str, patch: &Value) -> Result<Value, String> {
@@ -275,7 +341,7 @@ pub fn update(conn: &Connection, table_name: &str, id: &str, patch: &Value) -> R
     // Always update updated_at if present in table
     let now = chrono::Utc::now().to_rfc3339();
     if schema.columns.iter().any(|(col, _)| *col == "updated_at") {
-        patch_map.insert("updated_at".to_string(), Value::String(now));
+        patch_map.insert("updated_at".to_string(), Value::String(now.clone()));
     }
 
     let mut set_clauses = Vec::new();
@@ -290,9 +356,11 @@ pub fn update(conn: &Connection, table_name: &str, id: &str, patch: &Value) -> R
         if let Some(val) = patch_map.get(*col_name) {
             set_clauses.push(format_sql_assign(col_name));
             param_values.push(json_val_to_sql_param(val, *col_type)?);
+        } else if *col_name == "deleted_at" && patch_map.contains_key("deleted_at") {
+            set_clauses.push(format_sql_assign(col_name));
+            param_values.push(SqlParam::Null);
         }
     }
-
     if set_clauses.is_empty() {
         // No fields to update
         return get(conn, table_name, id)?
@@ -322,8 +390,15 @@ pub fn update(conn: &Connection, table_name: &str, id: &str, patch: &Value) -> R
         }
     }
 
-    get(conn, table_name, id)?
-        .ok_or_else(|| format!("Updated row with id {id} could not be re-read"))
+    let updated_val = get(conn, table_name, id)?
+        .ok_or_else(|| format!("Updated row with id {id} could not be re-read"))?;
+
+    let created_at_str = updated_val.get("updated_at").and_then(|v| v.as_str())
+        .unwrap_or(&now);
+    let payload_json = serde_json::to_string(&updated_val).ok();
+    journal_outbox(conn, table_name, id, "update", payload_json.as_deref(), created_at_str)?;
+
+    Ok(updated_val)
 }
 
 pub fn soft_delete(conn: &Connection, table_name: &str, id: &str) -> Result<(), String> {
@@ -346,6 +421,11 @@ pub fn soft_delete(conn: &Connection, table_name: &str, id: &str) -> Result<(), 
     if rows_affected == 0 {
         return Err(format!("Row with id {id} not found in {table_name}"));
     }
+
+    // Read row if possible for payload or journal without payload
+    let row_payload = get(conn, table_name, id).ok().flatten();
+    let payload_json = row_payload.as_ref().and_then(|v| serde_json::to_string(v).ok());
+    journal_outbox(conn, table_name, id, "delete", payload_json.as_deref(), &now)?;
 
     Ok(())
 }
@@ -953,9 +1033,9 @@ mod tests {
     fn test_migration_idempotent() {
         let conn = Connection::open_in_memory().expect("open in memory");
         let v1 = migrations::migrate(&conn).expect("first migrate");
-        assert_eq!(v1, 1);
+        assert_eq!(v1, 2);
         let v2 = migrations::migrate(&conn).expect("second migrate");
-        assert_eq!(v2, 1);
+        assert_eq!(v2, 2);
     }
 
     #[test]
@@ -1394,5 +1474,36 @@ mod tests {
         );
         assert!(task_err.is_err());
         assert!(task_err.unwrap_err().contains("Invalid integer value"));
+    }
+
+    #[test]
+    fn test_sync_outbox_device_id_and_journaling() {
+        let conn = setup_test_db();
+        let dev_id = pref_device_id(&conn).expect("get device id");
+        assert!(!dev_id.is_empty());
+        let dev_id2 = pref_device_id(&conn).expect("get device id again");
+        assert_eq!(dev_id, dev_id2, "Device ID must be stable and never regenerated");
+
+        let task = insert(&conn, "tasks", &json!({ "title": "Journal Task" })).expect("insert task");
+        let tid = task["id"].as_str().unwrap();
+
+        let outbox = list(&conn, "sync_outbox", false).expect("list outbox");
+        assert_eq!(outbox.len(), 1);
+        assert_eq!(outbox[0]["table_name"], "tasks");
+        assert_eq!(outbox[0]["row_id"], tid);
+        assert_eq!(outbox[0]["op"], "insert");
+        assert_eq!(outbox[0]["device_id"], dev_id);
+
+        update(&conn, "tasks", tid, &json!({ "title": "Updated Journal Task" })).expect("update task");
+        let outbox2 = list(&conn, "sync_outbox", false).expect("list outbox 2");
+        assert_eq!(outbox2.len(), 2);
+        assert_eq!(outbox2[1]["op"], "update");
+        assert_eq!(outbox2[1]["device_id"], dev_id);
+
+        soft_delete(&conn, "tasks", tid).expect("delete task");
+        let outbox3 = list(&conn, "sync_outbox", false).expect("list outbox 3");
+        assert_eq!(outbox3.len(), 3);
+        assert_eq!(outbox3[2]["op"], "delete");
+        assert_eq!(outbox3[2]["device_id"], dev_id);
     }
 }

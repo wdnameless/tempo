@@ -148,6 +148,7 @@ static SYNC_OUTBOX_COLS: &[(&str, ColType)] = &[
     ("op", ColType::Text),
     ("payload", ColType::Text),
     ("created_at", ColType::Text),
+    ("device_id", ColType::Text),
 ];
 
 pub static SCHEMAS: &[TableSchema] = &[

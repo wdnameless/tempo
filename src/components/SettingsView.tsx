@@ -12,6 +12,8 @@ import {
   Keyboard,
   Info,
   ShieldAlert,
+  Folder,
+  AlertTriangle,
 } from 'lucide-react';
 import { ThemeColors, AISettings, DynamicUIConfig } from '../types';
 
@@ -56,6 +58,15 @@ import {
   type SttEngineType,
 } from '../services/stt';
 // Settings services
+import {
+  getSyncStatus,
+  setSyncTransport,
+  setSyncMedia,
+  syncNow,
+  SyncError,
+  type SyncStatus,
+  type SyncOutcome,
+} from '../services/sync';
 
 export interface SettingsViewProps {
   theme?: ThemeColors;
@@ -136,6 +147,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isCheckingUpdate, setIsCheckingUpdate] = useState<boolean>(false);
   const [isInstallingUpdate, setIsInstallingUpdate] = useState<boolean>(false);
 
+  // Sync status & settings
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [syncFolderInput, setSyncFolderInput] = useState<string>('');
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncOutcome, setSyncOutcome] = useState<SyncOutcome | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [showMediaConfirm, setShowMediaConfirm] = useState<boolean>(false);
   // Migration & initial loads
   useEffect(() => {
     // Run 0.3 -> 0.13 preferences migration once on mount
@@ -163,6 +181,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     void assetUsage()
       .then((usage) => setMediaStats(usage))
       .catch(() => setMediaStats(null));
+
+    // Sync status load
+    void getSyncStatus()
+      .then((status) => {
+        setSyncStatus(status);
+        if (status.folder) setSyncFolderInput(status.folder);
+      })
+      .catch(() => {});
   }, []);
 
   const notifySaved = () => {
@@ -331,6 +357,59 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setSaveErrorMessage(err instanceof Error ? err.message : 'Pruning failed');
     } finally {
       setIsPruning(false);
+    }
+  };
+
+  const handleSetSyncTransport = async (kind: 'none' | 'folder', folderPath?: string | null) => {
+    setSyncError(null);
+    try {
+      await setSyncTransport(kind, folderPath);
+      const updated = await getSyncStatus();
+      setSyncStatus(updated);
+      notifySaved();
+    } catch (err: unknown) {
+      setSyncError(err instanceof SyncError ? err.message : String(err));
+    }
+  };
+
+  const handleToggleMedia = async (enabled: boolean) => {
+    if (enabled && !showMediaConfirm) {
+      // Warn before enabling
+      setShowMediaConfirm(true);
+      return;
+    }
+    setShowMediaConfirm(false);
+    setSyncError(null);
+    try {
+      await setSyncMedia(enabled);
+      const updated = await getSyncStatus();
+      setSyncStatus(updated);
+      notifySaved();
+    } catch (err: unknown) {
+      setSyncError(err instanceof SyncError ? err.message : String(err));
+    }
+  };
+
+  const handleSyncNow = async () => {
+    setIsSyncing(true);
+    setSyncError(null);
+    setSyncOutcome(null);
+    try {
+      const outcome = await syncNow();
+      setSyncOutcome(outcome);
+      const updated = await getSyncStatus();
+      setSyncStatus(updated);
+      notifySaved();
+    } catch (err: unknown) {
+      if (err instanceof SyncError) {
+        setSyncError(err.message);
+      } else if (err instanceof Error) {
+        setSyncError(err.message);
+      } else {
+        setSyncError(String(err));
+      }
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -1499,6 +1578,247 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   {calendarStatus.detailKey ? t[calendarStatus.detailKey as keyof Translations] : 'External cloud accounts are unlinked. Wave 8 OAuth pending.'}
                 </p>
+              </div>
+
+              {/* Device Sync (R26, R27) */}
+              <div
+                className="p-4 rounded-lg border space-y-4"
+                style={{ backgroundColor: 'var(--elevated)', borderColor: 'var(--border)' }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+                    <span className="text-sm font-medium">{t.syncTitle}</span>
+                  </div>
+                  {syncStatus && (
+                    <span
+                      className="text-xs font-mono px-2 py-0.5 rounded"
+                      style={{ backgroundColor: 'var(--surface)', color: 'var(--text-muted)' }}
+                      title={`${t.syncDeviceIdFull.replace('{id}', syncStatus.device_id)}`}
+                    >
+                      Device: {syncStatus.device_id.slice(0, 8)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Transport selection */}
+                <div className="space-y-2">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                    Sync Method
+                  </label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 text-xs cursor-pointer">
+                      <input
+                        type="radio"
+                        name="syncTransport"
+                        value="none"
+                        checked={syncStatus?.transport === 'none'}
+                        onChange={() => handleSetSyncTransport('none')}
+                        className="cursor-pointer"
+                      />
+                      Disabled
+                    </label>
+                    <label className="flex items-center gap-2 text-xs cursor-pointer">
+                      <input
+                        type="radio"
+                        name="syncTransport"
+                        value="folder"
+                        checked={syncStatus?.transport === 'folder'}
+                        onChange={() => handleSetSyncTransport('folder', syncFolderInput || null)}
+                        className="cursor-pointer"
+                      />
+                      Shared Folder
+                    </label>
+                  </div>
+                </div>
+
+                {/* Shared folder path input */}
+                {syncStatus?.transport === 'folder' && (
+                  <div className="space-y-2 pt-1">
+                    <label className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                      {t.syncSharedFolderPath}
+                    </label>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Folder
+                          className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                          style={{ color: 'var(--text-muted)' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder={t.syncFolderPlaceholder}
+                          value={syncFolderInput}
+                          onChange={(e) => setSyncFolderInput(e.target.value)}
+                          className="w-full pl-9 pr-3 py-1.5 rounded-md border text-xs outline-none focus:ring-1"
+                          style={{
+                            backgroundColor: 'var(--surface)',
+                            borderColor: 'var(--border)',
+                            color: 'var(--text)',
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSetSyncTransport('folder', syncFolderInput.trim() || null)}
+                        className="px-3 py-1.5 rounded-md text-xs font-medium"
+                        style={{ backgroundColor: 'var(--accent)', color: 'var(--bg)' }}
+                      >
+                        Save Path
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sync status, pending count, sync now */}
+                {syncStatus && syncStatus.transport !== 'none' && (
+                  <div
+                    className="p-3 rounded-md border space-y-3"
+                    style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <div className="text-xs font-medium">
+                          {syncStatus.pending} {syncStatus.pending === 1 ? 'change pending' : 'changes pending'}
+                        </div>
+                        <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                          {syncStatus.last_sync
+                            ? `${t.syncLastSync.replace('{when}', new Date(syncStatus.last_sync).toLocaleString())}`
+                            : t.syncNeverSynced}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSyncNow}
+                        disabled={isSyncing || (syncStatus.transport === 'folder' && !syncStatus.folder)}
+                        className="px-3 py-1.5 rounded-md text-xs font-medium inline-flex items-center gap-1.5 disabled:opacity-50"
+                        style={{ backgroundColor: 'var(--accent)', color: 'var(--bg)' }}
+                      >
+                        {isSyncing ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        )}
+                        Sync Now
+                      </button>
+                    </div>
+
+                    {/* Sync outcome display */}
+                    {syncOutcome && (
+                      <div className="text-xs space-y-1 pt-1 border-t" style={{ borderColor: 'var(--border)' }}>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1" style={{ color: 'var(--text)' }}>
+                          <span>Sent: {syncOutcome.sent}</span>
+                          <span>Received: {syncOutcome.received}</span>
+                          <span>Applied: {syncOutcome.applied}</span>
+                          <span>Media copied: {syncOutcome.media_copied}</span>
+                        </div>
+                        {syncOutcome.conflicts > 0 && (
+                          <div className="text-xs font-medium" style={{ color: '#eab308' }}>
+                            {syncOutcome.conflicts === 1
+                              ? '1 change was resolved in favour of the later edit'
+                              : `${syncOutcome.conflicts} changes were resolved in favour of the later edit`}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Sync error display */}
+                {syncError && (
+                  <div
+                    className="p-3 rounded-md border flex items-start gap-2 text-xs"
+                    style={{
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                      borderColor: 'rgba(239, 68, 68, 0.3)',
+                      color: '#ef4444',
+                    }}
+                  >
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <span className="font-semibold">{t.syncError}</span>
+                      <div>{syncError}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Media Sync Flag */}
+                <div className="pt-2 border-t space-y-2" style={{ borderColor: 'var(--border)' }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-medium">{t.syncMediaFiles}</div>
+                      <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        {t.syncMediaWarning}
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={syncStatus?.media ?? false}
+                      onChange={(e) => handleToggleMedia(e.target.checked)}
+                      className="w-4 h-4 rounded cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Media Confirmation Warning Banner */}
+                  {showMediaConfirm && (
+                    <div
+                      className="p-3 rounded-md border space-y-2 text-xs"
+                      style={{
+                        backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                        borderColor: 'rgba(234, 179, 8, 0.3)',
+                        color: 'var(--text)',
+                      }}
+                    >
+                      <div className="flex items-center gap-2 font-medium" style={{ color: '#eab308' }}>
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        <span>{t.syncConfirmMedia}</span>
+                      </div>
+                      <p style={{ color: 'var(--text-muted)' }}>
+                        Enabling media sync copies audio recordings and attached media files to the sync folder so other devices can access them. Files leave this device.
+                      </p>
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleMedia(true)}
+                          className="px-2.5 py-1 rounded text-xs font-medium"
+                          style={{ backgroundColor: 'var(--accent)', color: 'var(--bg)' }}
+                        >
+                          {t.syncEnableMedia}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowMediaConfirm(false)}
+                          className="px-2.5 py-1 rounded text-xs font-medium border"
+                          style={{
+                            backgroundColor: 'var(--surface)',
+                            borderColor: 'var(--border)',
+                            color: 'var(--text)',
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Google Drive Status (Honest State) */}
+                <div
+                  className="p-3 rounded-md border space-y-1.5"
+                  style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium">{t.syncDriveTitle}</span>
+                    <span
+                      className="text-[11px] font-medium px-2 py-0.5 rounded-full"
+                      style={{ backgroundColor: 'var(--surface-muted, rgba(120, 120, 120, 0.15))', color: 'var(--text-muted)' }}
+                    >
+                      Unavailable
+                    </span>
+                  </div>
+                  <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    {t.syncDriveBlocked}
+                  </p>
+                </div>
               </div>
             </div>
           </section>
