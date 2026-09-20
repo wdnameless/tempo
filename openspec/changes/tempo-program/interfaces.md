@@ -726,3 +726,56 @@ export async function pruneOnStartup(): Promise<{ removed: number; freed: number
 
 Потолок хранилища — `tempo_media_limit_bytes`, по умолчанию 1 ГБ. `pruneOnStartup` вызывается при
 запуске приложения: сначала уходит корзина, потом самые старые медиа (правило §9).
+
+## 20. Статистика — владелец: Wave 9 (R19)
+
+### Источник правды — таблица, а не список в памяти
+
+Таймер живёт в Rust и пишет каждую завершённую сессию в таблицу `sessions`. UI же до сих пор
+читал `sessions` из JS-хранилища, а **туда их никто не пишет**: волна 1 записывала сессии в
+память, но с переездом таймера в бэкенд этот список остался пустым. Экран статистики всё это
+время показывал нули. Волна 9 закрывает это: метрики читают таблицу.
+
+```ts
+// src/services/sessionStore.ts
+export interface StoredSession {
+  id: string;
+  kind: string;              // pomodoro | stopwatch
+  started_at: string;        // ISO
+  ended_at: string | null;
+  duration_sec: number;      // дробное: колонка Real
+  completed: boolean;
+  task_id: string | null;
+}
+export function listSessions(): Promise<StoredSession[]>;      // по started_at возрастанию
+export function sessionsSince(iso: string): Promise<StoredSession[]>;
+```
+
+### Метрики (чистые функции, `src/services/stats.ts`)
+
+```ts
+export function dayKey(date: Date): string;                    // локальный день, не UTC
+export function weekStart(date: Date): Date;                   // понедельник 00:00 локального времени
+export function weekKey(date: Date): string;
+export function focusByDay(sessions: StoredSession[], days: number): DayBucket[];
+export function focusByWeek(sessions: StoredSession[], weeks: number): DayBucket[];
+export function heatmap(sessions: StoredSession[], weeks: number): DayBucket[][];  // недели × 7, понедельник первый
+export function focusByHour(sessions: StoredSession[]): number[];                 // 24 корзины
+export function peakHour(sessions: StoredSession[]): number | null;
+export function pomodoroCount(sessions: StoredSession[]): number;
+export function currentStreak(sessions: StoredSession[], minMinutes?: number): number;
+export function longestStreak(sessions: StoredSession[], minMinutes?: number): number;
+export function completionByDay(tasks: TaskItem[], days: number): { day: string; done: number; created: number }[];
+export function taskProgress(tasks: TaskItem[]): { done: number; total: number };
+export function formatFocus(seconds: number): string;
+```
+
+Правила:
+- **День — локальный.** Сессия в 23:59 принадлежит тому дню, который человек видел на часах,
+  а не тому, что получается при разборе ISO как UTC. Все границы считаются по локальному времени.
+- **Неделя начинается в понедельник.** Это не мелочь: воскресенье в американской неделе попадает
+  в другой бакет, и «эта неделя» перестаёт совпадать с тем, что человек видит в календаре.
+- **Пустой день — это ноль, а не пропуск.** Пропущенный день ломает серию и рисует график,
+  который врёт о форме недели.
+- `completionByDay` считает по `completed_at` задачи, а не по её текущему статусу: статус меняется,
+  история — нет.

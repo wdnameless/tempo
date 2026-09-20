@@ -10,7 +10,6 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   AlarmItem,
   TaskItem,
-  SessionRecord,
   AISettings,
   NoteItem,
   ChatMessage,
@@ -61,7 +60,6 @@ export interface PersistedState {
   schemaVersion: number;
   alarms: AlarmItem[];
   tasks: TaskItem[];
-  sessions: SessionRecord[];
   aiSettings: AISettings;
   /**
    * The dial/typography/layout config the timer and the radial dial read.
@@ -89,7 +87,6 @@ export const DEFAULT_STATE: PersistedState = {
   schemaVersion: 1,
   alarms: [],
   tasks: [],
-  sessions: [],
   aiSettings: DEFAULT_AI_SETTINGS,
   dynamicUi: DEFAULT_DYNAMIC_UI,
   chatMessages: [],
@@ -478,7 +475,6 @@ export const StoreService = {
         schemaVersion: 1,
         alarms,
         tasks,
-        sessions: [],
         aiSettings,
         dynamicUi,
         chatMessages,
@@ -633,7 +629,6 @@ export const StoreService = {
       schemaVersion: 1,
       alarms: snap.alarms,
       tasks: snap.tasks,
-      sessions: snap.sessions,
       aiSettings: {
         ...snap.aiSettings,
         apiKey: '',

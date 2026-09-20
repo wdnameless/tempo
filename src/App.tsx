@@ -43,7 +43,6 @@ import {
   AlarmItem,
   AISettings,
   TaskItem,
-  SessionRecord,
   NoteItem,
   DynamicUIConfig,
   DEFAULT_DYNAMIC_UI,
@@ -192,7 +191,6 @@ function MainShell() {
   const [alarms, setAlarms] = useState<AlarmItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [notes, setNotes] = useState<NoteItem[]>([]);
-  const [sessions, setSessions] = useState<SessionRecord[]>([]);
 
   const [aiSettings, setAiSettings] = useState<AISettings>({
     apiKey: '',
@@ -275,7 +273,6 @@ function MainShell() {
         if (data.alarms) setAlarms(data.alarms);
         if (data.tasks) setTasks(data.tasks);
         if (data.notes) setNotes(data.notes);
-        if (data.sessions) setSessions(data.sessions);
         if (data.aiSettings) setAiSettings(data.aiSettings);
         if (data.dynamicUi) setDynamicUi(data.dynamicUi);
         if (data.chatMessages && data.chatMessages.length > 0) {
@@ -542,13 +539,8 @@ function MainShell() {
               {activeTab === 'drawings' && <DrawingsView />}
 
               {activeTab === 'recordings' && <RecordingsView />}
-              {activeTab === 'stats' && (
-                <StatsView
-                  sessions={sessions}
-                  tasks={tasks}
-                  theme={theme}
-                />
-              )}
+
+              {activeTab === 'stats' && <StatsView tasks={tasks} />}
 
               {activeTab === 'settings' && (
                 <SettingsView

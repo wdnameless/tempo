@@ -12,7 +12,8 @@ export type Table =
   | 'chat_messages'
   | 'preferences'
   | 'sync_outbox'
-  | 'events';
+  | 'events'
+  | 'sessions';
 
 const VALID_TABLES: ReadonlySet<Table> = new Set<Table>([
   'tasks',
@@ -25,6 +26,7 @@ const VALID_TABLES: ReadonlySet<Table> = new Set<Table>([
   'preferences',
   'sync_outbox',
   'events',
+  'sessions',
 ]);
 
 function assertValidTable(table: string): asserts table is Table {

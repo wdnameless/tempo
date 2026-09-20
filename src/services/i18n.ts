@@ -22,6 +22,32 @@ export interface Translations {
   navAlarms: string;
   navTasks: string;
   navNotes: string;
+  statsEmptyTitle: string;
+  statsEmptyBody: string;
+  statsEmptyHint: string;
+  statsTitle: string;
+  statsSubtitle: string;
+  statsPeriodDay: string;
+  statsPeriodWeek: string;
+  statsFocusDays: string;
+  statsFocusWeeks: string;
+  statsTotalDays: string;
+  statsTotalWeeks: string;
+  statsPomodoros: string;
+  statsCompletedSessions: string;
+  statsStreak: string;
+  statsDaysShort: string;
+  statsTasksCard: string;
+  statsFocusChart: string;
+  statsHeatmap: string;
+  statsHeatLess: string;
+  statsHeatMore: string;
+  statsPeakHours: string;
+  statsCompletedChart: string;
+  statsTotalWord: string;
+  statsBestStreak: string;
+  statsDoneOfTotal: string;
+  statsPeakAt: string;
   navStats: string;
   navSettings: string;
   navDailyPlanning: string;
@@ -253,6 +279,32 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     navAlarms: 'Будильники',
     navTasks: 'Задачи',
     navNotes: 'Заметки',
+    statsEmptyTitle: 'Статистика пока пуста',
+    statsEmptyBody: 'Здесь появятся часы концентрации, тепловая карта активности за 12 недель, серии продуктивности и пиковые часы дня.',
+    statsEmptyHint: 'Завершите сессию таймера для старта',
+    statsTitle: 'Статистика',
+    statsSubtitle: 'Обзор времени концентрации и выполнения задач',
+    statsPeriodDay: 'По дням',
+    statsPeriodWeek: 'По неделям',
+    statsFocusDays: 'Фокус (14 дней)',
+    statsFocusWeeks: 'Фокус (12 недель)',
+    statsTotalDays: 'Итого за 14 дней',
+    statsTotalWeeks: 'Итого за 12 недель',
+    statsPomodoros: 'Помодоро',
+    statsCompletedSessions: 'Завершённых сессий',
+    statsStreak: 'Серия дней',
+    statsDaysShort: 'дн.',
+    statsTasksCard: 'Задачи',
+    statsFocusChart: 'Время концентрации по дням (2 недели)',
+    statsHeatmap: 'Тепловая карта активности (12 недель)',
+    statsHeatLess: 'Меньше',
+    statsHeatMore: 'Больше',
+    statsPeakHours: 'Пиковые часы (24 ч)',
+    statsCompletedChart: 'Выполнено задач за 14 дней',
+    statsTotalWord: 'всего',
+    statsBestStreak: 'Рекорд: {n} дн.',
+    statsDoneOfTotal: '{done} из {total} выполнено',
+    statsPeakAt: 'Пик: {hour}:00',
     navStats: 'Статистика',
     navSettings: 'Настройки',
     navDailyPlanning: 'План на день',
@@ -476,6 +528,32 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     navAlarms: 'Alarms',
     navTasks: 'Tasks',
     navNotes: 'Notes',
+    statsEmptyTitle: 'No statistics yet',
+    statsEmptyBody: 'Focus hours, a 12-week activity heat map, productive streaks, and peak hours will appear here.',
+    statsEmptyHint: 'Complete a timer session to get started',
+    statsTitle: 'Statistics',
+    statsSubtitle: 'Overview of focus time and completed tasks',
+    statsPeriodDay: 'Days',
+    statsPeriodWeek: 'Weeks',
+    statsFocusDays: 'Focus (14 days)',
+    statsFocusWeeks: 'Focus (12 weeks)',
+    statsTotalDays: 'Total for 14 days',
+    statsTotalWeeks: 'Total for 12 weeks',
+    statsPomodoros: 'Pomodoros',
+    statsCompletedSessions: 'Completed sessions',
+    statsStreak: 'Day streak',
+    statsDaysShort: 'd',
+    statsTasksCard: 'Tasks',
+    statsFocusChart: 'Focus time by day (2 weeks)',
+    statsHeatmap: 'Activity heat map (12 weeks)',
+    statsHeatLess: 'Less',
+    statsHeatMore: 'More',
+    statsPeakHours: 'Peak hours (24h)',
+    statsCompletedChart: 'Tasks completed in 14 days',
+    statsTotalWord: 'total',
+    statsBestStreak: 'Record: {n} d',
+    statsDoneOfTotal: '{done} of {total} done',
+    statsPeakAt: 'Peak: {hour}:00',
     navStats: 'Stats',
     navSettings: 'Settings',
     navDailyPlanning: 'Daily Planning',
