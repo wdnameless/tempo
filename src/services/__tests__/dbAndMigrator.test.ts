@@ -288,4 +288,39 @@ describe('Migrator and StoreService Bridge (store.ts)', () => {
     expect(StoreService.getPreference('alarmer_sidebar_collapsed', false)).toBe(true);
     expect(StoreService.getPreference('tempo_sidebar_collapsed', false)).toBe(true);
   });
+
+  it('completes a partially finished migration on the next launch', async () => {
+    // Alarms landed last time; notes, chat and preferences did not. The migrator
+    // must not stop at "the database is not empty" — that abandons the rest with
+    // no way for the user to recover it.
+    const legacyState = {
+      state: {
+        alarms: [{ id: 'a1', title: 'Wake', time: '08:00', days: [], repeat: 'once', enabled: true, sound: 'beep' }],
+        tasks: [],
+        notes: [{ id: 'n1', title: 'Note 1', body: 'Hello world', pinned: false }],
+        chatMessages: [{ id: 'm1', sender: 'user', text: 'Hi AI', timestamp: '2026-09-19T10:00:00Z' }],
+        preferences: { alarmer_accent: '#ff0000' },
+      },
+    };
+
+    mockInvoke.mockImplementation((cmd, args) => {
+      if (cmd === 'load_legacy_store') return Promise.resolve(JSON.stringify(legacyState));
+      if (cmd === 'db_list') {
+        const table = tableOf(args);
+        return Promise.resolve(table === 'alarms' ? [{ id: 'a1' }] : []);
+      }
+      if (cmd === 'db_insert') return Promise.resolve(storedRow(args));
+      return Promise.resolve(undefined);
+    });
+
+    await runLegacyMigration();
+
+    const inserted = (table: string) =>
+      mockInvoke.mock.calls.filter(([cmd, args]) => cmd === 'db_insert' && tableOf(args) === table);
+
+    expect(inserted('alarms')).toHaveLength(0);
+    expect(inserted('notes')).toHaveLength(1);
+    expect(inserted('chat_messages')).toHaveLength(1);
+    expect(mockInvoke).toHaveBeenCalledWith('db_pref_set', { key: 'tempo_accent', value: '"#ff0000"' });
+  });
 });

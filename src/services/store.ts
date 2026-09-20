@@ -301,12 +301,6 @@ const chatRepo = repo<ChatMessageRow>('chat_messages');
  */
 export async function runLegacyMigration(): Promise<void> {
   try {
-    const existingAlarms = await alarmsRepo.all();
-    const existingTasks = await tasksRepo.all();
-    if (existingAlarms.length > 0 || existingTasks.length > 0) {
-      return;
-    }
-
     let legacyJsonStr: string | null = null;
     try {
       legacyJsonStr = await invoke<string>('load_legacy_store');

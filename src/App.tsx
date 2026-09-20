@@ -503,10 +503,6 @@ function MainShell() {
                     void StoreService.persist({ tasks: newTasks });
                   }}
                   notes={notes}
-                  onUpdateNotes={(newNotes) => {
-                    setNotes(newNotes);
-                    void StoreService.persist({ notes: newNotes });
-                  }}
                 />
               )}
 
@@ -527,17 +523,7 @@ function MainShell() {
 
               {activeTab === 'lists' && <ListsView />}
 
-              {activeTab === 'notes' && (
-                <NotesView
-                  notes={notes}
-                  onUpdateNotes={(newNotes) => {
-                    setNotes(newNotes);
-                    void StoreService.persist({ notes: newNotes });
-                  }}
-                  alarms={alarms}
-                  theme={theme}
-                />
-              )}
+              {activeTab === 'notes' && <NotesView />}
 
               {activeTab === 'stats' && (
                 <StatsView

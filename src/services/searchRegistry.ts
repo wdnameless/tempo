@@ -1,4 +1,4 @@
-import { Bell, CheckSquare, List, Timer } from 'lucide-react';
+import { Bell, CheckSquare, FileText, List, Timer } from 'lucide-react';
 import { registerSearchSource, type SearchHit } from './search';
 import { registerDefaultCommands } from './commands';
 import { soundService } from './sound';
@@ -67,6 +67,16 @@ export function installSearchRegistry(): () => void {
       open: (hit: SearchHit) => {
         soundService.playUiClick();
         navigateTo('lists');
+        window.dispatchEvent(new CustomEvent('tempo:reveal', { detail: hit }));
+      },
+    }),
+    registerSearchSource({
+      kind: 'note',
+      labelKey: 'navNotes',
+      icon: FileText,
+      open: (hit: SearchHit) => {
+        soundService.playUiClick();
+        navigateTo('notes');
         window.dispatchEvent(new CustomEvent('tempo:reveal', { detail: hit }));
       },
     }),

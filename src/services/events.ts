@@ -82,6 +82,13 @@ export async function listEvents(): Promise<CalendarEvent[]> {
  * Creates a new local calendar event.
  */
 export async function createLocalEvent(input: CreateLocalEventInput): Promise<CalendarEvent> {
+  // An event that ends before it starts cannot be drawn: the rail would compute a
+  // negative height and the overlap check skips it, so it would exist but never be
+  // visible — and never conflict with anything. Reject it at the boundary instead.
+  if (input.endAt && input.startAt && input.endAt < input.startAt) {
+    throw new Error('Event ends before it starts');
+  }
+
   const rowData: Omit<EventRow, keyof EntityMeta> = {
     source: 'local',
     google_id: null,

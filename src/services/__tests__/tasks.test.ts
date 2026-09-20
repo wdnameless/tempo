@@ -642,4 +642,54 @@ describe('Tasks & Lists domain service (tasks.ts)', () => {
       expect(task.priority).toBe(2);
     });
   });
+
+  describe('rescheduling clears a stale start time', () => {
+    const row = (dueDate: string, startAt: string | null) => ({
+      id: 't1',
+      title: 'Move me',
+      note: null,
+      status: 'open',
+      list_id: null,
+      parent_id: null,
+      priority: 0,
+      due_date: dueDate,
+      start_at: startAt,
+      planned_minutes: 30,
+      position: 0,
+      completed_at: null,
+      updated_at: '2026-09-20T09:00:00.000Z',
+      deleted_at: null,
+    });
+
+    const patchSent = () => mockInvoke.mock.calls.find(([cmd]) => cmd === 'db_update')?.[1]?.patch;
+
+    it('drops startAt when the due date moves to another day', async () => {
+      mockInvoke.mockResolvedValueOnce(row('2026-09-20', '2026-09-20T10:00:00'));
+      mockInvoke.mockResolvedValueOnce(row('2026-09-21', null));
+
+      await updateTask('t1', { dueDate: '2026-09-21' });
+
+      // Without this the task shows on both days: buildDay includes it by its due
+      // date AND by the day its start time falls on.
+      expect(patchSent()?.start_at).toBeNull();
+    });
+
+    it('keeps startAt when the due date stays on the same day', async () => {
+      mockInvoke.mockResolvedValueOnce(row('2026-09-20', '2026-09-20T10:00:00'));
+      mockInvoke.mockResolvedValueOnce(row('2026-09-20', '2026-09-20T10:00:00'));
+
+      await updateTask('t1', { dueDate: '2026-09-20' });
+
+      expect(patchSent()?.start_at).toBe('2026-09-20T10:00:00');
+    });
+
+    it('respects an explicit startAt in the same patch', async () => {
+      mockInvoke.mockResolvedValueOnce(row('2026-09-20', '2026-09-20T10:00:00'));
+      mockInvoke.mockResolvedValueOnce(row('2026-09-21', '2026-09-21T14:00:00'));
+
+      await updateTask('t1', { dueDate: '2026-09-21', startAt: '2026-09-21T14:00:00' });
+
+      expect(patchSent()?.start_at).toBe('2026-09-21T14:00:00');
+    });
+  });
 });

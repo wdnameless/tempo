@@ -655,6 +655,95 @@ pub fn pref_set(conn: &Connection, key: &str, value: &str) -> Result<(), String>
     Ok(())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LinkRef {
+    pub kind: String,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BacklinkRow {
+    pub kind: String,
+    pub id: String,
+    pub title: String,
+}
+
+pub fn links_set(
+    conn: &Connection,
+    from_kind: &str,
+    from_id: &str,
+    to: &[LinkRef],
+) -> Result<u32, String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "DELETE FROM links WHERE from_kind = ?1 AND from_id = ?2",
+        params![from_kind, from_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut inserted: u32 = 0;
+
+    {
+        let mut stmt = tx
+            .prepare("INSERT OR REPLACE INTO links (from_kind, from_id, to_kind, to_id, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)")
+            .map_err(|e| e.to_string())?;
+
+        for item in to {
+            stmt.execute(params![from_kind, from_id, item.kind, item.id, now])
+                .map_err(|e| e.to_string())?;
+            inserted += 1;
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(inserted)
+}
+
+pub fn links_backlinks(
+    conn: &Connection,
+    kind: &str,
+    id: &str,
+) -> Result<Vec<BacklinkRow>, String> {
+    static BACKLINKS_QUERY: &str = r#"
+        SELECT
+            l.from_kind,
+            l.from_id,
+            COALESCE(n.title, t.title, d.title, r.title, '') AS title
+        FROM links l
+        LEFT JOIN notes n ON l.from_kind = 'note' AND l.from_id = n.id AND n.deleted_at IS NULL
+        LEFT JOIN tasks t ON l.from_kind = 'task' AND l.from_id = t.id AND t.deleted_at IS NULL
+        LEFT JOIN drawings d ON l.from_kind = 'drawing' AND l.from_id = d.id AND d.deleted_at IS NULL
+        LEFT JOIN recordings r ON l.from_kind = 'recording' AND l.from_id = r.id AND r.deleted_at IS NULL
+        WHERE l.to_kind = ?1 AND l.to_id = ?2
+          AND (
+            (l.from_kind = 'note' AND n.id IS NOT NULL)
+            OR (l.from_kind = 'task' AND t.id IS NOT NULL)
+            OR (l.from_kind = 'drawing' AND d.id IS NOT NULL)
+            OR (l.from_kind = 'recording' AND r.id IS NOT NULL)
+          )
+        ORDER BY l.updated_at DESC
+    "#;
+
+    let mut stmt = conn.prepare(BACKLINKS_QUERY).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![kind, id], |row| {
+            Ok(BacklinkRow {
+                kind: row.get(0)?,
+                id: row.get(1)?,
+                title: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut result = Vec::new();
+    for r in rows {
+        result.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(result)
+}
+
 // FTS Search & Reindex
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SearchHit {
@@ -1154,5 +1243,113 @@ mod tests {
         let base = Path::new("C:/custom/path");
         let p = db_path_in(base);
         assert_eq!(p, PathBuf::from("C:/custom/path/data/tempo.db"));
+    }
+
+    #[test]
+    fn test_links_set_replaces_and_backlinks_return_titles() {
+        let conn = setup_test_db();
+
+        // Insert note A and note B
+        let note_a = insert(
+            &conn,
+            "notes",
+            &json!({ "title": "Note Alpha", "body_md": "Alpha body" }),
+        )
+        .unwrap();
+        let id_a = note_a["id"].as_str().unwrap();
+
+        let note_b = insert(
+            &conn,
+            "notes",
+            &json!({ "title": "Note Beta", "body_md": "Beta body" }),
+        )
+        .unwrap();
+        let id_b = note_b["id"].as_str().unwrap();
+
+        let note_c = insert(
+            &conn,
+            "notes",
+            &json!({ "title": "Note Gamma", "body_md": "Gamma body" }),
+        )
+        .unwrap();
+        let id_c = note_c["id"].as_str().unwrap();
+
+        // Note A links to Note B and Note C
+        let inserted = links_set(
+            &conn,
+            "note",
+            id_a,
+            &[
+                LinkRef { kind: "note".into(), id: id_b.into() },
+                LinkRef { kind: "note".into(), id: id_c.into() },
+            ],
+        )
+        .unwrap();
+        assert_eq!(inserted, 2);
+
+        // Check backlinks of B: Note A points to it
+        let b_backlinks = links_backlinks(&conn, "note", id_b).unwrap();
+        assert_eq!(b_backlinks.len(), 1);
+        assert_eq!(b_backlinks[0].kind, "note");
+        assert_eq!(b_backlinks[0].id, id_a);
+        assert_eq!(b_backlinks[0].title, "Note Alpha");
+
+        // Re-set links for Note A: replaces instead of appending! Now Note A only links to Note C
+        let replaced = links_set(
+            &conn,
+            "note",
+            id_a,
+            &[LinkRef { kind: "note".into(), id: id_c.into() }],
+        )
+        .unwrap();
+        assert_eq!(replaced, 1);
+
+        // B has 0 backlinks now
+        let b_backlinks_after = links_backlinks(&conn, "note", id_b).unwrap();
+        assert_eq!(b_backlinks_after.len(), 0);
+
+        // C still has 1 backlink from Note A
+        let c_backlinks = links_backlinks(&conn, "note", id_c).unwrap();
+        assert_eq!(c_backlinks.len(), 1);
+        assert_eq!(c_backlinks[0].title, "Note Alpha");
+    }
+
+    #[test]
+    fn test_backlink_to_soft_deleted_source_is_not_returned() {
+        let conn = setup_test_db();
+
+        let note_a = insert(
+            &conn,
+            "notes",
+            &json!({ "title": "Source Note", "body_md": "links to target" }),
+        )
+        .unwrap();
+        let id_a = note_a["id"].as_str().unwrap();
+
+        let note_b = insert(
+            &conn,
+            "notes",
+            &json!({ "title": "Target Note", "body_md": "target" }),
+        )
+        .unwrap();
+        let id_b = note_b["id"].as_str().unwrap();
+
+        links_set(
+            &conn,
+            "note",
+            id_a,
+            &[LinkRef { kind: "note".into(), id: id_b.into() }],
+        )
+        .unwrap();
+
+        let b_bl1 = links_backlinks(&conn, "note", id_b).unwrap();
+        assert_eq!(b_bl1.len(), 1);
+
+        // Soft-delete note A
+        soft_delete(&conn, "notes", id_a).unwrap();
+
+        // Now note B should have 0 backlinks
+        let b_bl2 = links_backlinks(&conn, "note", id_b).unwrap();
+        assert_eq!(b_bl2.len(), 0);
     }
 }

@@ -189,6 +189,25 @@ pub fn db_reindex(app: tauri::AppHandle, kind: Option<String>) -> Result<u32, St
     with_db(&app, |conn| repo::reindex_fts(conn, kind.as_deref()))
 }
 
+#[tauri::command]
+pub fn links_set(
+    app: tauri::AppHandle,
+    from_kind: String,
+    from_id: String,
+    to: Vec<repo::LinkRef>,
+) -> Result<u32, String> {
+    with_db(&app, |conn| repo::links_set(conn, &from_kind, &from_id, &to))
+}
+
+#[tauri::command]
+pub fn links_backlinks(
+    app: tauri::AppHandle,
+    kind: String,
+    id: String,
+) -> Result<Vec<repo::BacklinkRow>, String> {
+    with_db(&app, |conn| repo::links_backlinks(conn, &kind, &id))
+}
+
 
 #[cfg(test)]
 mod tests {

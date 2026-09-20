@@ -301,4 +301,31 @@ describe('day service', () => {
       expect(conflicts).toHaveLength(0);
     });
   });
+
+  it('keeps a timed event that has no end, with a default duration', () => {
+    const date = new Date('2026-09-20T00:00:00');
+    const events = [
+      {
+        id: 'e1',
+        source: 'local' as const,
+        googleId: null,
+        calendarId: null,
+        title: 'No end',
+        startAt: '2026-09-20T14:00:00',
+        endAt: '',
+        allDay: false,
+        location: null,
+        taskId: null,
+        updated_at: '2026-09-20T09:00:00Z',
+        deleted_at: null,
+      },
+    ];
+
+    const items = buildDay({ date, tasks: [], events });
+
+    // Dropping it hides a real appointment and gives the user nothing to go on.
+    expect(items).toHaveLength(1);
+    expect(items[0].startMin).toBe(14 * 60);
+    expect(items[0].endMin).toBe(14 * 60 + 30);
+  });
 });

@@ -542,6 +542,8 @@ pub fn run() {
             storage::db_pref_set,
             storage::db_search,
             storage::db_reindex,
+            storage::links_set,
+            storage::links_backlinks,
             storage::load_legacy_store,
         ])
         .setup(|app| {

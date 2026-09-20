@@ -1,6 +1,7 @@
 import { repo, type EntityMeta } from './db';
 import { taskFromRow, taskToRow, type TaskRow } from './store';
 import { reindex } from './search';
+import { dayKey } from './stats';
 import type { TaskItem, ListItem } from '../types';
 
 export type TaskSortMode = 'manual' | 'due' | 'priority';
@@ -135,6 +136,17 @@ export async function updateTask(id: string, patch: UpdateTaskPatch): Promise<Ta
     } else {
       updatedItem.done = false;
       updatedItem.completedAt = null;
+    }
+  }
+
+  // Rescheduling to another day drops the stale start time. `buildDay` includes a
+  // task either by its due date or by the day its start time falls on, so leaving
+  // one behind would show the same task on two days at once — the ghost the day
+  // view cannot explain. An explicit `startAt` in the same patch always wins.
+  if (patch.dueDate !== undefined && patch.startAt === undefined && currentItem.startAt) {
+    const startDay = dayKey(new Date(currentItem.startAt));
+    if (startDay !== patch.dueDate) {
+      updatedItem.startAt = null;
     }
   }
 

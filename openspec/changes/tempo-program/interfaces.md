@@ -544,7 +544,9 @@ export interface LinkRef { kind: 'note' | 'task' | 'recording' | 'drawing'; id: 
 /** Разбирает `[[Название]]` из markdown. Возвращает названия в порядке появления, без дублей. */
 export function parseLinks(md: string): string[];
 export async function upsertLinks(from: LinkRef, to: LinkRef[]): Promise<void>;  // заменяет исходящие
-export async function backlinksOf(kind: string, id: string): Promise<Array<LinkRef & { title: string }>>;
+export interface BacklinkItem { kind: string; id: string; title: string }
+/** `kind` — строка, а не union: в таблице связей лежит то, чем её записали. */
+export async function backlinksOf(kind: string, id: string): Promise<BacklinkItem[]>;
 export async function linksOf(kind: string, id: string): Promise<LinkRef[]>;
 ```
 

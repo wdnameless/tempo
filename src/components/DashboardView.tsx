@@ -5,7 +5,6 @@ import React, { useState } from "react";
 import { ThemeColors, DynamicUIConfig, AlarmItem, AISettings, TaskItem, NoteItem } from "../types";
 import { Timer } from "./Timer";
 import { Alarms } from "./Alarms";
-import { NotesView } from "./NotesView";
 
 export interface DashboardViewProps {
   theme: ThemeColors;
@@ -19,7 +18,6 @@ export interface DashboardViewProps {
   onUpdateTasks: (tasks: TaskItem[]) => void;
   timerMinutes?: number;
   notes: NoteItem[];
-  onUpdateNotes: (notes: NoteItem[]) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -32,7 +30,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   tasks,
   onUpdateTasks,
   notes,
-  onUpdateNotes,
   timerMinutes,
 }) => {
   const t = I18nService.t();
@@ -243,12 +240,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <X size={13} />
                   </button>
                 </div>
-                <NotesView
-                  theme={theme}
-                  notes={notes}
-                  onUpdateNotes={onUpdateNotes}
-                  alarms={alarms}
-                />
+                <ul className="flex flex-col gap-1.5">
+                  {notes.slice(0, 6).map((note) => (
+                    <li key={note.id} className="flex items-baseline gap-2 text-sm">
+                      <span className="truncate" style={{ color: 'var(--text)' }}>
+                        {note.title || note.body.split('\n')[0] || t.notesNew}
+                      </span>
+                      {note.pinned && (
+                        <span className="ml-auto shrink-0 text-xs" style={{ color: 'var(--accent)' }}>
+                          ★
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                  {notes.length === 0 && (
+                    <li className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {t.notesEmpty}
+                    </li>
+                  )}
+                </ul>
               </div>
             )}
           </div>

@@ -138,12 +138,17 @@ export function buildDay({ date, tasks, events }: BuildDayInput): DayItem[] {
     const eventStart = parseDate(event.startAt);
     const eventEnd = parseDate(event.endAt);
 
-    if (!eventStart || !eventEnd) {
+    // A timed event with a start but no usable end still belongs on the day. Events
+    // arrive from Google and from the local form, and dropping one because its end
+    // is missing hides a real appointment with no way for the user to tell why.
+    // It gets the same default duration a task without one gets.
+    if (!eventStart) {
       continue;
     }
+    const effectiveEnd = eventEnd ?? new Date(eventStart.getTime() + 30 * 60 * 1000);
 
     const startMs = eventStart.getTime();
-    const endMs = eventEnd.getTime();
+    const endMs = effectiveEnd.getTime();
 
     // Overlap condition: eventStart < dayEnd && eventEnd > dayStart
     if (startMs < dayEnd.getTime() && endMs > dayStartMs) {
