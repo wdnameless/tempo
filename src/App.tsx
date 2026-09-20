@@ -20,6 +20,7 @@ import { DashboardView } from './components/DashboardView';
 import { SettingsView } from './components/SettingsView';
 import { Alarms } from './components/Alarms';
 import { TasksView } from './components/TasksView';
+import { ListsView } from './components/ListsView';
 import { NotesView } from './components/NotesView';
 import { StatsView } from './components/StatsView';
 import { AlarmCenter } from './components/AlarmCenter';
@@ -27,6 +28,7 @@ import { UpdateBanner } from './components/UpdateBanner';
 import { CommandPalette } from './components/CommandPalette';
 
 import { DynamicBackground } from './components/DynamicBackground';
+import { I18nService } from './services/i18n';
 import { themeFromTokens } from './constants/themes';
 import { ACCENTS, DEFAULT_ACCENT, AccentId, applyAccent } from './constants/design';
 import {
@@ -161,6 +163,10 @@ function isMiniOverlayWindow(): boolean {
  */
 function MainShell() {
   const [hydrated, setHydrated] = useState(false);
+  /** Repaints the chrome when the interface language changes. */
+  const [, setLangTick] = useState(0);
+  useEffect(() => I18nService.subscribe(() => setLangTick((n) => n + 1)), []);
+  const t = I18nService.t();
   const [accentKey, setAccentKey] = useState<AccentId>(() => {
     const saved = StoreService.getPreference<string>('tempo_accent', DEFAULT_ACCENT);
     return saved in ACCENTS ? (saved as AccentId) : DEFAULT_ACCENT;
@@ -345,13 +351,13 @@ function MainShell() {
   };
 
   const navItems: Array<{ id: ScreenId; label: string; icon: React.ReactNode }> = [
-    { id: 'dashboard', label: 'Таймер', icon: <Clock size={18} /> },
-    { id: 'alarms', label: 'Будильники', icon: <Bell size={18} /> },
-    { id: 'tasks', label: 'Задачи', icon: <CheckSquare size={18} /> },
+    { id: 'dashboard', label: t.navDashboard, icon: <Clock size={18} /> },
+    { id: 'alarms', label: t.navAlarms, icon: <Bell size={18} /> },
+    { id: 'tasks', label: t.navTasks, icon: <CheckSquare size={18} /> },
     { id: 'lists', label: t.navLists, icon: <ListChecks size={18} /> },
-    { id: 'notes', label: 'Заметки', icon: <FileText size={18} /> },
-    { id: 'stats', label: 'Статистика', icon: <BarChart2 size={18} /> },
-    { id: 'settings', label: 'Настройки', icon: <Settings size={18} /> },
+    { id: 'notes', label: t.navNotes, icon: <FileText size={18} /> },
+    { id: 'stats', label: t.navStats, icon: <BarChart2 size={18} /> },
+    { id: 'settings', label: t.navSettings, icon: <Settings size={18} /> },
   ];
 
   return (
@@ -512,16 +518,9 @@ function MainShell() {
                 />
               )}
 
-              {activeTab === 'tasks' && (
-                <TasksView
-                  tasks={tasks}
-                  onUpdateTasks={(newTasks) => {
-                    setTasks(newTasks);
-                    void StoreService.persist({ tasks: newTasks });
-                  }}
-                  theme={theme}
-                />
-              )}
+              {activeTab === 'tasks' && <TasksView />}
+
+              {activeTab === 'lists' && <ListsView />}
 
               {activeTab === 'notes' && (
                 <NotesView

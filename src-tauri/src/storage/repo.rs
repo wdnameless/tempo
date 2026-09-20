@@ -364,7 +364,7 @@ pub fn reindex_fts(conn: &Connection, kind: Option<&str>) -> Result<u32, String>
 
     if kind.is_none() || kind == Some("task") {
         let mut stmt = conn
-            .prepare("SELECT id, title, note FROM tasks WHERE deleted_at IS NULL")
+            .prepare("SELECT id, title, note, due_date, start_at FROM tasks WHERE deleted_at IS NULL")
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |row| {
@@ -372,16 +372,55 @@ pub fn reindex_fts(conn: &Connection, kind: Option<&str>) -> Result<u32, String>
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
                 ))
             })
             .map_err(|e| e.to_string())?;
 
         for r in rows {
-            let (id, title, note) = r.map_err(|e| e.to_string())?;
-            let body = note.unwrap_or_default();
+            let (id, title, note, due_date, start_at) = r.map_err(|e| e.to_string())?;
+            let note_str = note.unwrap_or_default();
+            let due_str = due_date.unwrap_or_default();
+            let start_str = start_at.unwrap_or_default();
+            let mut parts: Vec<&str> = Vec::new();
+            if !note_str.is_empty() {
+                parts.push(&note_str);
+            }
+            if !due_str.is_empty() {
+                parts.push(&due_str);
+            }
+            if !start_str.is_empty() {
+                parts.push(&start_str);
+            }
+            let body = parts.join(" ");
             conn.execute(
                 "INSERT INTO search_fts(kind, row_id, title, body) VALUES ('task', ?, ?, ?)",
                 rusqlite::params![id, title, body],
+            )
+            .map_err(|e| e.to_string())?;
+            count += 1;
+        }
+    }
+
+    if kind.is_none() || kind == Some("list") {
+        let mut stmt = conn
+            .prepare("SELECT id, name FROM lists WHERE deleted_at IS NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        for r in rows {
+            let (id, name) = r.map_err(|e| e.to_string())?;
+            conn.execute(
+                "INSERT INTO search_fts(kind, row_id, title, body) VALUES ('list', ?, ?, '')",
+                rusqlite::params![id, name],
             )
             .map_err(|e| e.to_string())?;
             count += 1;
@@ -969,6 +1008,52 @@ mod tests {
         // Pointwise reindex for session only
         let sess_count = reindex_fts(&conn, Some("session")).expect("reindex session");
         assert_eq!(sess_count, 1);
+    }
+
+    #[test]
+    fn test_reindex_fts_indexes_tasks_and_lists() {
+        let conn = setup_test_db();
+        let task_json = json!({
+            "title": "Buy groceries",
+            "note": "Milk and bread",
+            "due_date": "2026-09-25",
+            "start_at": "2026-09-25T09:00:00Z"
+        });
+        let task = insert(&conn, "tasks", &task_json).expect("insert task");
+        let task_id = task["id"].as_str().unwrap();
+
+        let list_json = json!({
+            "name": "Shopping List"
+        });
+        let list = insert(&conn, "lists", &list_json).expect("insert list");
+        let list_id = list["id"].as_str().unwrap();
+
+        let count = reindex_fts(&conn, None).expect("reindex all");
+        assert!(count >= 2);
+
+        // Search task by title
+        let hits_title = search_fts(&conn, "groceries", None).expect("search task by title");
+        assert!(hits_title.iter().any(|h| h.row_id == task_id && h.kind == "task"));
+
+        // Search task by note
+        let hits_note = search_fts(&conn, "Milk", None).expect("search task by note");
+        assert!(hits_note.iter().any(|h| h.row_id == task_id && h.kind == "task"));
+
+        // Search task by due_date
+        let hits_due = search_fts(&conn, "2026", None).expect("search task by due_date");
+        assert!(hits_due.iter().any(|h| h.row_id == task_id && h.kind == "task"));
+
+        // Search list by name
+        let hits_list = search_fts(&conn, "Shopping", None).expect("search list by name");
+        assert!(hits_list.iter().any(|h| h.row_id == list_id && h.kind == "list"));
+
+        // Pointwise reindex for task only
+        let task_count = reindex_fts(&conn, Some("task")).expect("reindex task");
+        assert_eq!(task_count, 1);
+
+        // Pointwise reindex for list only
+        let list_count = reindex_fts(&conn, Some("list")).expect("reindex list");
+        assert_eq!(list_count, 1);
     }
 
     #[test]

@@ -66,16 +66,21 @@ describe('StoreService and Row Mappers', () => {
       expect(entity.note).toBe('Some notes');
       expect(entity.done).toBe(true);
       expect(entity.createdAt).toBe('2026-09-19T12:00:00Z');
-      expect(entity).not.toHaveProperty('priority');
-      expect(entity).not.toHaveProperty('dueDate');
-      expect(entity).not.toHaveProperty('plannedMinutes');
+      expect(entity.priority).toBe(2);
+      expect(entity.dueDate).toBe('2026-09-20');
+      expect(entity.startAt).toBe('2026-09-19');
+      expect(entity.plannedMinutes).toBe(45);
 
+      // The round trip must be lossless: a task stored with a date comes back
+      // with it, or every field the user typed silently disappears on reload.
       const convertedRow = taskToRow(entity);
       expect(convertedRow.title).toBe('Complete task');
       expect(convertedRow.note).toBe('Some notes');
       expect(convertedRow.status).toBe('done');
-      expect(convertedRow.priority).toBe(0);
-      expect(convertedRow.due_date).toBeNull();
+      expect(convertedRow.priority).toBe(2);
+      expect(convertedRow.due_date).toBe('2026-09-20');
+      expect(convertedRow.start_at).toBe('2026-09-19');
+      expect(convertedRow.planned_minutes).toBe(45);
     });
 
     it('maps alarmFromRow and alarmToRow bidirectional', () => {

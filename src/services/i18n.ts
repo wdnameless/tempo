@@ -46,6 +46,8 @@ export interface Translations {
   changeAccent: string;
 
   navLists: string;
+  commonAdd: string;
+  commonLoading: string;
   titleLists: string;
   tasksNew: string;
   tasksEmpty: string;
@@ -152,7 +154,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     soundPreviewFailed: 'Не удалось воспроизвести звук',
 
     // New shell - navigation / sidebar
-    navDashboard: 'Дашборд',
+    navDashboard: 'Помодоро',
     navAlarms: 'Будильники',
     navTasks: 'Задачи',
     navNotes: 'Заметки',
@@ -180,6 +182,8 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     searchHintOpen: 'Открыть',
     changeAccent: 'Сменить акцент',
     navLists: 'Списки',
+    commonAdd: 'Добавить',
+    commonLoading: 'Загрузка…',
     titleLists: 'Списки',
     tasksNew: 'Новая задача',
     tasksEmpty: 'Пока пусто. Добавьте задачу — она появится здесь.',
@@ -281,7 +285,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     soundPreviewFailed: 'Failed to play sound preview',
 
     // New shell - navigation / sidebar
-    navDashboard: 'Dashboard',
+    navDashboard: 'Pomodoro',
     navAlarms: 'Alarms',
     navTasks: 'Tasks',
     navNotes: 'Notes',
@@ -309,6 +313,8 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     searchHintOpen: 'Open',
     changeAccent: 'Change accent',
     navLists: 'Lists',
+    commonAdd: 'Add',
+    commonLoading: 'Loading…',
     titleLists: 'Lists',
     tasksNew: 'New task',
     tasksEmpty: 'Nothing yet. Add a task and it shows up here.',

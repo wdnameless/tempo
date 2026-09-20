@@ -1,10 +1,10 @@
 import { Plus, X, LayoutGrid, Timer as TimerIcon, Bell, ListTodo, NotebookPen } from "lucide-react";
 import { StoreService } from "../services/store";
+import { I18nService } from "../services/i18n";
 import React, { useState } from "react";
 import { ThemeColors, DynamicUIConfig, AlarmItem, AISettings, TaskItem, NoteItem } from "../types";
 import { Timer } from "./Timer";
 import { Alarms } from "./Alarms";
-import { TasksView } from "./TasksView";
 import { NotesView } from "./NotesView";
 
 export interface DashboardViewProps {
@@ -35,6 +35,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onUpdateNotes,
   timerMinutes,
 }) => {
+  const t = I18nService.t();
+  const openTasks = tasks.filter((task) => !task.done);
+
+  /** Completing from the widget goes through the same updater the screen uses. */
+  const completeTask = (id: string) => {
+    onUpdateTasks(
+      tasks.map((task) =>
+        task.id === id ? { ...task, done: true, completedAt: new Date().toISOString() } : task,
+      ),
+    );
+  };
+
   const [activeWidgets, setActiveWidgets] = useState<string[]>(() => {
     try {
       const raw = StoreService.getPreference<string>('alarmer_dashboard_widgets', '["timer","tasks","alarms","notes"]');
@@ -156,11 +168,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <X size={13} />
                   </button>
                 </div>
-                <TasksView
-                  theme={theme}
-                  tasks={tasks}
-                  onUpdateTasks={onUpdateTasks}
-                />
+                <ul className="flex flex-col gap-1.5">
+                  {openTasks.slice(0, 6).map((task) => (
+                    <li key={task.id} className="flex items-center gap-2 text-sm">
+                      <button
+                        type="button"
+                        aria-label={task.title}
+                        onClick={() => completeTask(task.id)}
+                        className="shrink-0 rounded-full border transition-colors"
+                        style={{ borderColor: 'var(--border)', width: 14, height: 14 }}
+                      />
+                      <span className="truncate" style={{ color: 'var(--text)' }}>
+                        {task.title}
+                      </span>
+                      {task.dueDate && (
+                        <span
+                          className="ml-auto shrink-0 text-xs tabular-nums"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          {task.dueDate.slice(5)}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                  {openTasks.length === 0 && (
+                    <li className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {t.tasksEmpty}
+                    </li>
+                  )}
+                </ul>
               </div>
             )}
 

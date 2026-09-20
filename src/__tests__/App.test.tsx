@@ -49,7 +49,7 @@ describe('App Shell', () => {
 
   it('renders a sidebar entry for every screen', () => {
     render(<App />);
-    for (const label of ['Таймер', 'Будильники', 'Задачи', 'Заметки', 'Статистика', 'Настройки']) {
+    for (const label of ['Помодоро', 'Будильники', 'Задачи', 'Списки', 'Заметки', 'Статистика', 'Настройки']) {
       expect(screen.getByRole('button', { name: label })).toBeDefined();
     }
   });
@@ -77,7 +77,7 @@ describe('App Shell', () => {
 
   it('navigates between screens from the sidebar', () => {
     render(<App />);
-    expect(activeScreen()).toBe('Таймер');
+    expect(activeScreen()).toBe('Помодоро');
 
     fireEvent.click(screen.getByRole('button', { name: 'Настройки' }));
     expect(activeScreen()).toBe('Настройки');

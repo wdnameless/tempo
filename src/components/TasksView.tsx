@@ -1,332 +1,486 @@
-import React, { useState } from 'react';
-import { Plus, Trash2, Check, Circle, Timer, Clock, ChevronDown, ChevronUp } from 'lucide-react';
-import type { TaskItem, TaskTimerConfig, ThemeColors } from '../types';
-import { taskProgress } from '../services/stats';
-import { soundService } from '../services/sound';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  Plus,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  Calendar,
+  Clock,
+  Timer,
+  CheckCircle2,
+  Circle,
+} from 'lucide-react';
+import type { TaskItem } from '../types';
+import {
+  listTasks,
+  createTask,
+  updateTask,
+  toggleTask,
+  deleteTask,
+  sortTasks,
+  subtasksOf,
+  type TaskSortMode,
+} from '../services/tasks';
+import { StoreService } from '../services/store';
+import { I18nService } from '../services/i18n';
+import { Row, Segmented, IconButton } from './ui';
 
-interface TasksViewProps {
-  theme: ThemeColors;
-  tasks: TaskItem[];
-  onUpdateTasks: (tasks: TaskItem[]) => void;
+/**
+ * Priority marker indicator style based on phase palette intensity.
+ */
+function PriorityBadge({ priority }: { priority?: number }) {
+  if (!priority || priority === 0) return null;
+  const colors = [
+    'transparent',
+    'var(--phase-short-rest, #14B8A6)', // 1: low (teal)
+    'var(--phase-focus, #F59E0B)',      // 2: medium (amber)
+    'var(--phase-long-rest, #EF4444)',  // 3: high (intense red/purple)
+  ];
+  const color = colors[priority] || colors[1];
+  return (
+    <span
+      className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+      style={{ backgroundColor: color }}
+      title={`Priority ${priority}`}
+      data-testid={`priority-dot-${priority}`}
+    />
+  );
 }
 
-const createTaskId = () => `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-
-export const TasksView: React.FC<TasksViewProps> = ({
-  theme,
-  tasks,
-  onUpdateTasks,
-}) => {
+export function TasksView() {
+  const t = I18nService.t();
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState('');
-  const [showTimerOptions, setShowTimerOptions] = useState(false);
-  const [timerType, setTimerType] = useState<'interval' | 'time'>('interval');
-  const [intervalMinutes, setIntervalMinutes] = useState(60);
-  const [targetTime, setTargetTime] = useState('14:00');
+  const [sortMode, setSortMode] = useState<TaskSortMode>(() =>
+    StoreService.getPreference<TaskSortMode>('tempo_tasks_sort', 'manual')
+  );
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [subtaskDrafts, setSubtaskDrafts] = useState<Record<string, string>>({});
 
-  const { done, total } = taskProgress(tasks);
+  const reload = useCallback(async () => {
+    try {
+      const items = await listTasks();
+      setTasks(items);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
-  const addTask = (e: React.FormEvent) => {
+  // Listen to search reveal events
+  useEffect(() => {
+    const handleReveal = (e: Event) => {
+      const custom = e as CustomEvent<{ id?: string; kind?: string }>;
+      if (custom.detail?.id) {
+        setEditingTaskId(custom.detail.id);
+      }
+    };
+    window.addEventListener('tempo:reveal', handleReveal);
+    return () => window.removeEventListener('tempo:reveal', handleReveal);
+  }, []);
+
+  const handleSortChange = async (mode: TaskSortMode) => {
+    setSortMode(mode);
+    await StoreService.setPreference('tempo_tasks_sort', mode);
+  };
+
+  const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     const title = draft.trim();
     if (!title) return;
-
-    soundService.playCountdownTick();
-
-    const timerConfig: TaskTimerConfig | undefined = showTimerOptions
-      ? {
-          enabled: true,
-          type: timerType,
-          intervalMinutes: timerType === 'interval' ? Number(intervalMinutes) || 60 : undefined,
-          time: timerType === 'time' ? targetTime : undefined,
-        }
-      : undefined;
-
-    onUpdateTasks([
-      ...tasks,
-      {
-        id: createTaskId(),
-        title,
-        done: false,
-        timer: timerConfig,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
     setDraft('');
-    setShowTimerOptions(false);
+    await createTask({ title });
+    await reload();
   };
 
+  const handleToggle = async (id: string) => {
+    await toggleTask(id);
+    await reload();
+  };
 
-  const toggleTask = (id: string) => {
-    soundService.playCountdownTick();
-    onUpdateTasks(
-      tasks.map((t) =>
-        t.id === id
-          ? { ...t, done: !t.done, completedAt: !t.done ? new Date().toISOString() : undefined }
-          : t,
-      ),
+  const handleDelete = async (id: string) => {
+    await deleteTask(id);
+    await reload();
+  };
+
+  const handleUpdate = async (id: string, patch: Partial<TaskItem>) => {
+    await updateTask(id, patch);
+    await reload();
+  };
+
+  const handleAddSubtask = async (parentId: string) => {
+    const title = (subtaskDrafts[parentId] || '').trim();
+    if (!title) return;
+    setSubtaskDrafts((prev) => ({ ...prev, [parentId]: '' }));
+    await createTask({ title, parentId });
+    setExpandedParents((prev) => ({ ...prev, [parentId]: true }));
+    await reload();
+  };
+
+  const toggleExpand = (id: string) => {
+    setExpandedParents((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // Filter tasks belonging strictly to normal task view (listId is null/undefined) and separate root tasks
+  const rootTasks = useMemo(() => {
+    return tasks.filter((t) => !t.listId && !t.parentId);
+  }, [tasks]);
+
+  const activeRoots = useMemo(() => {
+    const active = rootTasks.filter((t) => !t.done);
+    return sortTasks(active, sortMode);
+  }, [rootTasks, sortMode]);
+
+  const completedRoots = useMemo(() => {
+    const completed = rootTasks.filter((t) => t.done);
+    return sortTasks(completed, sortMode);
+  }, [rootTasks, sortMode]);
+
+  const renderTaskRow = (task: TaskItem, isSubtask = false) => {
+    const subs = subtasksOf(tasks, task.id);
+    const subDone = subs.filter((s) => s.done).length;
+    const isExpanded = !!expandedParents[task.id];
+    const isEditing = editingTaskId === task.id;
+
+    return (
+      <div key={task.id} className="group flex flex-col">
+        <Row
+          label={
+            <div className="flex items-center gap-2 flex-wrap py-0.5 min-w-0">
+              <PriorityBadge priority={task.priority} />
+              <button
+                type="button"
+                onClick={() => setEditingTaskId(isEditing ? null : task.id)}
+                className={`text-left font-medium text-sm hover:underline focus:outline-none truncate max-w-full ${
+                  task.done ? 'line-through text-muted opacity-60' : ''
+                }`}
+                style={{ color: 'var(--text-normal)' }}
+              >
+                {task.title}
+              </button>
+
+              {/* Subtask count badge */}
+              {subs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(task.id)}
+                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded transition-colors"
+                  style={{
+                    backgroundColor: 'var(--surface-hover, rgba(255,255,255,0.05))',
+                    color: 'var(--text-muted)',
+                  }}
+                  title={t.tasksSubtasks}
+                >
+                  <span>
+                    {subDone}/{subs.length}
+                  </span>
+                  {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                </button>
+              )}
+
+              {/* Metadata tags */}
+              {task.dueDate && (
+                <span
+                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded"
+                  style={{
+                    backgroundColor: 'var(--surface-hover, rgba(255,255,255,0.05))',
+                    color: 'var(--text-muted)',
+                  }}
+                  title={t.tasksDueDate}
+                >
+                  <Calendar size={11} />
+                  {task.dueDate}
+                </span>
+              )}
+
+              {task.startAt && (
+                <span
+                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded"
+                  style={{
+                    backgroundColor: 'var(--surface-hover, rgba(255,255,255,0.05))',
+                    color: 'var(--text-muted)',
+                  }}
+                  title={t.tasksStartAt}
+                >
+                  <Clock size={11} />
+                  {task.startAt.slice(11, 16)}
+                </span>
+              )}
+
+              {task.plannedMinutes != null && task.plannedMinutes > 0 && (
+                <span
+                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded"
+                  style={{
+                    backgroundColor: 'var(--surface-hover, rgba(255,255,255,0.05))',
+                    color: 'var(--text-muted)',
+                  }}
+                  title={t.tasksPlanned}
+                >
+                  <Timer size={11} />
+                  {task.plannedMinutes} {t.tasksMinutesShort}
+                </span>
+              )}
+            </div>
+          }
+          control={
+            <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+              <IconButton
+                icon={task.done ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                label={task.done ? t.tasksCompleted : t.tasksNew}
+                onClick={() => void handleToggle(task.id)}
+              />
+              {!isSubtask && (
+                <IconButton
+                  icon={<Plus size={14} />}
+                  label={t.tasksAddSubtask}
+                  onClick={() => {
+                    setExpandedParents((prev) => ({ ...prev, [task.id]: true }));
+                    setEditingTaskId(task.id);
+                  }}
+                />
+              )}
+              <IconButton
+                icon={<Trash2 size={14} />}
+                label={t.tasksDelete}
+                onClick={() => void handleDelete(task.id)}
+              />
+            </div>
+          }
+        />
+
+        {/* Inline editor when clicked */}
+        {isEditing && (
+          <div
+            className="px-4 py-3 mx-2 my-1 rounded flex flex-col gap-2.5 text-xs"
+            style={{
+              backgroundColor: 'var(--surface, rgba(255,255,255,0.03))',
+              border: '1px solid var(--border, rgba(255,255,255,0.08))',
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={task.title}
+                onChange={(e) => handleUpdate(task.id, { title: e.target.value })}
+                className="w-full px-2.5 py-1.5 rounded bg-transparent font-medium text-sm focus:outline-none focus:ring-1"
+                style={{
+                  border: '1px solid var(--border, rgba(255,255,255,0.1))',
+                  color: 'var(--text-normal)',
+                }}
+              />
+            </div>
+
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Priority */}
+              <div className="flex items-center gap-1.5">
+                <span style={{ color: 'var(--text-muted)' }}>{t.tasksPriority}:</span>
+                <Segmented
+                  options={[
+                    { value: 0, label: t.priorityNone },
+                    { value: 1, label: t.priorityLow },
+                    { value: 2, label: t.priorityMedium },
+                    { value: 3, label: t.priorityHigh },
+                  ]}
+                  value={task.priority ?? 0}
+                  onChange={(val) => handleUpdate(task.id, { priority: Number(val) })}
+                />
+              </div>
+
+              {/* Due Date */}
+              <div className="flex items-center gap-1.5">
+                <span style={{ color: 'var(--text-muted)' }}>{t.tasksDueDate}:</span>
+                <input
+                  type="date"
+                  value={task.dueDate ?? ''}
+                  onChange={(e) => handleUpdate(task.id, { dueDate: e.target.value || null })}
+                  className="px-2 py-1 rounded bg-transparent focus:outline-none"
+                  style={{
+                    border: '1px solid var(--border, rgba(255,255,255,0.1))',
+                    color: 'var(--text-normal)',
+                  }}
+                />
+              </div>
+
+              {/* Start At */}
+              <div className="flex items-center gap-1.5">
+                <span style={{ color: 'var(--text-muted)' }}>{t.tasksStartAt}:</span>
+                <input
+                  type="time"
+                  value={task.startAt ? task.startAt.slice(11, 16) : ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const datePart = task.dueDate || new Date().toISOString().slice(0, 10);
+                    const iso = val ? `${datePart}T${val}:00.000Z` : null;
+                    void handleUpdate(task.id, { startAt: iso });
+                  }}
+                  className="px-2 py-1 rounded bg-transparent focus:outline-none"
+                  style={{
+                    border: '1px solid var(--border, rgba(255,255,255,0.1))',
+                    color: 'var(--text-normal)',
+                  }}
+                />
+              </div>
+
+              {/* Planned minutes */}
+              <div className="flex items-center gap-1.5">
+                <span style={{ color: 'var(--text-muted)' }}>{t.tasksPlanned}:</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="5"
+                  value={task.plannedMinutes ?? ''}
+                  placeholder="min"
+                  onChange={(e) =>
+                    handleUpdate(task.id, {
+                      plannedMinutes: e.target.value ? Number(e.target.value) : null,
+                    })
+                  }
+                  className="w-16 px-2 py-1 rounded bg-transparent focus:outline-none"
+                  style={{
+                    border: '1px solid var(--border, rgba(255,255,255,0.1))',
+                    color: 'var(--text-normal)',
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Subtasks rendering */}
+        {!isSubtask && isExpanded && (
+          <div className="flex flex-col ml-6 pl-2 border-l border-[var(--border)]">
+            {subs.map((sub) => renderTaskRow(sub, true))}
+
+            {/* Add subtask input */}
+            <div className="flex items-center gap-2 py-2 px-3">
+              <input
+                type="text"
+                placeholder={t.tasksAddSubtask}
+                value={subtaskDrafts[task.id] || ''}
+                onChange={(e) =>
+                  setSubtaskDrafts((prev) => ({ ...prev, [task.id]: e.target.value }))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleAddSubtask(task.id);
+                  }
+                }}
+                className="flex-1 px-2.5 py-1 text-xs rounded bg-transparent focus:outline-none"
+                style={{
+                  border: '1px solid var(--border, rgba(255,255,255,0.1))',
+                  color: 'var(--text-normal)',
+                }}
+              />
+              <IconButton
+                icon={<Plus size={14} />}
+                label={t.tasksAddSubtask}
+                onClick={() => handleAddSubtask(task.id)}
+              />
+            </div>
+          </div>
+        )}
+      </div>
     );
   };
-
-  const toggleTaskTimer = (id: string) => {
-    soundService.playCountdownTick();
-    onUpdateTasks(
-      tasks.map((t) => {
-        if (t.id !== id || !t.timer) return t;
-        return {
-          ...t,
-          timer: {
-            ...t.timer,
-            enabled: !t.timer.enabled,
-          },
-        };
-      }),
-    );
-  };
-
-  const deleteTask = (id: string) => {
-    soundService.playCountdownTick();
-    onUpdateTasks(tasks.filter((t) => t.id !== id));
-  };
-
-  const open = tasks.filter((t) => !t.done);
-  const completed = tasks.filter((t) => t.done);
 
   return (
-    <div className="flex flex-col w-full max-w-[340px] px-1 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <span className="text-[11px] font-semibold tracking-wider uppercase" style={{ color: theme.text }}>
-            Задачи
-          </span>
-          {total > 0 && (
-            <span
-              className="text-[10px] px-1.5 py-0.5 rounded-full font-mono"
-              style={{ backgroundColor: theme.surface, color: theme.subtext }}
-            >
-              {done} / {total}
-            </span>
-          )}
+    <div className="flex flex-col h-full overflow-y-auto px-6 py-6 gap-6 max-w-4xl mx-auto w-full">
+      {/* Top Header & Sort Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight" style={{ color: 'var(--text-normal)' }}>
+            {t.titleTasks}
+          </h1>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Segmented
+            options={[
+              { value: 'manual', label: t.tasksSortManual },
+              { value: 'due', label: t.tasksSortDue },
+              { value: 'priority', label: t.tasksSortPriority },
+            ]}
+            value={sortMode}
+            onChange={(val) => handleSortChange(val as TaskSortMode)}
+          />
         </div>
       </div>
 
-      {total > 0 && (
-        <div className="w-full h-[3px] rounded-full overflow-hidden" style={{ backgroundColor: theme.border }}>
-          <div
-            className="h-full transition-all duration-300"
-            style={{ width: `${(done / total) * 100}%`, backgroundColor: theme.accent }}
-          />
-        </div>
-      )}
+      {/* New Task Input */}
+      <form onSubmit={handleCreateTask} className="relative flex items-center">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={t.tasksNew}
+          className="w-full px-4 py-3 rounded-lg text-sm bg-transparent focus:outline-none transition-all"
+          style={{
+            backgroundColor: 'var(--surface, rgba(255,255,255,0.03))',
+            border: '1px solid var(--border, rgba(255,255,255,0.1))',
+            color: 'var(--text-normal)',
+          }}
+        />
+        <button
+          type="submit"
+          disabled={!draft.trim()}
+          className="absolute right-2 px-3 py-1.5 text-xs font-medium rounded transition-opacity disabled:opacity-30"
+          style={{
+            backgroundColor: 'var(--primary, #3B82F6)',
+            color: '#FFFFFF',
+          }}
+        >
+          {t.commonAdd}
+        </button>
+      </form>
 
-      {/* Task Creation Form with optional Scheduled Timer */}
-      <form
-        onSubmit={addTask}
-        className="flex flex-col p-2.5 rounded-2xl border w-full gap-2 transition-all"
-        style={{ backgroundColor: theme.surface, borderColor: theme.border }}
-      >
-        <div className="flex items-center gap-1.5 w-full">
-          <input
-            type="text"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Что нужно сделать?"
-            className="min-w-0 flex-1 bg-black/40 text-xs px-2.5 py-1.5 rounded-lg border border-white/10 focus:outline-none"
-            style={{ color: theme.text }}
-            aria-label="Новая задача"
-          />
-          <button
-            type="button"
-            onClick={() => setShowTimerOptions(!showTimerOptions)}
-            className={`p-1.5 rounded-lg border text-xs transition-colors shrink-0 flex items-center gap-1 ${
-              showTimerOptions ? 'bg-white/10 border-white/20' : 'border-transparent hover:bg-white/5'
-            }`}
-            style={{ color: showTimerOptions ? theme.accent : theme.subtext }}
-            title="Настроить таймер/напоминание"
-          >
-            <Timer size={14} />
-            {showTimerOptions ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          </button>
-          <button
-            type="submit"
-            disabled={!draft.trim()}
-            className="w-7 h-7 rounded-lg transition-transform active:scale-95 flex items-center justify-center shrink-0 disabled:opacity-30"
-            style={{ backgroundColor: '#fafafa', color: '#0a0a0a' }}
-            title="Добавить задачу"
-          >
-            <Plus size={15} />
-          </button>
-        </div>
+      {/* Main Task List */}
+      <div className="flex flex-col rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+        {loading ? (
+          <div className="p-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+            {t.commonLoading}
+          </div>
+        ) : activeRoots.length === 0 && completedRoots.length === 0 ? (
+          <div className="p-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+            {t.tasksEmpty}
+          </div>
+        ) : (
+          <div className="flex flex-col divide-y divide-[var(--border)]">
+            {activeRoots.map((task) => renderTaskRow(task))}
+          </div>
+        )}
 
-        {/* Expandable Timer Configuration */}
-        {showTimerOptions && (
-          <div className="flex flex-col gap-2 pt-2 border-t border-white/5 text-[11px]">
-            <div className="flex items-center justify-between">
-              <span style={{ color: theme.subtext }}>Тип таймера:</span>
-              <div className="flex gap-1 bg-black/30 p-0.5 rounded-lg border border-white/5">
-                <button
-                  type="button"
-                  onClick={() => setTimerType('interval')}
-                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                    timerType === 'interval' ? 'bg-white/15 text-white' : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  Интервал
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTimerType('time')}
-                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                    timerType === 'time' ? 'bg-white/15 text-white' : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  Точное время
-                </button>
+        {/* Completed tasks accordion group */}
+        {completedRoots.length > 0 && (
+          <div className="border-t border-[var(--border)]">
+            <button
+              type="button"
+              onClick={() => setShowCompleted((prev) => !prev)}
+              className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-medium uppercase tracking-wider transition-colors hover:bg-[var(--surface-hover)] focus:outline-none"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <div className="flex items-center gap-2">
+                {showCompleted ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <span>
+                  {t.tasksCompleted} ({completedRoots.length})
+                </span>
               </div>
-            </div>
+            </button>
 
-            {timerType === 'interval' ? (
-              <div className="flex items-center justify-between">
-                <span style={{ color: theme.subtext }}>Повторять каждые:</span>
-                <div className="flex items-center gap-1.5">
-                  <select
-                    value={intervalMinutes}
-                    onChange={(e) => setIntervalMinutes(Number(e.target.value))}
-                    className="bg-black/40 text-xs px-2 py-1 rounded border border-white/10 focus:outline-none"
-                    style={{ color: theme.text }}
-                  >
-                    <option value={15}>15 минут</option>
-                    <option value={30}>30 минут</option>
-                    <option value={45}>45 минут</option>
-                    <option value={60}>1 час</option>
-                    <option value={90}>1.5 часа</option>
-                    <option value={120}>2 часа</option>
-                  </select>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between">
-                <span style={{ color: theme.subtext }}>Срабатывать в:</span>
-                <input
-                  type="time"
-                  value={targetTime}
-                  onChange={(e) => setTargetTime(e.target.value)}
-                  className="bg-black/40 text-xs px-2 py-0.5 rounded border border-white/10 focus:outline-none"
-                  style={{ color: theme.text }}
-                />
+            {showCompleted && (
+              <div className="flex flex-col divide-y divide-[var(--border)] bg-[var(--surface-subtle,rgba(0,0,0,0.1))]">
+                {completedRoots.map((task) => renderTaskRow(task))}
               </div>
             )}
           </div>
         )}
-      </form>
-
-      {total === 0 && (
-        <div
-          className="rounded-2xl border px-4 py-6 text-center"
-          style={{ backgroundColor: theme.surface, borderColor: theme.border }}
-        >
-          <span className="text-[11px] leading-relaxed" style={{ color: theme.subtext }}>
-            Пока пусто. Добавьте задачи — расписание подскажет, когда за них взяться.
-          </span>
-        </div>
-      )}
-
-
-      {/* Task list with timers */}
-      <div className="flex flex-col space-y-1.5">
-        {open.map((task) => (
-          <div
-            key={task.id}
-            className="flex items-center gap-2 p-2.5 rounded-xl border group"
-            style={{ backgroundColor: theme.cardBg, borderColor: theme.border }}
-          >
-            <button
-              onClick={() => toggleTask(task.id)}
-              className="shrink-0"
-              style={{ color: theme.subtext }}
-              title="Отметить выполненной"
-              aria-label={`Отметить «${task.title}» выполненной`}
-            >
-              <Circle size={16} />
-            </button>
-            <div className="flex-1 min-w-0 flex flex-col">
-              <span className="text-xs truncate" style={{ color: theme.text }}>
-                {task.title}
-              </span>
-              {task.timer && (
-                <div className="flex items-center gap-1 mt-0.5">
-                  <button
-                    type="button"
-                    onClick={() => toggleTaskTimer(task.id)}
-                    className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
-                      task.timer.enabled
-                        ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10'
-                        : 'border-zinc-700 text-zinc-500 bg-zinc-800/30'
-                    }`}
-                    title={task.timer.enabled ? 'Таймер активен (нажмите чтобы выключить)' : 'Таймер на паузе (нажмите чтобы включить)'}
-                  >
-                    {task.timer.type === 'interval' ? (
-                      <>
-                        <Timer size={10} />
-                        <span>каждые {task.timer.intervalMinutes} мин</span>
-                      </>
-                    ) : (
-                      <>
-                        <Clock size={10} />
-                        <span>в {task.timer.time}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
-            </div>
-            <button
-              onClick={() => deleteTask(task.id)}
-              className="p-1 rounded transition-colors hover:bg-red-500/20 text-red-400 opacity-0 group-hover:opacity-100 shrink-0 transition-opacity"
-              title="Удалить"
-              aria-label={`Удалить «${task.title}»`}
-            >
-              <Trash2 size={12} />
-            </button>
-          </div>
-        ))}
-
-        {completed.length > 0 && (
-          <>
-            <span className="text-[10px] uppercase tracking-wider mt-1" style={{ color: theme.subtext }}>
-              Выполнено
-            </span>
-            {completed.map((task) => (
-              <div
-                key={task.id}
-                className="flex items-center gap-2 p-2.5 rounded-xl border"
-                style={{ backgroundColor: theme.surface, borderColor: theme.border }}
-              >
-                <button
-                  onClick={() => toggleTask(task.id)}
-                  className="shrink-0"
-                  style={{ color: theme.accent }}
-                  title="Вернуть в работу"
-                  aria-label={`Вернуть «${task.title}» в работу`}
-                >
-                  <Check size={16} />
-                </button>
-                <span className="flex-1 text-xs truncate line-through opacity-55" style={{ color: theme.subtext }}>
-                  {task.title}
-                </span>
-                <button
-                  onClick={() => deleteTask(task.id)}
-                  className="p-1 rounded transition-colors hover:bg-red-500/20 text-red-400 opacity-40 hover:opacity-100 shrink-0"
-                  title="Удалить"
-                  aria-label={`Удалить «${task.title}»`}
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            ))}
-          </>
-        )}
       </div>
     </div>
   );
-};
+}
