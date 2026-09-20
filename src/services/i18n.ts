@@ -43,6 +43,7 @@ export interface Translations {
   searchGroupAlarms: string;
   searchGroupSessions: string;
   searchHintOpen: string;
+  changeAccent: string;
 
   // Pomodoro (wave 1)
   pomodoroFocus: string;
@@ -151,6 +152,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     searchGroupAlarms: 'Будильники',
     searchGroupSessions: 'Сессии',
     searchHintOpen: 'Открыть',
+    changeAccent: 'Сменить акцент',
     pomodoroFocus: 'Фокус',
     pomodoroShortRest: 'Перерыв',
     pomodoroLongRest: 'Длинный перерыв',
@@ -254,6 +256,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     searchGroupAlarms: 'Alarms',
     searchGroupSessions: 'Sessions',
     searchHintOpen: 'Open',
+    changeAccent: 'Change accent',
     pomodoroFocus: 'Focus',
     pomodoroShortRest: 'Break',
     pomodoroLongRest: 'Long break',

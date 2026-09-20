@@ -492,6 +492,77 @@ pub fn reindex_fts(conn: &Connection, kind: Option<&str>) -> Result<u32, String>
             count += 1;
         }
     }
+
+    if kind.is_none() || kind == Some("alarm") {
+        let mut stmt = conn
+            .prepare("SELECT id, label, time, note FROM alarms WHERE deleted_at IS NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        for r in rows {
+            let (id, label, time, note) = r.map_err(|e| e.to_string())?;
+            let t = label.unwrap_or_default();
+            let time_str = time.unwrap_or_default();
+            let note_str = note.unwrap_or_default();
+            let body = if !note_str.is_empty() && !time_str.is_empty() {
+                format!("{note_str} {time_str}")
+            } else if !note_str.is_empty() {
+                note_str
+            } else {
+                time_str
+            };
+            conn.execute(
+                "INSERT INTO search_fts(kind, row_id, title, body) VALUES ('alarm', ?, ?, ?)",
+                rusqlite::params![id, t, body],
+            )
+            .map_err(|e| e.to_string())?;
+            count += 1;
+        }
+    }
+
+    if kind.is_none() || kind == Some("session") {
+        let mut stmt = conn
+            .prepare("SELECT id, kind, started_at, duration_sec FROM sessions WHERE deleted_at IS NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        for r in rows {
+            let (id, session_kind, started_at, duration_sec) = r.map_err(|e| e.to_string())?;
+            let start_str = started_at.unwrap_or_default();
+            let dur_str = duration_sec.map(|d| d.to_string()).unwrap_or_default();
+            let body = if !start_str.is_empty() && !dur_str.is_empty() {
+                format!("{start_str} {dur_str}")
+            } else if !start_str.is_empty() {
+                start_str
+            } else {
+                dur_str
+            };
+            conn.execute(
+                "INSERT INTO search_fts(kind, row_id, title, body) VALUES ('session', ?, ?, ?)",
+                rusqlite::params![id, session_kind, body],
+            )
+            .map_err(|e| e.to_string())?;
+            count += 1;
+        }
+    }
     Ok(count)
 }
 
@@ -557,12 +628,42 @@ pub struct SearchHit {
 
 pub fn search_fts(conn: &Connection, query: &str, limit: Option<u32>) -> Result<Vec<SearchHit>, String> {
     let limit = limit.unwrap_or(50);
+
+    // Sanitise query: split on whitespace, drop empties, escape embedded " by doubling,
+    // wrap each token in double quotes, append * to the last token for prefix matching, join with space.
+    let raw_tokens: Vec<&str> = query.split_whitespace().collect();
+    if raw_tokens.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut sanitized_tokens = Vec::with_capacity(raw_tokens.len());
+    for (i, token) in raw_tokens.iter().enumerate() {
+        // Filter out punctuation characters that have no alphanumeric / text content,
+        // or sanitize any token by escaping quotes.
+        let clean_token: String = token.chars().filter(|c| !matches!(c, '(' | ')' | '-' | '*')).collect();
+        if clean_token.is_empty() {
+            continue;
+        }
+        let escaped = clean_token.replace('"', "\"\"");
+        let is_last = i == raw_tokens.len() - 1;
+        if is_last {
+            sanitized_tokens.push(format!("\"{escaped}\"*"));
+        } else {
+            sanitized_tokens.push(format!("\"{escaped}\""));
+        }
+    }
+
+    if sanitized_tokens.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let sanitized_query = sanitized_tokens.join(" ");
+
     let mut stmt = conn
         .prepare("SELECT kind, row_id, title, body, rank FROM search_fts WHERE search_fts MATCH ?1 ORDER BY rank LIMIT ?2")
         .map_err(|e| e.to_string())?;
-
     let rows = stmt
-        .query_map(params![query, limit], |row| {
+        .query_map(params![sanitized_query, limit], |row| {
             let kind: String = row.get(0)?;
             let row_id: String = row.get(1)?;
             let title: Option<String> = row.get(2)?;
@@ -817,6 +918,108 @@ mod tests {
         assert!(!hits.is_empty(), "Should find note containing разработки");
         assert_eq!(hits[0].row_id, note["id"].as_str().unwrap());
         assert_eq!(hits[0].kind, "note");
+    }
+
+    #[test]
+    fn test_reindex_fts_indexes_alarms_and_sessions() {
+        let conn = setup_test_db();
+        let alarm_json = json!({
+            "label": "Morning Wakeup",
+            "time": "07:30",
+            "note": "Don't press snooze"
+        });
+        let alarm = insert(&conn, "alarms", &alarm_json).expect("insert alarm");
+        let alarm_id = alarm["id"].as_str().unwrap();
+
+        let session_json = json!({
+            "kind": "pomodoro",
+            "started_at": "2026-09-20T10:00:00Z",
+            "duration_sec": 1500
+        });
+        let session = insert(&conn, "sessions", &session_json).expect("insert session");
+        let session_id = session["id"].as_str().unwrap();
+
+        let count = reindex_fts(&conn, None).expect("reindex all");
+        assert!(count >= 2);
+
+        // Search alarm by label
+        let hits = search_fts(&conn, "Morning", None).expect("search alarm by label");
+        assert!(hits.iter().any(|h| h.row_id == alarm_id && h.kind == "alarm"));
+
+        // Search alarm by note
+        let hits_note = search_fts(&conn, "snooze", None).expect("search alarm by note");
+        assert!(hits_note.iter().any(|h| h.row_id == alarm_id && h.kind == "alarm"));
+
+        // Search alarm by time
+        let hits_time = search_fts(&conn, "07:30", None).expect("search alarm by time");
+        assert!(hits_time.iter().any(|h| h.row_id == alarm_id && h.kind == "alarm"));
+
+        // Search session by kind
+        let hits_sess = search_fts(&conn, "pomodoro", None).expect("search session by kind");
+        assert!(hits_sess.iter().any(|h| h.row_id == session_id && h.kind == "session"));
+
+        // Search session by duration
+        let hits_dur = search_fts(&conn, "1500", None).expect("search session by duration");
+        assert!(hits_dur.iter().any(|h| h.row_id == session_id && h.kind == "session"));
+
+        // Pointwise reindex for alarm only
+        let alarm_count = reindex_fts(&conn, Some("alarm")).expect("reindex alarm");
+        assert_eq!(alarm_count, 1);
+
+        // Pointwise reindex for session only
+        let sess_count = reindex_fts(&conn, Some("session")).expect("reindex session");
+        assert_eq!(sess_count, 1);
+    }
+
+    #[test]
+    fn test_search_fts_sanitises_queries_and_finds_parentheses_content() {
+        let conn = setup_test_db();
+        let note = json!({
+            "title": "Meeting (Project Alpha)",
+            "body_md": "Discussed roadmap and milestones for (Q3) release."
+        });
+        let inserted = insert(&conn, "notes", &note).expect("insert note");
+        let note_id = inserted["id"].as_str().unwrap();
+
+        reindex_fts(&conn, None).expect("reindex");
+
+        // Query with parenthesis - must find without error
+        let hits = search_fts(&conn, "(Project", None).expect("search with (");
+        assert!(!hits.is_empty(), "Should find note with (Project");
+        assert_eq!(hits[0].row_id, note_id);
+
+        let hits_paren = search_fts(&conn, "(Q3)", None).expect("search with (Q3)");
+        assert!(!hits_paren.is_empty(), "Should find note with (Q3)");
+        assert_eq!(hits_paren[0].row_id, note_id);
+
+        // Special characters tests: "(", "\"", "-", "AND", "foo*", lone "'"
+        assert!(search_fts(&conn, "(", None).is_ok());
+        assert!(search_fts(&conn, "\"", None).is_ok());
+        assert!(search_fts(&conn, "-", None).is_ok());
+        assert!(search_fts(&conn, "AND", None).is_ok());
+        assert!(search_fts(&conn, "foo*", None).is_ok());
+        assert!(search_fts(&conn, "'", None).is_ok());
+        assert!(search_fts(&conn, "   \"   (   -  ", None).is_ok());
+
+        // Empty or punctuation-only query returns empty result, not error
+        let empty_hits = search_fts(&conn, "   ", None).expect("empty query");
+        assert!(empty_hits.is_empty());
+        let punct_hits = search_fts(&conn, "--- () ***", None).expect("punct query");
+        assert!(punct_hits.is_empty());
+
+        // Two-word query matches row containing both words
+        let hits_two = search_fts(&conn, "Meeting Alpha", None).expect("two words");
+        assert!(!hits_two.is_empty());
+        assert_eq!(hits_two[0].row_id, note_id);
+
+        // Prefix of a word matches it (e.g. "Meet" matches "Meeting", "road" matches "roadmap")
+        let hits_prefix = search_fts(&conn, "Meet", None).expect("prefix Meet");
+        assert!(!hits_prefix.is_empty());
+        assert_eq!(hits_prefix[0].row_id, note_id);
+
+        let hits_prefix2 = search_fts(&conn, "Meeting road", None).expect("prefix road");
+        assert!(!hits_prefix2.is_empty());
+        assert_eq!(hits_prefix2[0].row_id, note_id);
     }
 
     #[test]

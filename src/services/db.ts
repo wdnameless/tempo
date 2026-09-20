@@ -108,6 +108,9 @@ export async function dbReady(): Promise<number> {
       // Hydrate settings cache
       const { initSettingsCache } = await import('./settings');
       await initSettingsCache();
+      // Populate full-text search index after migrations
+      const { reindex } = await import('./search');
+      await reindex();
       return SCHEMA_VERSION;
     })();
   }

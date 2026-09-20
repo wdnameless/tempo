@@ -23,6 +23,7 @@ import { NotesView } from './components/NotesView';
 import { StatsView } from './components/StatsView';
 import { AlarmCenter } from './components/AlarmCenter';
 import { UpdateBanner } from './components/UpdateBanner';
+import { CommandPalette } from './components/CommandPalette';
 
 import { DynamicBackground } from './components/DynamicBackground';
 import { themeFromTokens } from './constants/themes';
@@ -358,6 +359,7 @@ function MainShell() {
       >
         <DynamicBackground />
         <ResizeHandles />
+        <CommandPalette />
 
         <AlarmCenter
           theme={theme}

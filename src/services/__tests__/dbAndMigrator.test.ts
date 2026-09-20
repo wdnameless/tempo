@@ -108,16 +108,18 @@ describe('Database layer (db.ts)', () => {
     expect(res).toEqual(hits);
   });
 
-  it('dbReady() initializes preferences and returns schema version', async () => {
+  it('dbReady() initializes preferences, runs migrations, reindexes, and returns schema version', async () => {
     mockInvoke.mockImplementation((cmd) => {
       if (cmd === 'db_ready') return Promise.resolve(true);
       if (cmd === 'db_list') return Promise.resolve([]);
+      if (cmd === 'db_reindex') return Promise.resolve(10);
       return Promise.resolve(null);
     });
 
     const v = await dbReady();
     expect(v).toBe(1);
     expect(mockInvoke).toHaveBeenCalledWith('db_ready');
+    expect(mockInvoke).toHaveBeenCalledWith('db_reindex', { kind: undefined });
   });
 
   it('dbPath() returns database location', async () => {
@@ -150,7 +152,6 @@ describe('Settings layer (settings.ts)', () => {
     unsubscribe();
   });
 });
-
 describe('Migrator and StoreService Bridge (store.ts)', () => {
   beforeEach(() => {
     vi.clearAllMocks();

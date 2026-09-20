@@ -4,6 +4,7 @@ import App from "./App";
 import { MiniOverlay, useOverlayDismiss } from "./components/MiniOverlay";
 import { dbReady } from "./services/db";
 import { isTauri } from "./services/platform";
+import { installSearchRegistry } from "./services/searchRegistry";
 import "./index.css";
 
 /** Routes the webview to the right root: main app or the mini overlay window. */
@@ -25,6 +26,10 @@ function Main() {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    // The palette's registry is filled before the first render either way: it
+    // holds commands and result kinds, none of which need the database.
+    installSearchRegistry();
+
     if (!isTauri()) return;
     dbReady()
       .then(() => setReady(true))
