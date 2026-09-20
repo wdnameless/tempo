@@ -162,4 +162,39 @@ describe('TasksView', () => {
     // task-1 has 2 subtasks, 1 done: 1/2
     expect(screen.getByText('1/2')).toBeTruthy();
   });
+
+  it('reveals the row the palette picked, opening the completed group for a done task', async () => {
+    await act(async () => {
+      render(<TasksView />);
+    });
+
+    // A done task is behind the collapsed group, so a reveal must open it first —
+    // otherwise the jump lands on a screen where the row is not rendered at all.
+    expect(screen.queryByText('Clean the kitchen')).toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('tempo:reveal', { detail: { kind: 'task', row_id: 'task-2' } }),
+      );
+    });
+
+    expect(screen.getByText('Clean the kitchen')).toBeTruthy();
+
+    const row = document.querySelector('[data-task-row="task-2"]');
+    expect(row?.getAttribute('style')).toContain('--accent-soft');
+  });
+
+  it('ignores a reveal for another kind', async () => {
+    await act(async () => {
+      render(<TasksView />);
+    });
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('tempo:reveal', { detail: { kind: 'note', row_id: 'task-1' } }),
+      );
+    });
+
+    expect(document.querySelector('[data-task-row="task-1"]')?.getAttribute('style')).toBeNull();
+  });
 });

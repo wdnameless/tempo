@@ -57,6 +57,33 @@ export function TasksView() {
   );
   const [showCompleted, setShowCompleted] = useState(false);
   const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
+  /** Task the search palette just jumped to; highlighted briefly. */
+  const [revealedId, setRevealedId] = useState<string | null>(null);
+
+  // Answer the palette's "reveal this hit": open the completed group when the
+  // task is done, scroll it into view and mark it. A screen that only opened
+  // would leave the user searching again for the row they just picked.
+  useEffect(() => {
+    const onReveal = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind?: string; row_id?: string }>).detail;
+      if (!detail || detail.kind !== 'task' || !detail.row_id) return;
+      const id = detail.row_id;
+
+      if (tasks.some((candidate) => candidate.id === id && candidate.done)) {
+        setShowCompleted(true);
+      }
+      setRevealedId(id);
+      window.setTimeout(() => {
+        document
+          .querySelector(`[data-task-row="${id}"]`)
+          ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, 60);
+      window.setTimeout(() => setRevealedId(null), 2400);
+    };
+
+    window.addEventListener('tempo:reveal', onReveal);
+    return () => window.removeEventListener('tempo:reveal', onReveal);
+  }, [tasks]);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [subtaskDrafts, setSubtaskDrafts] = useState<Record<string, string>>({});
 
@@ -149,7 +176,16 @@ export function TasksView() {
     const isEditing = editingTaskId === task.id;
 
     return (
-      <div key={task.id} className="group flex flex-col">
+      <div
+        key={task.id}
+        data-task-row={task.id}
+        className="group flex flex-col transition-colors rounded-lg"
+        style={
+          revealedId === task.id
+            ? { backgroundColor: 'var(--accent-soft)', boxShadow: '0 0 0 1px var(--accent)' }
+            : undefined
+        }
+      >
         <Row
           label={
             <div className="flex items-center gap-2 flex-wrap py-0.5 min-w-0">
