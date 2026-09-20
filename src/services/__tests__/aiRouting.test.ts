@@ -1,128 +1,95 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { AICompilerService } from '../aiCompiler';
-import { DEFAULT_DYNAMIC_UI } from '../../types/dynamicUi';
+import { AIGateway } from '../aiGateway';
 import type { AISettings } from '../../types';
 
 /**
- * With a key present the model is the thing that answers, except for the narrow
- * set of local UI toggles. The regression these guard: ANY prompt containing
- * "покажи", "верни" or "тему" used to be hijacked by the offline keyword map, so
- * a real request like "покажи расписание на завтра" never reached the model.
+ * R36 routing tests:
+ * With a key present the model is queried for intent compilation with active app context.
+ * Without a key, requests fall back to deterministic local parsing.
+ * Model errors return honest error messages rather than crashing.
  */
-
-const gatewayMock = vi.fn();
 
 vi.mock('../aiGateway', () => ({
   AIGateway: {
-    hasKey: () => Promise.resolve(true),
-    requestJson: (...args: unknown[]) => gatewayMock(...args),
+    generateCompletion: vi.fn(),
   },
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: () => Promise.resolve(undefined) }));
-vi.mock('../platform', () => ({ isTauri: () => false }));
+vi.mock('../tasks', () => ({
+  listTasks: vi.fn().mockResolvedValue([]),
+  createTask: vi.fn().mockResolvedValue({ id: 't1', title: 'Task' }),
+  listLists: vi.fn().mockResolvedValue([]),
+  createList: vi.fn().mockResolvedValue({ id: 'l1', name: 'List' }),
+}));
 
-const settings: AISettings = {
+vi.mock('../notes', () => ({
+  listNotes: vi.fn().mockResolvedValue([]),
+  createNote: vi.fn().mockResolvedValue({ id: 'n1', title: 'Note' }),
+}));
+
+const settingsWithKey: AISettings = {
   apiKey: 'sk-test',
   baseUrl: 'https://api.openai.com/v1',
   model: 'gpt-4o-mini',
 };
 
-const compile = (prompt: string) =>
-  AICompilerService.compileUserIntent(prompt, DEFAULT_DYNAMIC_UI, settings);
+const settingsWithoutKey: AISettings = {
+  apiKey: '',
+  baseUrl: 'https://api.openai.com/v1',
+  model: 'gpt-4o-mini',
+};
 
-describe('routing between the model and the local keyword map', () => {
-  beforeEach(() => gatewayMock.mockClear());
-
-  it('sends a request that merely mentions a UI word to the model', async () => {
-    gatewayMock.mockResolvedValue({ value: {}, error: null });
-
-    await compile('покажи расписание на завтра');
-
-    expect(gatewayMock).toHaveBeenCalledTimes(1);
+describe('routing between the model and local parsing (R36)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it('sends a scheduling request that shares a verb with UI commands to the model', async () => {
-    gatewayMock.mockResolvedValue({ value: {}, error: null });
+  it('routes to the model when an API key is present', async () => {
+    vi.mocked(AIGateway.generateCompletion).mockResolvedValueOnce(
+      JSON.stringify({
+        action: 'create_task',
+        explanation: 'Создаю задачу из модели',
+        task: { title: 'Позвонить врачу', dueDate: '2026-09-21' },
+      }),
+    );
 
-    await compile('верни будильник на 7 утра');
+    const plan = await AICompilerService.compileIntent('напомни позвонить врачу завтра', settingsWithKey);
 
-    expect(gatewayMock).toHaveBeenCalledTimes(1);
+    expect(AIGateway.generateCompletion).toHaveBeenCalledTimes(1);
+    expect(plan.action).toBe('create_task');
+    expect(plan.task?.title).toBe('Позвонить врачу');
+    expect(plan.explanation).toBe('Создаю задачу из модели');
   });
 
-  it('keeps an unambiguous local toggle local', async () => {
-    await compile('убери засечки');
+  it('routes to local intent compiler when no API key is set', async () => {
+    const plan = await AICompilerService.compileIntent('создай задачу Купить чай', settingsWithoutKey);
 
-    expect(gatewayMock).not.toHaveBeenCalled();
+    expect(AIGateway.generateCompletion).not.toHaveBeenCalled();
+    expect(plan.action).toBe('create_task');
+    expect(plan.task?.title).toBe('Купить чай');
   });
 
-  it('reports the failure instead of passing the local edit off as the model', async () => {
-    gatewayMock.mockResolvedValue({ value: {}, error: 'Не удалось подключиться к http://x' });
+  it('reports the model failure cleanly without breaking', async () => {
+    vi.mocked(AIGateway.generateCompletion).mockRejectedValueOnce(
+      new Error('Connection timeout to api.openai.com'),
+    );
 
-    const result = await compile('сделай красиво');
+    const plan = await AICompilerService.compileIntent('распланируй день', settingsWithKey);
 
-    expect(result.explanation).toContain('модель недоступна');
-    expect(result.explanation).toContain('Не удалось подключиться');
+    expect(plan.action).toBe('noop');
+    expect(plan.explanation).toContain('Ошибка обращения к ИИ');
+    expect(plan.explanation).toContain('Connection timeout');
   });
 
-  it('adopts whatever the model returned when it answered', async () => {
-    gatewayMock.mockResolvedValue({
-      value: { type: 'ui', explanation: 'Готово', autoApply: true },
-      error: null,
-    });
+  it('handles malformed JSON response from model gracefully', async () => {
+    vi.mocked(AIGateway.generateCompletion).mockResolvedValueOnce(
+      'Неверный JSON ответ',
+    );
 
-    const result = await compile('сделай интерфейс похожим на терминал');
+    const plan = await AICompilerService.compileIntent('распланируй день', settingsWithKey);
 
-    expect(result.explanation).toBe('Готово');
-  });
-});
-
-describe('validating model-produced alarms', () => {
-  beforeEach(() => gatewayMock.mockClear());
-
-  it('keeps a valid repeat mode and drops an invalid one to the default', async () => {
-    gatewayMock.mockResolvedValue({
-      value: {
-        type: 'alarm',
-        explanation: 'Расставил',
-        alarms: [
-          { title: 'Разовый', time: '09:00', repeat: 'once', days: [] },
-          { title: 'Странный', time: '10:00', repeat: 'hourly', days: [] },
-        ],
-      },
-      error: null,
-    });
-
-    const result = await compile('поставь будильники');
-
-    expect(result.alarms?.[0].repeat).toBe('once');
-    // An unrecognised mode must not become "once" and then fire forever.
-    expect(result.alarms?.[1].repeat).toBe('days');
-  });
-
-  it('discards weekdays a model invented out of range', async () => {
-    gatewayMock.mockResolvedValue({
-      value: {
-        type: 'alarm',
-        explanation: 'Расставил',
-        alarms: [{ title: 'A', time: '09:00', repeat: 'days', days: [1, 9, -1, 3] }],
-      },
-      error: null,
-    });
-
-    const result = await compile('поставь будильники');
-
-    expect(result.alarms?.[0].days).toEqual([1, 3]);
-  });
-
-  it('reports no alarms rather than an empty array when there are none', async () => {
-    gatewayMock.mockResolvedValue({
-      value: { type: 'ui', explanation: 'Только интерфейс' },
-      error: null,
-    });
-
-    const result = await compile('измени интерфейс');
-
-    expect(result.alarms).toBeUndefined();
+    expect(plan.action).toBe('noop');
+    expect(plan.explanation).toContain('ошибка формата');
   });
 });

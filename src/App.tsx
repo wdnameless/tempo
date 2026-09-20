@@ -35,9 +35,10 @@ import { CommandPalette } from './components/CommandPalette';
 
 import { DynamicBackground } from './components/DynamicBackground';
 import { I18nService } from './services/i18n';
+import { loadAccent, migrateLegacyPreferences } from './services/generalSettings';
 import { pruneOnStartup } from './services/assets';
 import { themeFromTokens } from './constants/themes';
-import { ACCENTS, DEFAULT_ACCENT, AccentId, applyAccent } from './constants/design';
+import { ACCENTS, AccentId, applyAccent } from './constants/design';
 import {
   ThemeColors,
   AlarmItem,
@@ -174,8 +175,7 @@ function MainShell() {
   useEffect(() => I18nService.subscribe(() => setLangTick((n) => n + 1)), []);
   const t = I18nService.t();
   const [accentKey, setAccentKey] = useState<AccentId>(() => {
-    const saved = StoreService.getPreference<string>('tempo_accent', DEFAULT_ACCENT);
-    return saved in ACCENTS ? (saved as AccentId) : DEFAULT_ACCENT;
+    return loadAccent();
   });
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -279,10 +279,10 @@ function MainShell() {
           setChatMessages(data.chatMessages.map(mapStoredToChatMessage));
         }
 
-        const savedAccent = StoreService.getPreference<string>('tempo_accent', DEFAULT_ACCENT);
+        const savedAccent = loadAccent();
         if (savedAccent in ACCENTS) {
-          setAccentKey(savedAccent as AccentId);
-          applyAccent(savedAccent as AccentId);
+          setAccentKey(savedAccent);
+          applyAccent(savedAccent);
         }
 
         const savedCollapsed = StoreService.getPreference<boolean>('tempo_sidebar_collapsed', false);
@@ -301,10 +301,15 @@ function MainShell() {
     void loadState();
   }, []);
 
-  // Startup assets pruning
+  // Startup assets pruning, and carrying preferences over from the previous name.
   useEffect(() => {
     void pruneOnStartup().catch((err) => {
       console.warn('Startup assets pruning failed:', err);
+    });
+    // Not only on the settings screen: a user who never opens it would otherwise
+    // keep two copies of the same setting, one of them under a name we no longer read.
+    void migrateLegacyPreferences().catch((err) => {
+      console.warn('Preference migration failed:', err);
     });
   }, []);
 

@@ -779,3 +779,60 @@ export function formatFocus(seconds: number): string;
   который врёт о форме недели.
 - `completionByDay` считает по `completed_at` задачи, а не по её текущему статусу: статус меняется,
   история — нет.
+
+## 21. Настройки — владелец: Wave 10 (R20, R21, R25)
+
+### Пять разделов, ровно пять
+
+General, Integrations, Speech to Text, Shortcuts, About & Account. Настройки ассистента живут
+внутри General отдельным блоком: шестого раздела быть не должно, но и прятать ключ модели
+в «About» нельзя.
+
+- **Shortcuts рисуется из реестра** (`listShortcuts()`), а не из списка в разметке: список,
+  написанный руками, расходится с тем, что действительно зарегистрировано, и врёт тихо.
+- **Integrations — только Google Calendar.** Apple Music не интегрируется (R21): её нет
+  ни в списке, ни в выключенном виде.
+- **Speech to Text** — каркас под волну 11: переключатель, хоткей, выбор модели. Модели
+  появятся в волне 11; здесь выбор сохраняется, а строка честно говорит, что загрузка
+  будет при первом включении.
+- Кнопка, которая ничего не делает, — это заглушка. Пока OAuth не реализован (волна 8,
+  ждёт Cloud-проект пользователя), раздел показывает **статус и причину**, а не «Подключить».
+
+### Типизированный слой над настройками
+
+```ts
+// src/services/generalSettings.ts
+export interface GeneralSettings {
+  timerMode: 'pomodoro' | 'stopwatch';
+  focusMinutes: number;
+  shortBreakMinutes: number;
+  longBreakMinutes: number;
+  longBreakEvery: number;
+  endSound: boolean;
+  background: string;
+  accent: AccentId;
+  timezone: string;            // 'auto' или IANA
+  rolloverHour: number;        // R40: час, в который начинается новый день
+  mediaLimitBytes: number;     // R43: потолок медиа
+}
+export function loadGeneralSettings(): GeneralSettings;
+export function saveGeneralSettings(patch: Partial<GeneralSettings>): Promise<void>;
+
+// src/services/speechSettings.ts — каркас волны 11
+export interface SpeechSettings { enabled: boolean; hotkey: string; modelId: string | null }
+export function loadSpeechSettings(): SpeechSettings;
+export function saveSpeechSettings(patch: Partial<SpeechSettings>): Promise<void>;
+
+// src/services/integrations.ts — статус, а не обещание
+export interface IntegrationStatus { connected: boolean; detail: string | null }
+export function googleCalendarStatus(): Promise<IntegrationStatus>;
+```
+
+Правила:
+- **Миграция старых значений (10.6).** Приложение переезжало с `alarmer_*` на `tempo_*`, и у
+  человека, который обновляется с 0.3, настройки лежат под старыми ключами. Чтение MUST
+  смотреть в новый ключ, затем в старый, и при первой записи переносить значение вперёд.
+  Потерянная настройка звука — это то, что замечают, и это выглядит как регресс всего
+  обновления.
+- Настройки читаются синхронно из кэша (`getPref`) и пишутся асинхронно (`setPref`): экран
+  не должен ждать диск, чтобы нарисовать переключатель.

@@ -48,6 +48,88 @@ export interface Translations {
   statsBestStreak: string;
   statsDoneOfTotal: string;
   statsPeakAt: string;
+  settingsTitle: string;
+  settingsSubtitle: string;
+  settingsTimerFocus: string;
+  settingsDefaultMode: string;
+  settingsModePomodoro: string;
+  settingsModeStopwatch: string;
+  settingsBlockPreset: string;
+  settingsEndSound: string;
+  settingsSoundChime: string;
+  settingsSoundBell: string;
+  settingsSoundAlarm: string;
+  settingsSoundDigital: string;
+  settingsFocusMinutes: string;
+  settingsShortBreak: string;
+  settingsLongBreak: string;
+  settingsLongBreakEvery: string;
+  settingsFocusDurationAria: string;
+  settingsShortBreakAria: string;
+  settingsLongBreakAria: string;
+  settingsLongBreakEveryAria: string;
+  settingsAccent: string;
+  settingsDynamicBackground: string;
+  settingsDynamicBackgroundHint: string;
+  settingsRollover: string;
+  settingsRolloverHour: string;
+  settingsRolloverHint: string;
+  settingsTimeZone: string;
+  settingsMedia: string;
+  settingsMediaHint: string;
+  settingsRemove: string;
+  settingsAssistant: string;
+  settingsApiKey: string;
+  settingsApiKeyAria: string;
+  settingsSaveKey: string;
+  settingsSaving: string;
+  settingsSaved: string;
+  settingsKeyStored: string;
+  settingsKeyHidden: string;
+  settingsBaseUrl: string;
+  settingsBaseUrlAria: string;
+  settingsModel: string;
+  settingsModelAria: string;
+  settingsVoiceHint: string;
+  settingsTestVoice: string;
+  settingsIntegrationsHint: string;
+  settingsGoogleCalendar: string;
+  settingsNotConnected: string;
+  settingsConnected: string;
+  settingsGoogleBlocked: string;
+  settingsGoogleMissing: string;
+  settingsGoogleAwaiting: string;
+  settingsCalendarActive: string;
+  settingsSpeech: string;
+  settingsSpeechHint: string;
+  settingsSpeechEnable: string;
+  settingsSpeechEnableHint: string;
+  settingsSpeechHotkey: string;
+  settingsSpeechHotkeyPlaceholder: string;
+  settingsWhisperModel: string;
+  settingsWhisperTiny: string;
+  settingsWhisperBase: string;
+  settingsWhisperSmall: string;
+  settingsWhisperHint: string;
+  settingsShortcutsHint: string;
+  settingsShortcutsEmpty: string;
+  settingsAboutHint: string;
+  settingsVersion: string;
+  settingsVersionHint: string;
+  settingsEnvironment: string;
+  settingsEnvironmentHint: string;
+  settingsPortable: string;
+  settingsInstalled: string;
+  settingsUpdate: string;
+  settingsUpdateHint: string;
+  settingsInstallUpdate: string;
+  settingsInstalling: string;
+  settingsGoogleAccount: string;
+  settingsActive: string;
+  settingsUnlinked: string;
+  settingsIntegrationsTab: string;
+  settingsShortcutsTab: string;
+  settingsAboutTab: string;
   navStats: string;
   navSettings: string;
   navDailyPlanning: string;
@@ -234,6 +316,7 @@ export interface Translations {
   settingsShortcuts: string;
   settingsIntegrations: string;
   settingsAbout: string;
+  settingsSpeechToText: string;
 
   // Shortcuts section UI
   shortcutsTitle: string;
@@ -305,6 +388,88 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     statsBestStreak: 'Рекорд: {n} дн.',
     statsDoneOfTotal: '{done} из {total} выполнено',
     statsPeakAt: 'Пик: {hour}:00',
+    settingsTitle: 'Настройки',
+    settingsSubtitle: 'Поведение, горячие клавиши и интеграции',
+    settingsTimerFocus: 'Таймер и фокус',
+    settingsDefaultMode: 'Режим таймера по умолчанию',
+    settingsModePomodoro: 'Помодоро',
+    settingsModeStopwatch: 'Секундомер',
+    settingsBlockPreset: 'Пресет блоков',
+    settingsEndSound: 'Звук окончания',
+    settingsSoundChime: 'Перезвон',
+    settingsSoundBell: 'Колокол',
+    settingsSoundAlarm: 'Будильник',
+    settingsSoundDigital: 'Цифровой',
+    settingsFocusMinutes: 'Фокус (мин)',
+    settingsShortBreak: 'Короткий перерыв (мин)',
+    settingsLongBreak: 'Длинный перерыв (мин)',
+    settingsLongBreakEvery: 'Длинный перерыв каждые',
+    settingsFocusDurationAria: 'Длительность фокуса',
+    settingsShortBreakAria: 'Длительность короткого перерыва',
+    settingsLongBreakAria: 'Длительность длинного перерыва',
+    settingsLongBreakEveryAria: 'Интервал длинного перерыва',
+    settingsAccent: 'Акцентный цвет',
+    settingsDynamicBackground: 'Динамический фон',
+    settingsDynamicBackgroundHint: 'Фон следует за фазами таймера и состоянием',
+    settingsRollover: 'Начало дня и часовой пояс',
+    settingsRolloverHour: 'Час начала дня',
+    settingsRolloverHint: 'Определяет местные даты и интервалы',
+    settingsTimeZone: 'Часовой пояс',
+    settingsMedia: 'Медиа и потолок хранилища',
+    settingsMediaHint: 'Рисунки, записи и превью в кэше',
+    settingsRemove: 'Убрать',
+    settingsAssistant: 'Настройка ассистента',
+    settingsApiKey: 'Ключ API',
+    settingsApiKeyAria: 'Поле ключа API',
+    settingsSaveKey: 'Сохранить ключ',
+    settingsSaving: 'Сохранение…',
+    settingsSaved: 'Сохранено',
+    settingsKeyStored: 'Хранится в системном хранилище, не в открытом виде.',
+    settingsKeyHidden: 'Ключ хранится в системном хранилище и не показывается.',
+    settingsBaseUrl: 'Базовый URL',
+    settingsBaseUrlAria: 'Базовый URL ассистента',
+    settingsModel: 'Модель',
+    settingsModelAria: 'Модель ассистента',
+    settingsVoiceHint: 'Проверка облачного голоса Edge TTS',
+    settingsTestVoice: 'Проверить голос',
+    settingsIntegrationsHint: 'Прямые интеграции с внешними сервисами',
+    settingsGoogleCalendar: 'Google Календарь',
+    settingsNotConnected: 'Не подключён',
+    settingsConnected: 'Подключён',
+    settingsGoogleBlocked: 'Google OAuth не настроен: нужен Cloud-проект пользователя (нет client ID).',
+    settingsGoogleMissing: 'В проекте нет настроек Google OAuth.',
+    settingsGoogleAwaiting: 'Ожидаются учётные данные Cloud-проекта',
+    settingsCalendarActive: 'Синхронизация календаря работает.',
+    settingsSpeech: 'Распознавание речи',
+    settingsSpeechHint: 'Локальная расшифровка и голосовые команды',
+    settingsSpeechEnable: 'Включить распознавание речи',
+    settingsSpeechEnableHint: 'Глобальная клавиша записывает и расшифровывает звук',
+    settingsSpeechHotkey: 'Клавиша диктовки',
+    settingsSpeechHotkeyPlaceholder: 'напр. CommandOrControl+Shift+Space',
+    settingsWhisperModel: 'Модель Whisper',
+    settingsWhisperTiny: 'Whisper Tiny (~75 МБ)',
+    settingsWhisperBase: 'Whisper Base (~145 МБ)',
+    settingsWhisperSmall: 'Whisper Small (~480 МБ)',
+    settingsWhisperHint: 'Модель загрузится автоматически при первом включении.',
+    settingsShortcutsHint: 'Список берётся из реестра горячих клавиш',
+    settingsShortcutsEmpty: 'Горячие клавиши не зарегистрированы.',
+    settingsAboutHint: 'Сборка, портативный режим и подключённые сервисы',
+    settingsVersion: 'Версия Tempo',
+    settingsVersionHint: 'Версия сборки приложения',
+    settingsEnvironment: 'Режим окружения',
+    settingsEnvironmentHint: 'Портативный каталог или установка',
+    settingsPortable: 'Портативный режим',
+    settingsInstalled: 'Обычная установка',
+    settingsUpdate: 'Обновление',
+    settingsUpdateHint: 'Проверить доступные версии',
+    settingsInstallUpdate: 'Установить обновление',
+    settingsInstalling: 'Установка…',
+    settingsGoogleAccount: 'Аккаунт Google',
+    settingsActive: 'Активен',
+    settingsUnlinked: 'Не привязан',
+    settingsIntegrationsTab: 'Интеграции',
+    settingsShortcutsTab: 'Горячие клавиши',
+    settingsAboutTab: 'О программе и аккаунт',
     navStats: 'Статистика',
     navSettings: 'Настройки',
     navDailyPlanning: 'План на день',
@@ -477,13 +642,14 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     dynamicBackground: 'Динамический фон',
     dynamicBackgroundHint: 'Оттенок фона следует за фазой таймера и временем суток.',
     settingsGeneral: 'Основные',
-    settingsAppearance: 'Внешний вид',
+    settingsAppearance: 'Внешний вид и тема',
     settingsSound: 'Звук',
-    settingsVoice: 'Голос и речь',
+    settingsVoice: 'Синтез голоса ассистента',
     settingsAI: 'ИИ ассистент',
     settingsShortcuts: 'Горячие клавиши',
-    settingsIntegrations: 'Интеграции',
-    settingsAbout: 'О программе и аккаунт',
+    settingsIntegrations: 'Внешние календари и сервисы',
+    settingsAbout: 'О Tempo',
+    settingsSpeechToText: 'Речь в текст',
 
     // Shortcuts section UI
     shortcutsTitle: 'Горячие клавиши',
@@ -509,6 +675,88 @@ export const TRANSLATIONS: Record<Language, Translations> = {
   },
 
   en: {
+    settingsAboutHint: 'App details, portable mode status, and connected services',
+    settingsAboutTab: 'About & Account',
+    settingsAccent: 'Accent Color',
+    settingsActive: 'Active',
+    settingsApiKey: 'API Key',
+    settingsApiKeyAria: 'API Key input',
+    settingsAssistant: 'AI Assistant Configuration',
+    settingsBaseUrl: 'Base URL',
+    settingsBaseUrlAria: 'AI Base URL',
+    settingsBlockPreset: 'Block Preset',
+    settingsCalendarActive: 'Calendar sync is active.',
+    settingsConnected: 'Connected',
+    settingsDefaultMode: 'Default Timer Mode',
+    settingsDynamicBackground: 'Dynamic Background',
+    settingsDynamicBackgroundHint: 'Background follows timer phases and ambient state',
+    settingsEndSound: 'End Sound',
+    settingsEnvironment: 'Environment Mode',
+    settingsEnvironmentHint: 'Portable single-directory vs installed',
+    settingsFocusDurationAria: 'Focus duration',
+    settingsFocusMinutes: 'Focus (min)',
+    settingsGoogleAccount: 'Google Account',
+    settingsGoogleAwaiting: 'Awaiting Google Cloud project credentials',
+    settingsGoogleBlocked: 'Google OAuth not configured. Blocked on user Cloud project setup (OAuth client ID missing).',
+    settingsGoogleCalendar: 'Google Calendar',
+    settingsGoogleMissing: 'Google OAuth configuration is missing in the current project.',
+    settingsInstallUpdate: 'Install Update',
+    settingsInstalled: 'Standard Installation',
+    settingsInstalling: 'Installing...',
+    settingsIntegrationsHint: 'Direct integrations with external productivity providers',
+    settingsIntegrationsTab: 'Integrations',
+    settingsKeyHidden: 'API key is stored in your OS keychain and is never displayed.',
+    settingsKeyStored: 'Stored in the OS keychain. Never stored in plaintext.',
+    settingsLongBreak: 'Long Break (min)',
+    settingsLongBreakAria: 'Long break duration',
+    settingsLongBreakEvery: 'Long Break Every',
+    settingsLongBreakEveryAria: 'Long break interval',
+    settingsMedia: 'Media Storage & Cap (R43)',
+    settingsMediaHint: 'Stored drawings, recordings, and cached previews',
+    settingsModePomodoro: 'Pomodoro',
+    settingsModeStopwatch: 'Stopwatch',
+    settingsModel: 'Model',
+    settingsModelAria: 'AI Model',
+    settingsNotConnected: 'Not Connected',
+    settingsPortable: 'Portable Mode',
+    settingsRemove: 'Remove',
+    settingsRollover: 'Day Rollover & Timezone (R40)',
+    settingsRolloverHint: 'Calculates local dates and intervals',
+    settingsRolloverHour: 'Day Rollover Hour',
+    settingsSaveKey: 'Save Key',
+    settingsSaved: 'Saved',
+    settingsSaving: 'Saving...',
+    settingsShortBreak: 'Short Break (min)',
+    settingsShortBreakAria: 'Short break duration',
+    settingsShortcutsEmpty: 'No shortcuts currently registered.',
+    settingsShortcutsHint: 'Loaded dynamically from the internal shortcuts registry',
+    settingsShortcutsTab: 'Shortcuts',
+    settingsSoundAlarm: 'Alarm',
+    settingsSoundBell: 'Bell',
+    settingsSoundChime: 'Chime',
+    settingsSoundDigital: 'Digital',
+    settingsSpeech: 'Speech Recognition (Wave 11)',
+    settingsSpeechEnable: 'Enable Speech to Text',
+    settingsSpeechEnableHint: 'Allow pressing a global shortcut to record and transcribe audio',
+    settingsSpeechHint: 'Local on-device transcription and voice commands',
+    settingsSpeechHotkey: 'Dictation Shortcut',
+    settingsSpeechHotkeyPlaceholder: 'e.g. CommandOrControl+Shift+Space',
+    settingsSubtitle: 'Configure Tempo behavior, shortcuts, and integrations',
+    settingsTestVoice: 'Test Voice',
+    settingsTimeZone: 'Time Zone',
+    settingsTimerFocus: 'Timer & Focus',
+    settingsTitle: 'Settings',
+    settingsUnlinked: 'Unlinked',
+    settingsUpdate: 'Software Update',
+    settingsUpdateHint: 'Check for available releases',
+    settingsVersion: 'Tempo Version',
+    settingsVersionHint: 'Application build version',
+    settingsVoiceHint: 'Edge TTS cloud voice test',
+    settingsWhisperBase: 'Whisper Base (~145 MB)',
+    settingsWhisperHint: 'The model downloads automatically on first use.',
+    settingsWhisperModel: 'Whisper Model',
+    settingsWhisperSmall: 'Whisper Small (~480 MB)',
+    settingsWhisperTiny: 'Whisper Tiny (~75 MB)',
     // Existing keys
     tabAlarms: 'Alarms',
     tabTasks: 'Tasks',
@@ -726,13 +974,14 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     dynamicBackground: 'Dynamic background',
     dynamicBackgroundHint: 'The hue follows the timer phase and the time of day.',
     settingsGeneral: 'General',
-    settingsAppearance: 'Appearance',
+    settingsAppearance: 'Appearance & Theme',
     settingsSound: 'Sound',
-    settingsVoice: 'Voice & Speech',
+    settingsVoice: 'Assistant Voice Synthesis',
     settingsAI: 'AI Assistant',
-    settingsShortcuts: 'Shortcuts',
-    settingsIntegrations: 'Integrations',
-    settingsAbout: 'About & Account',
+    settingsShortcuts: 'Registered Keyboard Shortcuts',
+    settingsIntegrations: 'External Calendars & Services',
+    settingsAbout: 'About Tempo',
+    settingsSpeechToText: 'Speech to Text',
 
     // Shortcuts section UI
     shortcutsTitle: 'Keyboard Shortcuts',

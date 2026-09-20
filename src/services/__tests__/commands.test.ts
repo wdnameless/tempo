@@ -3,6 +3,7 @@ import { registerDefaultCommands } from '../commands';
 import { listCommands } from '../search';
 import { TimerService } from '../timer';
 import { StoreService } from '../store';
+import { getPref, setPref, resetSettingsCacheForTesting } from '../settings';
 vi.mock('../timer', () => ({
   TimerService: {
     toggle: vi.fn(),
@@ -12,12 +13,16 @@ vi.mock('../timer', () => ({
   },
 }));
 
-vi.mock('../store', () => ({
-  StoreService: {
-    getPreference: vi.fn(),
-    setPreference: vi.fn().mockResolvedValue(undefined),
-  },
-}));
+vi.mock('../store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../store')>();
+  return {
+    StoreService: {
+      ...actual.StoreService,
+      getPreference: vi.fn(actual.StoreService.getPreference.bind(actual.StoreService)),
+      setPreference: vi.fn(actual.StoreService.setPreference.bind(actual.StoreService)),
+    },
+  };
+});
 
 describe('commands', () => {
   let unregister: (() => void) | null = null;
@@ -136,30 +141,24 @@ describe('commands', () => {
   });
 
   it('cycles accent color and persists preference', async () => {
-    let currentSaved: string = 'amber';
-    vi.mocked(StoreService.getPreference).mockImplementation(<T>(key: string, defaultVal: T): T => {
-      if (key === 'tempo_accent') return currentSaved as unknown as T;
-      return defaultVal;
-    });
-    vi.mocked(StoreService.setPreference).mockImplementation(async <T>(key: string, val: T): Promise<void> => {
-      if (key === 'tempo_accent' && typeof val === 'string') currentSaved = val;
-    });
+    // The real preference cache, not a stubbed reader: the command reads through
+    // the fallback-aware loader, and a mock of the reader would hide that path.
+    resetSettingsCacheForTesting();
+    await setPref('tempo_accent', 'amber');
 
     unregister = registerDefaultCommands();
 
     const cycleCmd = listCommands().find((c) => c.id === 'appearance:cycle-accent');
     expect(cycleCmd).toBeDefined();
 
-    // Default accent before cycle is amber
     await cycleCmd?.run();
 
-    expect(currentSaved).not.toBe('amber');
-    expect(StoreService.setPreference).toHaveBeenCalledWith('tempo_accent', currentSaved);
+    const accentAfter1 = getPref<string>('tempo_accent', '');
+    expect(accentAfter1).not.toBe('amber');
+    expect(StoreService.setPreference).toHaveBeenCalledWith('tempo_accent', accentAfter1);
 
-    const accentAfter1 = currentSaved;
     // Run again to verify it advances
     await cycleCmd?.run();
-    expect(currentSaved).not.toBe(accentAfter1);
-    expect(StoreService.setPreference).toHaveBeenCalledWith('tempo_accent', currentSaved);
+    expect(getPref<string>('tempo_accent', '')).not.toBe(accentAfter1);
   });
 });

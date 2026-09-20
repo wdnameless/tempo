@@ -12,7 +12,8 @@ import {
   SkipForward,
   Palette,
 } from 'lucide-react';
-import { ACCENTS, DEFAULT_ACCENT, applyAccent, type AccentId } from '../constants/design';
+import { ACCENTS, applyAccent, type AccentId } from '../constants/design';
+import { loadAccent } from './generalSettings';
 import { StoreService } from './store';
 import { TimerService } from './timer';
 import { registerCommand, type Command } from './search';
@@ -38,8 +39,7 @@ function dispatchToggleSidebar(): void {
  * Cycle through available accents, apply immediately, and persist to user preferences.
  */
 async function cycleAccent(): Promise<void> {
-  const saved = StoreService.getPreference<string>('tempo_accent', DEFAULT_ACCENT);
-  const currentAccent = (saved in ACCENTS ? saved : DEFAULT_ACCENT) as AccentId;
+  const currentAccent = loadAccent();
 
   const accentKeys = Object.keys(ACCENTS) as AccentId[];
   const currentIndex = accentKeys.indexOf(currentAccent);

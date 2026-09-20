@@ -114,4 +114,34 @@ export class AIGateway {
       return { value: {}, error: e instanceof Error ? e.message : 'Неизвестная ошибка запроса' };
     }
   }
+
+  /**
+   * Sends system and user prompts and returns the raw string content completion.
+   */
+  static async generateCompletion(
+    system: string,
+    user: string,
+    settings: { baseUrl?: string; model?: string },
+  ): Promise<string> {
+    if (!isTauri()) {
+      throw new Error('Запросы к модели доступны только в приложении.');
+    }
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ];
+
+    const outcome = await invoke<{ content: string; error: string | null }>('ai_complete', {
+      baseUrl: settings.baseUrl || 'https://api.openai.com/v1',
+      model: settings.model || 'gpt-4o-mini',
+      messages,
+    });
+
+    if (outcome.error) {
+      throw new Error(outcome.error);
+    }
+
+    return outcome.content;
+  }
 }
