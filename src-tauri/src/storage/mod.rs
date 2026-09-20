@@ -59,22 +59,45 @@ where
     f(conn)
 }
 
-/// Reads the legacy JSON store, if one is still lying beside the database.
+/// Reads the legacy JSON store, if one is still lying around.
 ///
-/// Returns `None` when there is nothing to migrate, which is the normal state
-/// for a fresh install. The file is only read, never deleted: it stays the
-/// user's backup until the migration is proven on a real install.
+/// Two places are checked, because the rename moved the data directory: the
+/// bundle identifier changed from `com.alarmer.smart` to `app.tempo.desktop`, so
+/// an installed copy keeps its old file under the previous identifier's folder
+/// while the new database lives under the new one. Looking only beside the
+/// database would silently migrate nothing and the user's alarms, tasks and notes
+/// would look lost.
+///
+/// Returns `None` when there is nothing to migrate, which is the normal state for
+/// a fresh install. The file is only read, never deleted: it stays the user's
+/// backup until the migration is proven on a real install.
 #[tauri::command]
 pub fn load_legacy_store(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    let db = PathBuf::from(db_path(app)?);
-    let Some(dir) = db.parent() else {
-        return Ok(None);
-    };
-    let legacy = dir.join("alarmer.json");
-    if !legacy.is_file() {
-        return Ok(None);
+    use tauri::Manager;
+
+    const LEGACY_FILE: &str = "alarmer.json";
+    const LEGACY_IDENTIFIER: &str = "com.alarmer.smart";
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    // Portable builds keep both files in the same folder, so this covers them.
+    if let Ok(db) = db_path(app.clone()) {
+        if let Some(dir) = PathBuf::from(db).parent() {
+            candidates.push(dir.join(LEGACY_FILE));
+        }
     }
-    std::fs::read_to_string(&legacy).map(Some).map_err(|e| e.to_string())
+
+    // The installed upgrade path: the previous identifier's data directory.
+    if let Ok(roaming) = app.path().data_dir() {
+        candidates.push(roaming.join(LEGACY_IDENTIFIER).join(LEGACY_FILE));
+    }
+
+    for candidate in candidates {
+        if candidate.is_file() {
+            return std::fs::read_to_string(&candidate).map(Some).map_err(|e| e.to_string());
+        }
+    }
+    Ok(None)
 }
 
 #[tauri::command]

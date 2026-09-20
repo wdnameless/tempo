@@ -255,6 +255,36 @@ export function chatMessageToRow(msg: ChatMessage): Omit<ChatMessageRow, keyof E
   };
 }
 
+/**
+ * Reads one field from a legacy record.
+ *
+ * The old shapes are untyped JSON, so every read goes through here rather than
+ * casting: a missing or mistyped field becomes `undefined`, which the callers
+ * already treat as "use the default".
+ */
+function row(record: Record<string, unknown>, key: string): unknown {
+  return record[key];
+}
+
+/** A string field that may be absent, normalised to `undefined`. */
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/** Weekdays as stored by the old build: a JSON array of 0..6. */
+function asNumberArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => Number(entry))
+    .filter((entry) => Number.isInteger(entry) && entry >= 0 && entry <= 6);
+}
+
+/** The repeat rule, inferred from the days when the old record did not say. */
+function repeatOf(value: unknown, days: number[]): 'once' | 'daily' | 'days' {
+  if (value === 'once' || value === 'daily' || value === 'days') return value;
+  return days.length > 0 ? 'days' : 'once';
+}
+
 let cachedSnapshot: PersistedState = { ...DEFAULT_STATE };
 let isHydratedState = false;
 
@@ -296,72 +326,126 @@ export async function runLegacyMigration(): Promise<void> {
 
     if (!isRecord(legacyData)) return;
 
-    // Migrate alarms
-    if (Array.isArray(legacyData.alarms)) {
-      for (const item of legacyData.alarms) {
+    // The old file was written by the store plugin under the key `state`, so the
+    // payload is one level down. Reading the top level found nothing and the
+    // migration reported success while moving zero rows — the user's alarms and
+    // notes would look lost.
+    const payload = isRecord(legacyData.state) ? legacyData.state : legacyData;
+
+    // Entities in the old file are stored in their *canonical* shape (an AlarmItem
+    // with `title` and a `days` array, a TaskItem with `done: boolean`), not in the
+    // shape of the new database columns. Running them through the row readers —
+    // which expect `label`, `status`, `body_md` — silently produced empty records,
+    // so each is normalised here and converted once, on the way out.
+    //
+    // Each table is skipped when it already has rows, which makes a second run
+    // harmless and keeps a partially failed migration recoverable: whatever did
+    // not land is retried next launch.
+    if (Array.isArray(payload.alarms) && (await alarmsRepo.all()).length === 0) {
+      for (const item of payload.alarms) {
         if (!isRecord(item)) continue;
-        const alarm = alarmFromRow(item);
-        if (alarm.id && alarm.time) {
-          try {
-            await alarmsRepo.insert(alarmToRow(alarm));
-          } catch {
-            // Continue on error
-          }
-        }
+        const time = asString(row(item, 'time'), '');
+        if (!time) continue;
+        const label = asString(row(item, 'title'), asString(row(item, 'label'), ''));
+        await alarmsRepo.insert(
+          alarmToRow({
+            id: asString(row(item, 'id'), ''),
+            title: label,
+            label,
+            time,
+            days: asNumberArray(row(item, 'days')),
+            repeat: repeatOf(row(item, 'repeat'), asNumberArray(row(item, 'days'))),
+            enabled: row(item, 'enabled') !== false,
+            sound: asString(row(item, 'sound'), 'gentle'),
+            voicePrompt: optionalString(row(item, 'voicePrompt')),
+            note: optionalString(row(item, 'note')),
+          }),
+        );
       }
     }
 
-    // Migrate tasks
-    if (Array.isArray(legacyData.tasks)) {
-      for (const item of legacyData.tasks) {
+    if (Array.isArray(payload.tasks) && (await tasksRepo.all()).length === 0) {
+      for (const item of payload.tasks) {
         if (!isRecord(item)) continue;
-        const task = taskFromRow(item);
-        if (task.id && task.title) {
-          try {
-            await tasksRepo.insert(taskToRow(task));
-          } catch {
-            // Continue on error
-          }
-        }
+        const title = asString(row(item, 'title'), '');
+        if (!title) continue;
+        await tasksRepo.insert(
+          taskToRow({
+            id: asString(row(item, 'id'), ''),
+            title,
+            note: optionalString(row(item, 'note')),
+            done: row(item, 'done') === true || row(item, 'status') === 'done',
+            priority: 0,
+            position: 0,
+            createdAt: asString(row(item, 'createdAt'), new Date().toISOString()),
+            completedAt: optionalString(row(item, 'completedAt')),
+          }),
+        );
       }
     }
 
-    // Migrate notes
-    if (Array.isArray(legacyData.notes)) {
-      for (const item of legacyData.notes) {
+    if (Array.isArray(payload.notes) && (await notesRepo.all()).length === 0) {
+      for (const item of payload.notes) {
         if (!isRecord(item)) continue;
-        const note = noteFromRow(item);
-        if (note.id) {
-          try {
-            await notesRepo.insert(noteToRow(note));
-          } catch {
-            // Continue on error
-          }
-        }
+        const id = asString(row(item, 'id'), '');
+        if (!id) continue;
+        const timestamp = asString(row(item, 'updatedAt'), new Date().toISOString());
+        await notesRepo.insert(
+          noteToRow({
+            id,
+            title: asString(row(item, 'title'), ''),
+            body: asString(row(item, 'body'), ''),
+            pinned: row(item, 'pinned') === true,
+            createdAt: asString(row(item, 'createdAt'), timestamp),
+            updatedAt: timestamp,
+          }),
+        );
       }
     }
 
-    // Migrate chat messages
-    if (Array.isArray(legacyData.chatMessages)) {
-      for (const item of legacyData.chatMessages) {
+    if (Array.isArray(payload.chatMessages) && (await chatRepo.all()).length === 0) {
+      for (const item of payload.chatMessages) {
         if (!isRecord(item)) continue;
-        const msg = chatMessageFromRow(item);
-        if (msg.id && msg.text) {
-          try {
-            await chatRepo.insert(chatMessageToRow(msg));
-          } catch {
-            // Continue on error
-          }
-        }
+        const id = asString(row(item, 'id'), '');
+        const text = asString(row(item, 'text'), '');
+        if (!id || !text) continue;
+        const sender = asString(row(item, 'sender'), 'user');
+        await chatRepo.insert(
+          chatMessageToRow({
+            id,
+            sender: sender === 'assistant' ? 'assistant' : sender === 'system' ? 'system' : 'user',
+            text,
+            timestamp: asString(row(item, 'timestamp'), new Date().toISOString()),
+          }),
+        );
       }
     }
 
-    // Migrate preferences (convert alarmer_* to tempo_*)
-    if (isRecord(legacyData.preferences)) {
-      for (const [k, v] of Object.entries(legacyData.preferences)) {
-        const targetKey = k.startsWith('alarmer_') ? k.replace(/^alarmer_/, 'tempo_') : k;
-        await setPref(targetKey, v);
+    // Preferences: the old keys are renamed once, here, so nothing downstream has
+    // to know that a prefix ever changed.
+    if (isRecord(payload.preferences)) {
+      for (const [k, v] of Object.entries(payload.preferences)) {
+        await setPref(k.startsWith('alarmer_') ? k.replace(/^alarmer_/, 'tempo_') : k, v);
       }
+    }
+
+    // Settings that used to live beside the entities in the same file.
+    if (isRecord(payload.dynamicUi)) {
+      await setPref('tempo_dynamic_ui', payload.dynamicUi);
+    }
+    if (isRecord(payload.aiSettings)) {
+      const ai = payload.aiSettings;
+      for (const [source, target] of [
+        ['baseUrl', 'tempo_ai_base_url'],
+        ['model', 'tempo_ai_model'],
+        ['systemPrompt', 'tempo_ai_system_prompt'],
+        ['enabled', 'tempo_ai_enabled'],
+        ['autoAdjustIntervals', 'tempo_ai_auto_adjust'],
+      ] as const) {
+        if (ai[source] !== undefined) await setPref(target, ai[source]);
+      }
+      // `apiKey` is deliberately not copied: the key belongs in the OS keyring,
+      // never in the database, and the old build already moved it there.
     }
   } catch (err) {
     console.error('runLegacyMigration failed:', err);

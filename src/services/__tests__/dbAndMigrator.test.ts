@@ -13,6 +13,12 @@ function tableOf(args: unknown): string | undefined {
   return typeof args.table === 'string' ? args.table : undefined;
 }
 
+/** The row the backend answers a write with: what it stored, plus its stamps. */
+function storedRow(args: unknown): Record<string, unknown> {
+  const row = insertedRowOf(args) ?? {};
+  return { id: 'stamped', updated_at: '2026-09-19T00:00:00Z', deleted_at: null, ...row };
+}
+
 function insertedRowOf(args: unknown): Record<string, unknown> | undefined {
   if (!args || typeof args !== 'object' || !('row' in args)) return undefined;
   const row = args.row;
@@ -159,96 +165,101 @@ describe('Migrator and StoreService Bridge (store.ts)', () => {
   });
 
   it('migrator moves alarms, tasks, notes, chat messages, preferences and drops schedules', async () => {
+    // The real file is wrapped in `state` by the store plugin and holds entities in
+    // their canonical shape (title, days array, done boolean). The previous fixture
+    // was flat and used column names, so it passed while the real migration moved
+    // nothing at all.
     const legacyState = {
-      schemaVersion: 1,
-      alarms: [
-        { id: 'a1', time: '08:00', label: 'Wake', days: [1, 2, 3], repeat: 'daily', enabled: true, sound: 'beep' }
-      ],
-      schedules: [
-        { id: 's1', name: 'Morning Routine', steps: [{ id: 'st1', label: 'Stretch', duration: 300 }] }
-      ],
-      tasks: [
-        { id: 't1', title: 'Write tests', completed: false }
-      ],
-      notes: [
-        { id: 'n1', title: 'Note 1', body: 'Hello world' }
-      ],
-      chatMessages: [
-        { id: 'm1', role: 'user', content: 'Hi AI', timestamp: '2026-09-19T10:00:00Z' }
-      ],
-      preferences: {
-        alarmer_accent: '#ff0000',
-        alarmer_sidebar_collapsed: true,
+      state: {
+        schemaVersion: 6,
+        alarms: [
+          { id: 'a1', title: 'Wake', time: '08:00', days: [1, 2, 3], repeat: 'days', enabled: true, sound: 'beep' },
+        ],
+        schedules: [
+          { id: 's1', name: 'Morning Routine', steps: [{ id: 'st1', label: 'Stretch', duration: 300 }] },
+        ],
+        tasks: [
+          { id: 't1', title: 'Write tests', done: true, createdAt: '2026-09-01T08:00:00Z', completedAt: '2026-09-02T09:00:00Z' },
+          { id: 't2', title: 'Still open', done: false, createdAt: '2026-09-03T08:00:00Z' },
+        ],
+        notes: [{ id: 'n1', title: 'Note 1', body: 'Hello world', pinned: true }],
+        chatMessages: [
+          { id: 'm1', sender: 'user', text: 'Hi AI', timestamp: '2026-09-19T10:00:00Z' },
+          { id: 'm2', sender: 'assistant', text: 'Hello', timestamp: '2026-09-19T10:00:05Z' },
+        ],
+        preferences: { alarmer_accent: '#ff0000', alarmer_sidebar_collapsed: true },
+        dynamicUi: { colors: {}, typography: { fontFamily: 'sans', timeScale: 1 }, dial: {}, layout: {} },
+        aiSettings: { apiKey: 'sk-must-not-be-copied', baseUrl: 'https://example.test', model: 'm1' },
+        directions: [{ id: 'd1', name: 'Work' }],
       },
-      directions: [
-        { id: 'd1', name: 'Work' }
-      ]
     };
 
-    mockInvoke.mockImplementation((cmd) => {
-      if (cmd === 'load_legacy_store') {
-        return Promise.resolve(JSON.stringify(legacyState));
-      }
-      if (cmd === 'db_list') {
-        return Promise.resolve([]);
-      }
-      return Promise.resolve(undefined);
-    });
-
-    await runLegacyMigration();
-
-    // Check alarms inserted
-    expect(mockInvoke).toHaveBeenCalledWith('db_insert', expect.objectContaining({
-      table: 'alarms',
-      row: expect.objectContaining({ id: 'a1', time: '08:00', label: 'Wake' })
-    }));
-
-    // Check tasks inserted
-    expect(mockInvoke).toHaveBeenCalledWith('db_insert', expect.objectContaining({
-      table: 'tasks',
-      row: expect.objectContaining({ id: 't1', title: 'Write tests', status: 'open' })
-    }));
-    // Check notes inserted
-    expect(mockInvoke).toHaveBeenCalledWith('db_insert', expect.objectContaining({
-      table: 'notes',
-      row: expect.objectContaining({ id: 'n1', title: 'Note 1', body_md: 'Hello world' })
-    }));
-
-    // Check chat message inserted into chat_messages with role user
-    expect(mockInvoke).toHaveBeenCalledWith('db_insert', expect.objectContaining({
-      table: 'chat_messages',
-      row: expect.objectContaining({ role: 'user', content: 'Hi AI' })
-    }));
-
-    // Check preferences renamed alarmer_* -> tempo_*
-    expect(mockInvoke).toHaveBeenCalledWith('db_pref_set', {
-      key: 'tempo_accent',
-      value: '"#ff0000"',
-    });
-    expect(mockInvoke).toHaveBeenCalledWith('db_pref_set', {
-      key: 'tempo_sidebar_collapsed',
-      value: 'true',
-    });
-
-    // Check schedules were NOT inserted into alarms (no alarms for steps)
-    const insertedAlarms = mockInvoke.mock.calls
-      .filter(([cmd, args]) => cmd === 'db_insert' && tableOf(args) === 'alarms')
-      .map(([, args]) => insertedRowOf(args));
-    expect(insertedAlarms.length).toBe(1);
-    expect(insertedAlarms[0]?.id).toBe('a1');
-
-    // Running twice does not duplicate rows because migrator checks if db is already populated or file already migrated
-    mockInvoke.mockClear();
-    mockInvoke.mockImplementation((cmd) => {
+    mockInvoke.mockImplementation((cmd, args) => {
       if (cmd === 'load_legacy_store') return Promise.resolve(JSON.stringify(legacyState));
-      if (cmd === 'db_list') return Promise.resolve([{ id: 'a1' }]); // DB now has rows
+      if (cmd === 'db_list') return Promise.resolve([]);
+      if (cmd === 'db_insert') return Promise.resolve(storedRow(args));
       return Promise.resolve(undefined);
     });
 
     await runLegacyMigration();
-    // Since DB already has alarms, it skips migration
-    const secondInserts = mockInvoke.mock.calls.filter(([cmd]) => cmd === 'db_insert');
-    expect(secondInserts.length).toBe(0);
+
+    const inserted = (table: string): Record<string, unknown>[] =>
+      mockInvoke.mock.calls
+        .filter(([cmd, args]) => cmd === 'db_insert' && tableOf(args) === table)
+        .map(([, args]) => insertedRowOf(args))
+        .filter((row): row is Record<string, unknown> => row !== undefined);
+
+    const alarms = inserted('alarms');
+    expect(alarms).toHaveLength(1);
+    const alarm = alarms[0];
+    expect(alarm).toMatchObject({ id: 'a1', label: 'Wake', time: '08:00', repeat: 'days' });
+    expect(alarm?.days).toBe('[1,2,3]');
+
+    const tasks = inserted('tasks');
+    expect(tasks).toHaveLength(2);
+    const doneTask = tasks.find((task) => task.id === 't1');
+    const openTask = tasks.find((task) => task.id === 't2');
+    // The done flag survives as a status, and the timestamps are carried over
+    // rather than replaced with "now".
+    expect(doneTask).toMatchObject({ status: 'done', completed_at: '2026-09-02T09:00:00Z' });
+    expect(openTask).toMatchObject({ status: 'open' });
+
+    const notes = inserted('notes');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({ id: 'n1', body_md: 'Hello world', pinned: 1 });
+
+    const chat = inserted('chat_messages');
+    expect(chat).toHaveLength(2);
+    const userMessage = chat.find((message) => message.id === 'm1');
+    const assistantMessage = chat.find((message) => message.id === 'm2');
+    expect(userMessage).toMatchObject({ role: 'user', content: 'Hi AI' });
+    expect(assistantMessage).toMatchObject({ role: 'assistant' });
+
+    // Schedules are dropped, not turned into alarms (R30).
+    expect(alarms).toHaveLength(1);
+    expect(mockInvoke.mock.calls.some(([cmd]) => cmd === 'db_insert' && false)).toBe(false);
+
+    // Preferences are renamed once.
+    expect(mockInvoke).toHaveBeenCalledWith('db_pref_set', { key: 'tempo_accent', value: '"#ff0000"' });
+    expect(mockInvoke).toHaveBeenCalledWith('db_pref_set', { key: 'tempo_sidebar_collapsed', value: 'true' });
+    expect(mockInvoke).toHaveBeenCalledWith('db_pref_set', { key: 'tempo_ai_base_url', value: '"https://example.test"' });
+
+    // The API key must never reach the database: it belongs in the OS keyring.
+    const prefsWritten = mockInvoke.mock.calls
+      .filter(([cmd]) => cmd === 'db_pref_set')
+      .map(([, args]) => JSON.stringify(args));
+    expect(prefsWritten.some((entry) => entry.includes('sk-must-not-be-copied'))).toBe(false);
+
+    // A second run over a populated database inserts nothing.
+    mockInvoke.mockClear();
+    mockInvoke.mockImplementation((cmd, args) => {
+      if (cmd === 'load_legacy_store') return Promise.resolve(JSON.stringify(legacyState));
+      if (cmd === 'db_list') return Promise.resolve([{ id: 'a1' }]);
+      if (cmd === 'db_insert') return Promise.resolve(storedRow(args));
+      return Promise.resolve(undefined);
+    });
+    await runLegacyMigration();
+    expect(mockInvoke.mock.calls.filter(([cmd]) => cmd === 'db_insert')).toHaveLength(0);
   });
 
   it('missing legacy file is not an error', async () => {
