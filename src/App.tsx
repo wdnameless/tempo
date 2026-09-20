@@ -21,6 +21,7 @@ import { DashboardView } from './components/DashboardView';
 import { SettingsView } from './components/SettingsView';
 import { Alarms } from './components/Alarms';
 import { TasksView } from './components/TasksView';
+import { DayView } from './components/DayView';
 import { ListsView } from './components/ListsView';
 import { NotesView } from './components/NotesView';
 import { StatsView } from './components/StatsView';
@@ -519,6 +520,8 @@ function MainShell() {
                   theme={theme}
                 />
               )}
+              {activeTab === 'day' && <DayView />}
+
 
               {activeTab === 'tasks' && <TasksView />}
 

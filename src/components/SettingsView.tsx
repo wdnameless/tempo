@@ -11,6 +11,7 @@ import { AIGateway } from '../services/aiGateway';
 import { checkForUpdate, currentVersion, detectPortable, installUpdate, type UpdateInfo } from '../services/update';
 import { StoreService } from '../services/store';
 import { PomodoroSettings } from './PomodoroSettings';
+import { RolloverSettings } from './RolloverSettings';
 
 interface SettingsViewProps {
   theme: ThemeColors;
@@ -382,7 +383,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       )}
 
-      {activeTab === 'pomodoro' && <PomodoroSettings />}
+      {activeTab === 'pomodoro' && (
+        <div className="flex flex-col space-y-8">
+          <PomodoroSettings />
+          <RolloverSettings />
+        </div>
+      )}
 
       {activeTab === 'sound' && (
         <div className="flex flex-col space-y-6">

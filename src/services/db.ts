@@ -11,9 +11,10 @@ export type Table =
   | 'alarms'
   | 'chat_messages'
   | 'preferences'
-  | 'sync_outbox';
+  | 'sync_outbox'
+  | 'events';
 
-const VALID_TABLES: ReadonlySet<string> = new Set<Table>([
+const VALID_TABLES: ReadonlySet<Table> = new Set<Table>([
   'tasks',
   'lists',
   'notes',
@@ -23,10 +24,11 @@ const VALID_TABLES: ReadonlySet<string> = new Set<Table>([
   'chat_messages',
   'preferences',
   'sync_outbox',
+  'events',
 ]);
 
 function assertValidTable(table: string): asserts table is Table {
-  if (!VALID_TABLES.has(table)) {
+  if (!VALID_TABLES.has(table as Table)) {
     throw new Error(`Invalid table name: ${table}`);
   }
 }
@@ -111,6 +113,14 @@ export async function dbReady(): Promise<number> {
       // Populate full-text search index after migrations
       const { reindex } = await import('./search');
       await reindex();
+      // Run task rollover once at startup (errors must not prevent db readiness)
+      try {
+        // Dynamic import to avoid circular dependency with db -> rollover -> tasks -> db
+        const { runRollover } = await import('./rollover');
+        await runRollover();
+      } catch (err) {
+        console.error('Task rollover failed during dbReady:', err);
+      }
       return SCHEMA_VERSION;
     })();
   }
