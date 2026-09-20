@@ -518,3 +518,52 @@ export async function runRollover(now?: Date): Promise<{ moved: number; cleared:
 - Граница суток и смена пояса: день считается по **локальной** дате, поэтому смена пояса
   сама по себе не создаёт и не теряет задачи; перенос — это смена `dueDate`, а не копия.
 - Запускается один раз при старте (`dbReady`) и при открытии экрана дня.
+
+## 17. Заметки и связи — владелец: Wave 5
+
+### Заметки
+
+```ts
+// src/services/notes.ts
+export interface CreateNoteInput { title?: string; body?: string; pinned?: boolean }
+export function listNotes(): Promise<NoteItem[]>;                 // закреплённые первыми, затем по updatedAt
+export function createNote(input: CreateNoteInput): Promise<NoteItem>;
+export function updateNote(id: string, patch: Partial<CreateNoteInput>): Promise<NoteItem>;
+export function deleteNote(id: string): Promise<void>;            // мягкое; связи удаляются
+export function togglePin(id: string): Promise<NoteItem>;
+export function noteByTitle(title: string): Promise<NoteItem | null>;  // сравнение без учёта регистра и пробелов
+```
+
+Заголовок необязателен: заметка без заголовка показывается первой строкой тела (так было и раньше).
+
+### Связи
+
+```ts
+// src/services/linking.ts
+export interface LinkRef { kind: 'note' | 'task' | 'recording' | 'drawing'; id: string }
+/** Разбирает `[[Название]]` из markdown. Возвращает названия в порядке появления, без дублей. */
+export function parseLinks(md: string): string[];
+export async function upsertLinks(from: LinkRef, to: LinkRef[]): Promise<void>;  // заменяет исходящие
+export async function backlinksOf(kind: string, id: string): Promise<Array<LinkRef & { title: string }>>;
+export async function linksOf(kind: string, id: string): Promise<LinkRef[]>;
+```
+
+**Таблица `links` не подходит под общий `repo()`**: у неё нет `id` и `deleted_at` (составной ключ
+`from_kind + from_id + to_kind + to_id`), поэтому Rust получает две отдельные команды:
+
+```rust
+links_set(from_kind, from_id, to: Vec<LinkRef>) -> u32   // удаляет исходящие и вставляет новые, в транзакции
+links_backlinks(kind, id) -> Vec<BacklinkRow>            // { kind, id, title } — кто ссылается
+```
+
+Правила (R13):
+- `[[Название]]` без цели MUST создавать заметку с этим названием — так ссылка не остаётся мёртвой
+  с самого начала (сценарий «создание при отсутствии цели»).
+- Переименование цели MUST обновлять текст `[[старое]]` → `[[новое]]` во всех заметках, которые на
+  неё ссылались: связь хранится по идентификатору и переживает переименование, а текст — нет.
+- Удаление цели делает ссылку битой: панель обратных ссылок MUST NOT показывать удалённую заметку,
+  а сама ссылка в теле помечается как ведущая в никуда (`notesBrokenLink`).
+- Цикл `A → B → A` MUST NOT приводить к бесконечному обходу: обход идёт в одну сторону от цели.
+- Обратные ссылки считаются по `links`, а не поиском подстроки: «[[Название]]» в тексте и связь в
+  таблице — одно и то же событие, и разъехаться они не должны.
+- После изменений вызывается `reindex('note')` (Rust уже индексирует `note`).

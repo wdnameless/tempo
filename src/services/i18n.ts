@@ -101,6 +101,19 @@ export interface Translations {
   rolloverTimezone: string;
   rolloverDisabledHint: string;
 
+  notesNew: string;
+  notesEmpty: string;
+  notesBody: string;
+  notesPreview: string;
+  notesBacklinks: string;
+  notesNoBacklinks: string;
+  notesCreateTarget: string;
+  notesBrokenLink: string;
+  notesDelete: string;
+  notesPin: string;
+  notesUnpin: string;
+  notesLinkHint: string;
+
   // Pomodoro (wave 1)
   pomodoroFocus: string;
   pomodoroShortRest: string;
@@ -263,6 +276,18 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     rolloverHint: 'Незавершённые задачи прошлых дней переезжают на сегодня, устаревшее время начала очищается.',
     rolloverTimezone: 'Часовой пояс',
     rolloverDisabledHint: 'Выключено: задачи остаются в своих днях.',
+    notesNew: 'Новая заметка',
+    notesEmpty: 'Пока пусто. Заметка может стоять сама по себе или ссылаться на другие через [[название]].',
+    notesBody: 'Текст заметки',
+    notesPreview: 'Просмотр',
+    notesBacklinks: 'Упоминается в',
+    notesNoBacklinks: 'Нигде не упоминается',
+    notesCreateTarget: 'Создать заметку',
+    notesBrokenLink: 'Ссылка ведёт в никуда',
+    notesDelete: 'Удалить заметку',
+    notesPin: 'Закрепить',
+    notesUnpin: 'Открепить',
+    notesLinkHint: '[[ — ссылка на другую заметку',
     pomodoroFocus: 'Фокус',
     pomodoroShortRest: 'Перерыв',
     pomodoroLongRest: 'Длинный перерыв',
@@ -421,6 +446,18 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     rolloverHint: 'Unfinished tasks from older days move onto today and their stale start time is cleared.',
     rolloverTimezone: 'Time zone',
     rolloverDisabledHint: 'Off: tasks stay in their own days.',
+    notesNew: 'New note',
+    notesEmpty: 'Nothing yet. A note can stand alone or link to others with [[title]].',
+    notesBody: 'Note body',
+    notesPreview: 'Preview',
+    notesBacklinks: 'Mentioned in',
+    notesNoBacklinks: 'Not mentioned anywhere',
+    notesCreateTarget: 'Create note',
+    notesBrokenLink: 'This link leads nowhere',
+    notesDelete: 'Delete note',
+    notesPin: 'Pin',
+    notesUnpin: 'Unpin',
+    notesLinkHint: '[[ links to another note',
     pomodoroFocus: 'Focus',
     pomodoroShortRest: 'Break',
     pomodoroLongRest: 'Long break',
