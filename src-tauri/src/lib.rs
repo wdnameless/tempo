@@ -545,6 +545,10 @@ pub fn run() {
             storage::links_set,
             storage::links_backlinks,
             storage::load_legacy_store,
+            storage::asset_save,
+            storage::asset_delete,
+            storage::asset_usage,
+            storage::asset_prune,
         ])
         .setup(|app| {
             // Build Tray Menu

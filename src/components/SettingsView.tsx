@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
-import { Volume2, VolumeX, Sparkles, Key, RotateCcw, Check, Play, Download, Upload, RefreshCw, Loader2, Music, Timer, Sliders } from 'lucide-react';
+import { Volume2, VolumeX, Sparkles, Key, RotateCcw, Check, Play, Download, Upload, RefreshCw, Loader2, Music, Timer, Sliders, HardDrive } from 'lucide-react';
 import { ThemeColors, AISettings, DynamicUIConfig, DEFAULT_DYNAMIC_UI } from '../types';
 import { BLOCK_PRESETS, type BlockSettings } from '../types/focus';
 import { ACCENTS, DEFAULT_ACCENT, applyAccent, type AccentId } from '../constants/design';
@@ -10,6 +10,7 @@ import { I18nService, Language } from '../services/i18n';
 import { AIGateway } from '../services/aiGateway';
 import { checkForUpdate, currentVersion, detectPortable, installUpdate, type UpdateInfo } from '../services/update';
 import { StoreService } from '../services/store';
+import { assetUsage } from '../services/assets';
 import { PomodoroSettings } from './PomodoroSettings';
 import { RolloverSettings } from './RolloverSettings';
 
@@ -83,6 +84,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [appVersion, setAppVersion] = useState('…');
   /** Whether this copy updates by replacing its own binary. */
   const [portable, setPortable] = useState(false);
+  const [storageBytes, setStorageBytes] = useState<number | null>(null);
   const [updatePhase, setUpdatePhase] = useState<
     | { kind: 'idle' }
     | { kind: 'checking' }
@@ -97,6 +99,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   useEffect(() => {
     void currentVersion().then(setAppVersion);
     void detectPortable().then(setPortable);
+  }, []);
+  useEffect(() => {
+    void assetUsage()
+      .then((usage) => setStorageBytes(usage.total))
+      .catch(() => setStorageBytes(0));
   }, []);
 
   const updatePercent =
@@ -1000,6 +1007,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           {importError && (
             <p className="text-[11px] text-red-400 leading-snug">Ошибка импорта: {importError}</p>
           )}
+        </div>
+        {/* Media Storage Usage */}
+        <div className="flex flex-col space-y-2 border-t pt-4" style={{ borderColor: theme.border }}>
+          <label className="text-xs font-bold uppercase tracking-wider" style={{ color: theme.subtext }}>
+            {t.storageUsage}
+          </label>
+          <div
+            className="p-3 rounded-xl border flex items-center justify-between text-xs"
+            style={{ borderColor: theme.border, backgroundColor: 'rgba(255,255,255,0.03)', color: theme.text }}
+          >
+            <div className="flex items-center space-x-2">
+              <HardDrive size={15} style={{ color: theme.subtext }} />
+              <span>{t.storageUsage}</span>
+            </div>
+            <span className="font-mono text-xs font-semibold">
+              {storageBytes !== null ? `${(storageBytes / (1024 * 1024)).toFixed(1)} MB` : '…'}
+            </span>
+          </div>
+          <p className="text-[11px] opacity-60 leading-relaxed">
+            {t.storageUsageHint}
+          </p>
         </div>
         </div>
       )}

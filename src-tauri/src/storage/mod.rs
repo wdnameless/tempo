@@ -1,9 +1,9 @@
 // src-tauri/src/storage/mod.rs
 
+pub mod assets;
 pub mod migrations;
 pub mod repo;
 pub mod schema;
-
 use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 use serde_json::Value;
@@ -206,6 +206,43 @@ pub fn links_backlinks(
     id: String,
 ) -> Result<Vec<repo::BacklinkRow>, String> {
     with_db(&app, |conn| repo::links_backlinks(conn, &kind, &id))
+}
+
+/// Resolves the media root directory (`<data>/assets`).
+pub fn assets_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let p_str = db_path(app.clone())?;
+    let p = PathBuf::from(p_str);
+    let parent = p.parent().ok_or_else(|| "Failed to get database parent dir".to_string())?;
+    Ok(assets::assets_root_dir(parent))
+}
+
+#[tauri::command]
+pub fn asset_save(
+    app: tauri::AppHandle,
+    kind: String,
+    name: String,
+    data_base64: String,
+) -> Result<assets::AssetRef, String> {
+    let dir = assets_path(&app)?;
+    assets::save_asset_in(&dir, &kind, &name, &data_base64)
+}
+
+#[tauri::command]
+pub fn asset_delete(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let dir = assets_path(&app)?;
+    assets::delete_asset_in(&dir, &path)
+}
+
+#[tauri::command]
+pub fn asset_usage(app: tauri::AppHandle) -> Result<assets::AssetUsage, String> {
+    let dir = assets_path(&app)?;
+    assets::usage_in(&dir)
+}
+
+#[tauri::command]
+pub fn asset_prune(app: tauri::AppHandle, limit_bytes: u64) -> Result<assets::AssetPruneResult, String> {
+    let dir = assets_path(&app)?;
+    assets::prune_in(&dir, limit_bytes)
 }
 
 

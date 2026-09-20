@@ -25,6 +25,7 @@ import { TasksView } from './components/TasksView';
 import { DayView } from './components/DayView';
 import { ListsView } from './components/ListsView';
 import { NotesView } from './components/NotesView';
+import { DrawingsView } from './components/DrawingsView';
 import { StatsView } from './components/StatsView';
 import { AlarmCenter } from './components/AlarmCenter';
 import { UpdateBanner } from './components/UpdateBanner';
@@ -526,6 +527,8 @@ function MainShell() {
               {activeTab === 'lists' && <ListsView />}
 
               {activeTab === 'notes' && <NotesView />}
+
+              {activeTab === 'drawings' && <DrawingsView />}
 
               {activeTab === 'stats' && (
                 <StatsView
