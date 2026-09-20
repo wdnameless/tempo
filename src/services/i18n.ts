@@ -35,6 +35,15 @@ export interface Translations {
   titleStats: string;
   titleSettings: string;
 
+  searchPlaceholder: string;
+  searchEmpty: string;
+  searchNoResults: string;
+  searchGroupCommands: string;
+  searchGroupScreens: string;
+  searchGroupAlarms: string;
+  searchGroupSessions: string;
+  searchHintOpen: string;
+
   // Pomodoro (wave 1)
   pomodoroFocus: string;
   pomodoroShortRest: string;
@@ -134,6 +143,14 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     titleSettings: 'Настройки',
 
     // Settings section names
+    searchPlaceholder: 'Поиск по функциям и содержимому',
+    searchEmpty: 'Начните печатать — или выберите команду',
+    searchNoResults: 'Ничего не найдено',
+    searchGroupCommands: 'Команды',
+    searchGroupScreens: 'Экраны',
+    searchGroupAlarms: 'Будильники',
+    searchGroupSessions: 'Сессии',
+    searchHintOpen: 'Открыть',
     pomodoroFocus: 'Фокус',
     pomodoroShortRest: 'Перерыв',
     pomodoroLongRest: 'Длинный перерыв',
@@ -229,6 +246,14 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     titleSettings: 'Settings',
 
     // Settings section names
+    searchPlaceholder: 'Search actions and content',
+    searchEmpty: 'Start typing — or pick a command',
+    searchNoResults: 'Nothing found',
+    searchGroupCommands: 'Commands',
+    searchGroupScreens: 'Screens',
+    searchGroupAlarms: 'Alarms',
+    searchGroupSessions: 'Sessions',
+    searchHintOpen: 'Open',
     pomodoroFocus: 'Focus',
     pomodoroShortRest: 'Break',
     pomodoroLongRest: 'Long break',
