@@ -45,6 +45,32 @@ export interface Translations {
   searchHintOpen: string;
   changeAccent: string;
 
+  navLists: string;
+  titleLists: string;
+  tasksNew: string;
+  tasksEmpty: string;
+  tasksCompleted: string;
+  tasksSubtasks: string;
+  tasksPriority: string;
+  priorityNone: string;
+  priorityLow: string;
+  priorityMedium: string;
+  priorityHigh: string;
+  tasksDueDate: string;
+  tasksStartAt: string;
+  tasksPlanned: string;
+  tasksMinutesShort: string;
+  tasksDelete: string;
+  tasksSortManual: string;
+  tasksSortDue: string;
+  tasksSortPriority: string;
+  tasksAddSubtask: string;
+  listsNew: string;
+  listsEmpty: string;
+  listsName: string;
+  listsToTask: string;
+  listsDelete: string;
+
   // Pomodoro (wave 1)
   pomodoroFocus: string;
   pomodoroShortRest: string;
@@ -153,6 +179,31 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     searchGroupSessions: 'Сессии',
     searchHintOpen: 'Открыть',
     changeAccent: 'Сменить акцент',
+    navLists: 'Списки',
+    titleLists: 'Списки',
+    tasksNew: 'Новая задача',
+    tasksEmpty: 'Пока пусто. Добавьте задачу — она появится здесь.',
+    tasksCompleted: 'Выполненные',
+    tasksSubtasks: 'Подзадачи',
+    tasksPriority: 'Приоритет',
+    priorityNone: 'Обычный',
+    priorityLow: 'Низкий',
+    priorityMedium: 'Средний',
+    priorityHigh: 'Высокий',
+    tasksDueDate: 'Срок',
+    tasksStartAt: 'Начало',
+    tasksPlanned: 'Запланировано',
+    tasksMinutesShort: 'мин',
+    tasksDelete: 'Удалить',
+    tasksSortManual: 'Вручную',
+    tasksSortDue: 'По сроку',
+    tasksSortPriority: 'По приоритету',
+    tasksAddSubtask: 'Добавить подзадачу',
+    listsNew: 'Новый список',
+    listsEmpty: 'Пустой список',
+    listsName: 'Название',
+    listsToTask: 'В задачу',
+    listsDelete: 'Удалить список',
     pomodoroFocus: 'Фокус',
     pomodoroShortRest: 'Перерыв',
     pomodoroLongRest: 'Длинный перерыв',
@@ -257,6 +308,31 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     searchGroupSessions: 'Sessions',
     searchHintOpen: 'Open',
     changeAccent: 'Change accent',
+    navLists: 'Lists',
+    titleLists: 'Lists',
+    tasksNew: 'New task',
+    tasksEmpty: 'Nothing yet. Add a task and it shows up here.',
+    tasksCompleted: 'Completed',
+    tasksSubtasks: 'Subtasks',
+    tasksPriority: 'Priority',
+    priorityNone: 'Normal',
+    priorityLow: 'Low',
+    priorityMedium: 'Medium',
+    priorityHigh: 'High',
+    tasksDueDate: 'Due',
+    tasksStartAt: 'Start',
+    tasksPlanned: 'Planned',
+    tasksMinutesShort: 'min',
+    tasksDelete: 'Delete',
+    tasksSortManual: 'Manual',
+    tasksSortDue: 'By due date',
+    tasksSortPriority: 'By priority',
+    tasksAddSubtask: 'Add subtask',
+    listsNew: 'New list',
+    listsEmpty: 'Empty list',
+    listsName: 'Name',
+    listsToTask: 'To task',
+    listsDelete: 'Delete list',
     pomodoroFocus: 'Focus',
     pomodoroShortRest: 'Break',
     pomodoroLongRest: 'Long break',

@@ -3,6 +3,7 @@ import {
   Bell,
   Clock,
   CheckSquare,
+  ListChecks,
   FileText,
   BarChart2,
   Settings,
@@ -138,7 +139,7 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-type ScreenId = 'dashboard' | 'alarms' | 'tasks' | 'notes' | 'stats' | 'settings';
+type ScreenId = 'dashboard' | 'alarms' | 'tasks' | 'lists' | 'notes' | 'stats' | 'settings';
 
 /**
  * True when this webview is the mini overlay window rather than the main app.
@@ -237,7 +238,7 @@ function MainShell() {
       const target = custom.detail?.toLowerCase();
       if (
         target &&
-        ['dashboard', 'alarms', 'tasks', 'notes', 'stats', 'settings'].includes(target)
+        ['dashboard', 'alarms', 'tasks', 'lists', 'notes', 'stats', 'settings'].includes(target)
       ) {
         soundService.playUiClick();
         setActiveTab(target as ScreenId);
@@ -347,6 +348,7 @@ function MainShell() {
     { id: 'dashboard', label: 'Таймер', icon: <Clock size={18} /> },
     { id: 'alarms', label: 'Будильники', icon: <Bell size={18} /> },
     { id: 'tasks', label: 'Задачи', icon: <CheckSquare size={18} /> },
+    { id: 'lists', label: t.navLists, icon: <ListChecks size={18} /> },
     { id: 'notes', label: 'Заметки', icon: <FileText size={18} /> },
     { id: 'stats', label: 'Статистика', icon: <BarChart2 size={18} /> },
     { id: 'settings', label: 'Настройки', icon: <Settings size={18} /> },
