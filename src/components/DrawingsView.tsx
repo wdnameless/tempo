@@ -764,7 +764,7 @@ export function DrawingsView(): React.JSX.Element {
                   <div className="flex items-center gap-2 truncate">
                     {item.preview_path ? (
                       <img
-                        src={convertFileSrc(item.preview_path)}
+                        src={convertFileSrc(item.preview_path, 'tempo-media')}
                         alt={item.title}
                         className="w-7 h-7 rounded border border-[var(--border-subtle)] object-cover bg-white"
                       />

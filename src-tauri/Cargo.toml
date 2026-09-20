@@ -1,6 +1,6 @@
 [package]
 name = "tempo"
-version = "0.10.0"
+version = "0.11.0"
 description = "Tempo backend: alarm scheduler, countdown timer, alarm audio and AI gateway"
 authors = ["Tempo"]
 edition = "2021"
@@ -22,6 +22,13 @@ tauri-build = { version = "2", features = [] }
 # overlay and the main window both use. Without it the call does not exist on
 # macOS and the build fails there while succeeding on Windows and Linux.
 tauri = { version = "2", features = ["tray-icon", "image-ico", "image-png", "macos-private-api"] }
+# Microphone capture. Pinned to the version rodio already links: two cpal
+# versions in one graph collide on the alsa `links` key, and that is checked
+# even on Windows where alsa is never built.
+cpal = "0.15.3"
+# WAV writing: recordings are files on disk, and a hand-rolled RIFF header is
+# one place where being clever buys nothing.
+hound = "3.5"
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
@@ -38,6 +45,14 @@ tauri-plugin-global-shortcut = "2.3.2"
 rodio = { version = "0.19", default-features = false, features = ["symphonia-mp3", "symphonia-wav", "symphonia-flac", "wav", "mp3", "flac"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "socks", "stream"] }
 futures-util = { version = "0.3", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+# System sound is a render device read backwards, and cpal exposes no loopback.
+wasapi = "0.24"
+# Windows Graphics Capture: a chosen monitor or a chosen window, with the H.264
+# encoder that ships alongside it. The webview's getDisplayMedia alternative
+# would push every frame of video through the IPC.
+windows-capture = "2"
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service", "crypto-rust"] }
 rustls = { version = "0.23", default-features = false, features = ["log", "logging", "ring", "std", "tls12"] }
 tauri-plugin-updater = "2.11.0"
@@ -47,6 +62,7 @@ zip = { version = "4.6.1", default-features = false, features = ["deflate"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 
+percent-encoding = "2.3"
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1

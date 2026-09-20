@@ -652,3 +652,77 @@ asset_prune(limit_bytes) -> { removed, freed }    // сначала корзин
 Правила: `asset_delete` MUST NOT трогать файл вне каталога медиа — путь приходит со стороны JS;
 `asset_prune` вызывается при старте, если занято больше потолка (`tempo_media_limit_bytes`,
 по умолчанию 1 ГБ); занятое место показывается в настройках строкой `storageUsage`.
+
+## 19. Запись звука и экрана — владелец: Wave 7
+
+### Правила, которые нельзя нарушать
+
+- **Путь файла выбирает Rust, а не JS.** `recording_start` не принимает путь: он сам создаёт
+  файл в каталоге медиа и возвращает его. Так у поверхности IPC не остаётся ни одного
+  пользовательского пути — и правило «никаких путей вне медиа» (§9) нечего проверять.
+- **Одна запись за раз.** Движок держит одну активную запись; вторая попытка старта получает
+  `AlreadyRecording`, а не молчаливое переключение.
+- **Отказ в доступе — это тип ошибки, а не текст.** Микрофон, выключенный в приватности Windows,
+  обязан отличаться от «устройства нет» и от «устройство занято»: R45 требует показать человеку
+  именно причину.
+- **Пауза не пишет тишину и не пишет кадры.** Время паузы не идёт в длительность: запись,
+  поставленная на паузу на минуту, не становится на минуту длиннее.
+
+### Rust-команды (`src-tauri/src/recording/`)
+
+```rust
+recording_devices() -> { inputs: DeviceInfo[], loopback: DeviceInfo[] }
+recording_sources() -> SourceInfo[]
+recording_preview(source_id: String) -> String          // абсолютный путь PNG-кадра источника
+recording_start(options: StartOptions) -> StartOutcome  // { path, kind }
+recording_pause(paused: bool) -> ()
+recording_stop() -> RecordingResult                     // { path, duration_sec, bytes }
+recording_cancel() -> ()                                // стоп и удаление недописанного файла
+recording_state() -> RecordingState                     // { kind, paused, path, started_at }
+recording_level() -> { peak: f32, rms: f32 }            // опрос индикатора, ~10 раз в секунду
+
+// DeviceInfo { id, name, is_default }
+// SourceInfo { id, name, kind: "monitor" | "window", width, height, is_primary }
+// StartOptions { kind: "audio" | "screen", source_id: Option<String>, fps: Option<u32>,
+//                mic: Option<String>, system: bool }
+// RecordingState { kind: Option<String>, paused: bool, path: Option<String>, started_at: Option<String> }
+// Ошибки: NoDevice, AccessDenied, DeviceBusy, Unsupported, AlreadyRecording, NotRecording
+```
+
+Звук пишется в WAV (`hound`): микрофон через `cpal`, системный звук через WASAPI loopback
+(`wasapi`). Экран — Windows Graphics Capture (`windows-capture`) в MP4/H.264; звук к нему
+подмешивается в тот же контейнер. Превью кадра — `ImageEncoder` в PNG, файл кладётся в медиа.
+
+### Хранилище записей (TS)
+
+```ts
+// src/services/recorder.ts — обёртка над командами
+export interface DeviceInfo { id: string; name: string; is_default: boolean }
+export interface SourceInfo { id: string; name: string; kind: 'monitor' | 'window'; width: number; height: number; is_primary: boolean }
+export interface RecordingState { kind: 'audio' | 'screen' | null; paused: boolean; path: string | null; started_at: string | null }
+export interface RecordingResult { path: string; duration_sec: number; bytes: number }
+export function listDevices(): Promise<{ inputs: DeviceInfo[]; loopback: DeviceInfo[] }>;
+export function listSources(): Promise<SourceInfo[]>;
+export function startRecording(options: StartOptions): Promise<{ path: string; kind: 'audio' | 'screen' }>;
+export function pauseRecording(paused: boolean): Promise<void>;
+export function stopRecording(): Promise<RecordingResult>;
+export function cancelRecording(): Promise<void>;
+export function recordingState(): Promise<RecordingState>;
+export function recordingLevel(): Promise<{ peak: number; rms: number }>;
+export function previewSource(sourceId: string): Promise<string>;
+
+// src/services/recordings.ts — библиотека (таблица `recordings`)
+export interface RecordingItem { id: string; title: string; kind: 'audio' | 'screen'; file_path: string; duration_sec: number; transcript: string; transcript_status: string; updated_at: string }
+export function listRecordings(): Promise<RecordingItem[]>;
+export function saveRecording(result: RecordingResult, kind: 'audio' | 'screen', title: string): Promise<RecordingItem>;
+export function renameRecording(id: string, title: string): Promise<RecordingItem>;
+export function deleteRecording(id: string): Promise<void>;   // мягкое удаление строки И файла
+export function recordingBytes(item: RecordingItem): Promise<number>;
+
+// src/services/assets.ts — дополнение §9
+export function assetStat(path: string): Promise<number>;      // размер одного файла, 0 если его нет
+export async function pruneOnStartup(): Promise<{ removed: number; freed: number }>;  // потолок из R43
+```
+
+Потолок хранилища — `tempo_media_limit_bytes`, по умолчанию 1 ГБ. `pruneOnStartup` вызывается при
+запуске приложения: сначала уходит корзина, потом самые старые медиа (правило §9).

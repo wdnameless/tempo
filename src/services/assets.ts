@@ -1,6 +1,8 @@
 // src/services/assets.ts
 // Wave 6 - Media lifecycle (R43): typed wrapper over Rust asset storage commands.
 
+import { getPref } from './settings';
+
 import { invoke } from '@tauri-apps/api/core';
 
 export type AssetKind = 'drawing' | 'audio' | 'screen' | 'preview';
@@ -74,4 +76,33 @@ export async function assetUsage(): Promise<AssetUsage> {
  */
 export async function assetPrune(limit_bytes: number): Promise<AssetPruneResult> {
   return invoke<AssetPruneResult>('asset_prune', { limit_bytes });
+}
+
+/**
+ * Returns size in bytes of a file inside the assets directory, or 0 if it doesn't exist.
+ */
+export async function assetStat(path: string): Promise<number> {
+  try {
+    return await invoke<number>('asset_stat', { path });
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Default media cap per R43: 1 GB.
+ */
+export const DEFAULT_MEDIA_LIMIT_BYTES = 1024 * 1024 * 1024;
+
+/**
+ * Called on app startup. Checks total media usage and calls asset_prune
+ * only if usage exceeds tempo_media_limit_bytes (default 1 GB).
+ */
+export async function pruneOnStartup(): Promise<AssetPruneResult> {
+  const limit = getPref<number>('tempo_media_limit_bytes', DEFAULT_MEDIA_LIMIT_BYTES);
+  const usage = await assetUsage();
+  if (usage.total > limit) {
+    return assetPrune(limit);
+  }
+  return { removed: 0, freed: 0 };
 }

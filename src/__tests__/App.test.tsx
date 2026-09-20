@@ -22,7 +22,13 @@ vi.mock('../services/shortcuts', () => ({
   listShortcuts: vi.fn(() => []),
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: () => Promise.resolve(undefined) }));
+// The shell calls a few commands on boot; the media prune is one of them, and a
+// blanket `undefined` would make it look like a failure in every test.
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (cmd: string) =>
+    Promise.resolve(cmd === 'asset_usage' ? { total: 0, by_kind: {} } : undefined),
+  convertFileSrc: (p: string) => p,
+}));
 vi.mock('@tauri-apps/api/event', () => ({ listen: () => Promise.resolve(() => {}) }));
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({

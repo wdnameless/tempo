@@ -61,7 +61,9 @@ CREATE TABLE IF NOT EXISTS drawings (id TEXT PRIMARY KEY, title TEXT, scene_json
   preview_path TEXT, updated_at TEXT NOT NULL, deleted_at TEXT);
 CREATE TABLE IF NOT EXISTS recordings (id TEXT PRIMARY KEY, title TEXT,
   kind TEXT NOT NULL,                       -- audio | screen
-  file_path TEXT NOT NULL, duration_sec INTEGER, transcript TEXT, transcript_status TEXT,
+  -- Note: duration_sec is declared REAL (floating point seconds). Existing installs keep an INTEGER-affinity
+  -- column where SQLite stores fractional values unchanged; no table migration is needed.
+  file_path TEXT NOT NULL, duration_sec REAL, transcript TEXT, transcript_status TEXT,
   updated_at TEXT NOT NULL, deleted_at TEXT);
 CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, source TEXT NOT NULL,   -- local | google
   google_id TEXT, calendar_id TEXT, title TEXT, start_at TEXT, end_at TEXT,
@@ -69,7 +71,7 @@ CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, source TEXT NOT NULL,   
   updated_at TEXT NOT NULL, deleted_at TEXT);
 CREATE TABLE IF NOT EXISTS calendars_meta (calendar_id TEXT PRIMARY KEY, sync_token TEXT, last_sync_at TEXT);
 CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, kind TEXT NOT NULL,    -- pomodoro | stopwatch
-  started_at TEXT, ended_at TEXT, duration_sec INTEGER, completed INTEGER, task_id TEXT,
+  started_at TEXT, ended_at TEXT, duration_sec REAL, completed INTEGER, task_id TEXT,
   updated_at TEXT NOT NULL, deleted_at TEXT);
 CREATE TABLE IF NOT EXISTS links (from_kind TEXT, from_id TEXT, to_kind TEXT, to_id TEXT,
   updated_at TEXT NOT NULL, PRIMARY KEY (from_kind, from_id, to_kind, to_id));

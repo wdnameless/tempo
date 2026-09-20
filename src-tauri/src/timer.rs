@@ -1080,7 +1080,7 @@ mod tests {
         assert_eq!(rows.len(), 1, "exactly one session row");
         let row = &rows[0];
         assert_eq!(row["kind"], "pomodoro");
-        assert_eq!(row["duration_sec"], 1500);
+        assert_eq!(row["duration_sec"], 1500.0);
         assert_eq!(row["completed"], 1, "completed is stored as an integer");
         assert!(row["deleted_at"].is_null(), "a fresh row is not soft-deleted");
     }
@@ -1106,7 +1106,7 @@ mod tests {
         let rows = crate::storage::repo::list(&conn, "sessions", false).expect("list");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["completed"], 0);
-        assert_eq!(rows[0]["duration_sec"], 300);
+        assert_eq!(rows[0]["duration_sec"], 300.0);
     }
 
     /// The break is not work: a rest phase must never produce a row, or every

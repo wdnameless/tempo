@@ -234,6 +234,12 @@ pub fn asset_delete(app: tauri::AppHandle, path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn asset_stat(app: tauri::AppHandle, path: String) -> Result<u64, String> {
+    let dir = assets_path(&app)?;
+    assets::stat_asset_in(&dir, &path)
+}
+
+#[tauri::command]
 pub fn asset_usage(app: tauri::AppHandle) -> Result<assets::AssetUsage, String> {
     let dir = assets_path(&app)?;
     assets::usage_in(&dir)

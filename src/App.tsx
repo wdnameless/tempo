@@ -12,6 +12,7 @@ import {
   Bot,
   PanelLeftClose,
   PanelLeftOpen,
+  Mic,
 } from 'lucide-react';
 
 import { TitleBar } from './components/TitleBar';
@@ -27,12 +28,14 @@ import { ListsView } from './components/ListsView';
 import { NotesView } from './components/NotesView';
 import { DrawingsView } from './components/DrawingsView';
 import { StatsView } from './components/StatsView';
+import { RecordingsView } from './components/RecordingsView';
 import { AlarmCenter } from './components/AlarmCenter';
 import { UpdateBanner } from './components/UpdateBanner';
 import { CommandPalette } from './components/CommandPalette';
 
 import { DynamicBackground } from './components/DynamicBackground';
 import { I18nService } from './services/i18n';
+import { pruneOnStartup } from './services/assets';
 import { themeFromTokens } from './constants/themes';
 import { ACCENTS, DEFAULT_ACCENT, AccentId, applyAccent } from './constants/design';
 import {
@@ -145,7 +148,7 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-type ScreenId = 'dashboard' | 'day' | 'alarms' | 'tasks' | 'lists' | 'notes' | 'drawings' | 'stats' | 'settings';
+type ScreenId = 'dashboard' | 'day' | 'alarms' | 'tasks' | 'lists' | 'notes' | 'drawings' | 'recordings' | 'stats' | 'settings';
 
 /**
  * True when this webview is the mini overlay window rather than the main app.
@@ -248,7 +251,7 @@ function MainShell() {
       const target = custom.detail?.toLowerCase();
       if (
         target &&
-        ['dashboard', 'day', 'alarms', 'tasks', 'lists', 'notes', 'drawings', 'stats', 'settings'].includes(target)
+        ['dashboard', 'day', 'alarms', 'tasks', 'lists', 'notes', 'drawings', 'recordings', 'stats', 'settings'].includes(target)
       ) {
         soundService.playUiClick();
         setActiveTab(target as ScreenId);
@@ -299,6 +302,13 @@ function MainShell() {
     };
 
     void loadState();
+  }, []);
+
+  // Startup assets pruning
+  useEffect(() => {
+    void pruneOnStartup().catch((err) => {
+      console.warn('Startup assets pruning failed:', err);
+    });
   }, []);
 
   // Update check
@@ -362,6 +372,7 @@ function MainShell() {
     { id: 'lists', label: t.navLists, icon: <ListChecks size={18} /> },
     { id: 'notes', label: t.navNotes, icon: <FileText size={18} /> },
     { id: 'drawings', label: t.navDrawings, icon: <PenTool size={18} /> },
+    { id: 'recordings', label: t.navRecordings, icon: <Mic size={18} /> },
     { id: 'stats', label: t.navStats, icon: <BarChart2 size={18} /> },
     { id: 'settings', label: t.navSettings, icon: <Settings size={18} /> },
   ];
@@ -530,6 +541,7 @@ function MainShell() {
 
               {activeTab === 'drawings' && <DrawingsView />}
 
+              {activeTab === 'recordings' && <RecordingsView />}
               {activeTab === 'stats' && (
                 <StatsView
                   sessions={sessions}

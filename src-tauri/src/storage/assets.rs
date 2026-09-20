@@ -201,6 +201,33 @@ pub fn delete_asset_in(assets_dir: &Path, raw_path: &str) -> Result<(), String> 
     Ok(())
 }
 
+/// Returns metadata (size in bytes) for an asset. Missing file returns 0 bytes.
+///
+/// Refuses paths outside the assets directory.
+pub fn stat_asset_in(assets_dir: &Path, raw_path: &str) -> Result<u64, String> {
+    let trimmed = raw_path.trim();
+    if trimmed.is_empty() {
+        return Err("Asset path cannot be empty".to_string());
+    }
+
+    let path = Path::new(trimmed);
+    let full_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        assets_dir.join(path)
+    };
+
+    let verified = verify_path_inside_assets(assets_dir, &full_path)?;
+    if !verified.exists() {
+        return Ok(0);
+    }
+
+    let meta = fs::metadata(&verified).map_err(|e| {
+        format!("Failed to read metadata for '{}': {e}", verified.display())
+    })?;
+    Ok(meta.len())
+}
+
 /// Calculates storage usage across all kinds under `assets_dir`.
 pub fn usage_in(assets_dir: &Path) -> Result<AssetUsage, String> {
     let mut total: u64 = 0;
@@ -459,5 +486,24 @@ mod tests {
 
         let usage_after = usage_in(&assets_dir).unwrap();
         assert_eq!(usage_after.total, 200);
+    }
+
+    #[test]
+    fn test_stat_asset_size_and_missing() {
+        let (_tmp, assets_dir) = setup_temp_assets();
+        let b64 = base64::engine::general_purpose::STANDARD.encode(b"sample data 12345");
+        let asset_ref = save_asset_in(&assets_dir, "audio", "sample.wav", &b64).unwrap();
+
+        // Exists -> exact size
+        let size = stat_asset_in(&assets_dir, &asset_ref.path).unwrap();
+        assert_eq!(size, 17);
+
+        // Missing file inside assets -> returns 0
+        let missing = stat_asset_in(&assets_dir, &assets_dir.join("audio").join("missing.wav").to_string_lossy()).unwrap();
+        assert_eq!(missing, 0);
+
+        // Outside assets -> error
+        let err = stat_asset_in(&assets_dir, "../../secret.txt");
+        assert!(err.is_err());
     }
 }

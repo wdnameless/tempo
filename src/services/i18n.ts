@@ -114,6 +114,39 @@ export interface Translations {
   notesUnpin: string;
   notesLinkHint: string;
 
+  navRecordings: string;
+  recTabAudio: string;
+  recTabScreen: string;
+  recMic: string;
+  recSystem: string;
+  recDevice: string;
+  recDefaultDevice: string;
+  recSource: string;
+  recMonitors: string;
+  recWindows: string;
+  recStart: string;
+  recStop: string;
+  recPause: string;
+  recResume: string;
+  recCancel: string;
+  recRecording: string;
+  recPaused: string;
+  recEmpty: string;
+  recDelete: string;
+  recRename: string;
+  recDuration: string;
+  recSize: string;
+  recNoDevices: string;
+  recNoSources: string;
+  recPermissionMic: string;
+  recPermissionScreen: string;
+  recPermissionHint: string;
+  recDiscard: string;
+  recKindAudio: string;
+  recKindScreen: string;
+  recPreviewHint: string;
+  recConfirmScreen: string;
+  recConfirmNeeded: string;
   navDrawings: string;
   drawingsNew: string;
   drawingsEmpty: string;
@@ -309,6 +342,39 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     notesPin: 'Закрепить',
     notesUnpin: 'Открепить',
     notesLinkHint: '[[ — ссылка на другую заметку',
+    navRecordings: 'Записи',
+    recTabAudio: 'Звук',
+    recTabScreen: 'Экран',
+    recMic: 'Микрофон',
+    recSystem: 'Системный звук',
+    recDevice: 'Устройство',
+    recDefaultDevice: 'По умолчанию',
+    recSource: 'Источник',
+    recMonitors: 'Мониторы',
+    recWindows: 'Окна',
+    recStart: 'Начать запись',
+    recStop: 'Остановить',
+    recPause: 'Пауза',
+    recResume: 'Продолжить',
+    recCancel: 'Отменить',
+    recRecording: 'Идёт запись',
+    recPaused: 'Пауза',
+    recEmpty: 'Пока пусто. Запишите звук или экран — файлы лягут в ту же библиотеку, что и рисунки.',
+    recDelete: 'Удалить запись',
+    recRename: 'Переименовать',
+    recDuration: 'Длительность',
+    recSize: 'Размер',
+    recNoDevices: 'Устройства записи не найдены.',
+    recNoSources: 'Нет доступных мониторов или окон.',
+    recPermissionMic: 'Микрофон недоступен',
+    recPermissionScreen: 'Захват экрана недоступен',
+    recPermissionHint: 'Проверьте, что приложение не выключено в разделе «Конфиденциальность → Микрофон» и что устройство не занято другой программой.',
+    recDiscard: 'Отбросить запись',
+    recKindAudio: 'Звук',
+    recKindScreen: 'Экран',
+    recPreviewHint: 'Кадр источника сохранится в медиа и появится в списке.',
+    recConfirmScreen: 'Подтверждаю, что записываю этот источник',
+    recConfirmNeeded: 'Отметьте подтверждение под списком источников — запись экрана начинается только после него.',
     navDrawings: 'Рисунки',
     drawingsNew: 'Новый рисунок',
     drawingsEmpty: 'Пока пусто. Создайте рисунок — холст бесконечный, рисуйте куда угодно.',
@@ -499,6 +565,39 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     notesPin: 'Pin',
     notesUnpin: 'Unpin',
     notesLinkHint: '[[ links to another note',
+    navRecordings: 'Recordings',
+    recTabAudio: 'Audio',
+    recTabScreen: 'Screen',
+    recMic: 'Microphone',
+    recSystem: 'System sound',
+    recDevice: 'Device',
+    recDefaultDevice: 'Default',
+    recSource: 'Source',
+    recMonitors: 'Monitors',
+    recWindows: 'Windows',
+    recStart: 'Start recording',
+    recStop: 'Stop',
+    recPause: 'Pause',
+    recResume: 'Resume',
+    recCancel: 'Cancel',
+    recRecording: 'Recording',
+    recPaused: 'Paused',
+    recEmpty: 'Nothing yet. Record audio or the screen — files land in the same library as drawings.',
+    recDelete: 'Delete recording',
+    recRename: 'Rename',
+    recDuration: 'Duration',
+    recSize: 'Size',
+    recNoDevices: 'No recording devices found.',
+    recNoSources: 'No monitors or windows available.',
+    recPermissionMic: 'Microphone unavailable',
+    recPermissionScreen: 'Screen capture unavailable',
+    recPermissionHint: 'Check that the app is not switched off under Privacy → Microphone, and that the device is not held by another program.',
+    recDiscard: 'Discard recording',
+    recKindAudio: 'Audio',
+    recKindScreen: 'Screen',
+    recPreviewHint: 'A frame of the source is saved to media and shown in the list.',
+    recConfirmScreen: 'I understand which source will be recorded',
+    recConfirmNeeded: 'Tick the confirmation under the source list — screen capture starts only after it.',
     navDrawings: 'Drawings',
     drawingsNew: 'New drawing',
     drawingsEmpty: 'Nothing yet. Create a drawing — the canvas is infinite, draw anywhere.',

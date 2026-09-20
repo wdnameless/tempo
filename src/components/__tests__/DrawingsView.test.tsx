@@ -22,8 +22,14 @@ vi.mock('../../services/assets', () => ({
   assetSave: vi.fn(),
 }));
 
+const mockConvertFileSrc = vi.fn((p: string, scheme?: string) => {
+  if (scheme !== 'tempo-media') {
+    throw new Error(`convertFileSrc expected scheme 'tempo-media', got '${scheme}'`);
+  }
+  return `asset://localhost/${p}`;
+});
 vi.mock('@tauri-apps/api/core', () => ({
-  convertFileSrc: (p: string) => `asset://localhost/${p}`,
+  convertFileSrc: (p: string, scheme?: string) => mockConvertFileSrc(p, scheme),
 }));
 
 describe('DrawingsView', () => {
@@ -501,5 +507,26 @@ describe('DrawingsView', () => {
       );
     });
     expect(screen.queryByPlaceholderText('Type text...')).toBeNull();
+  });
+
+  it('renders preview image using convertFileSrc with tempo-media scheme', async () => {
+    const mockDrawing: DrawingItem = {
+      id: 'draw-preview-1',
+      title: 'Preview Drawing',
+      preview_path: 'drawings/preview-1.svg',
+      updated_at: '2026-09-20T00:00:00Z',
+    };
+    vi.mocked(drawingsService.listDrawings).mockResolvedValue([mockDrawing]);
+    vi.mocked(drawingsService.loadScene).mockResolvedValue({
+      version: 1,
+      strokes: [],
+    });
+
+    render(<DrawingsView />);
+
+    await waitFor(() => {
+      expect(screen.getByAltText('Preview Drawing')).toBeDefined();
+    });
+    expect(mockConvertFileSrc).toHaveBeenCalledWith('drawings/preview-1.svg', 'tempo-media');
   });
 });

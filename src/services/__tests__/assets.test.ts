@@ -5,9 +5,19 @@ import {
   assetDelete,
   assetUsage,
   assetPrune,
+  assetStat,
+  pruneOnStartup,
+  DEFAULT_MEDIA_LIMIT_BYTES,
   uint8ArrayToBase64,
   AssetRef,
 } from '../assets';
+
+vi.mock('../settings', () => ({
+  getPref: vi.fn(),
+}));
+
+import { getPref } from '../settings';
+const mockGetPref = vi.mocked(getPref);
 
 const mockInvoke = vi.fn();
 
@@ -143,6 +153,45 @@ describe('assets service', () => {
         limit_bytes: 5000000,
       });
       expect(res).toEqual(pruneResult);
+    });
+  });
+
+  describe('assetStat', () => {
+    it('returns file size in bytes from asset_stat', async () => {
+      mockInvoke.mockResolvedValueOnce(123456);
+      const size = await assetStat('C:/assets/audio/1.wav');
+      expect(mockInvoke).toHaveBeenCalledWith('asset_stat', { path: 'C:/assets/audio/1.wav' });
+      expect(size).toBe(123456);
+    });
+
+    it('returns 0 if asset_stat throws or file is missing', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('File not found'));
+      const size = await assetStat('C:/assets/audio/missing.wav');
+      expect(size).toBe(0);
+    });
+  });
+
+  describe('pruneOnStartup', () => {
+    it('does not call assetPrune when usage is under the cap', async () => {
+      mockGetPref.mockReturnValue(DEFAULT_MEDIA_LIMIT_BYTES); // 1 GB
+      mockInvoke.mockResolvedValueOnce({ total: 500000, by_kind: {} }); // assetUsage
+
+      const result = await pruneOnStartup();
+      expect(mockInvoke).toHaveBeenCalledWith('asset_usage');
+      expect(mockInvoke).not.toHaveBeenCalledWith('asset_prune', expect.anything());
+      expect(result).toEqual({ removed: 0, freed: 0 });
+    });
+
+    it('calls assetPrune when usage is over the cap', async () => {
+      const customCap = 1000;
+      mockGetPref.mockReturnValue(customCap);
+      mockInvoke.mockResolvedValueOnce({ total: 2000, by_kind: {} }); // assetUsage
+      mockInvoke.mockResolvedValueOnce({ removed: 2, freed: 1000 }); // assetPrune
+
+      const result = await pruneOnStartup();
+      expect(mockInvoke).toHaveBeenCalledWith('asset_usage');
+      expect(mockInvoke).toHaveBeenCalledWith('asset_prune', { limit_bytes: customCap });
+      expect(result).toEqual({ removed: 2, freed: 1000 });
     });
   });
 });

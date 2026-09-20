@@ -12,7 +12,9 @@ use base64::Engine;
 mod ai;
 mod alarm_sound;
 mod credentials;
+mod media_protocol;
 mod portable_update;
+pub mod recording;
 mod scheduler;
 mod timer;
 pub mod storage;
@@ -487,7 +489,11 @@ pub fn run() {
     tauri::Builder::default()
         .manage(storage::DbState(std::sync::Mutex::new(None)))
         .plugin(tauri_plugin_opener::init())
+        .manage(recording::RecordingManager::new())
         .plugin(tauri_plugin_notification::init())
+        .register_asynchronous_uri_scheme_protocol(media_protocol::SCHEME_NAME, |ctx, req, resp| {
+            media_protocol::handle_uri_scheme(ctx.app_handle(), req, resp);
+        })
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -548,7 +554,18 @@ pub fn run() {
             storage::asset_save,
             storage::asset_delete,
             storage::asset_usage,
+            storage::asset_stat,
             storage::asset_prune,
+            recording::recording_devices,
+            recording::recording_sources,
+            recording::recording_start,
+            recording::recording_pause,
+            recording::recording_resume,
+            recording::recording_stop,
+            recording::recording_cancel,
+            recording::recording_state,
+            recording::recording_level,
+            recording::recording_preview,
         ])
         .setup(|app| {
             // Build Tray Menu

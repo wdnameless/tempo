@@ -578,7 +578,7 @@ pub fn reindex_fts(conn: &Connection, kind: Option<&str>) -> Result<u32, String>
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, Option<String>>(2)?,
-                    row.get::<_, Option<i64>>(3)?,
+                    row.get::<_, Option<f64>>(3)?,
                 ))
             })
             .map_err(|e| e.to_string())?;
@@ -1351,5 +1351,48 @@ mod tests {
         // Now note B should have 0 backlinks
         let b_bl2 = links_backlinks(&conn, "note", id_b).unwrap();
         assert_eq!(b_bl2.len(), 0);
+    }
+
+    #[test]
+    fn test_duration_sec_real_validation() {
+        let conn = setup_test_db();
+
+        // Fractional duration (e.g. 4.21s) accepted for recordings
+        let rec1 = insert(
+            &conn,
+            "recordings",
+            &json!({
+                "title": "Voice Note 1",
+                "kind": "audio",
+                "file_path": "audio/1.wav",
+                "duration_sec": 4.21
+            }),
+        ).expect("insert fractional duration recording");
+        assert_eq!(rec1["duration_sec"].as_f64(), Some(4.21));
+
+        // Integer duration (e.g. 4) also accepted for recordings (as real)
+        let rec2 = insert(
+            &conn,
+            "recordings",
+            &json!({
+                "title": "Voice Note 2",
+                "kind": "audio",
+                "file_path": "audio/2.wav",
+                "duration_sec": 4
+            }),
+        ).expect("insert integer duration recording");
+        assert_eq!(rec2["duration_sec"].as_f64(), Some(4.0));
+
+        // Genuine Integer column (e.g. tasks.priority) still refuses float
+        let task_err = insert(
+            &conn,
+            "tasks",
+            &json!({
+                "title": "Task with float priority",
+                "priority": 1.5
+            }),
+        );
+        assert!(task_err.is_err());
+        assert!(task_err.unwrap_err().contains("Invalid integer value"));
     }
 }
