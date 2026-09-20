@@ -4,6 +4,7 @@ import {
   Clock,
   CheckSquare,
   ListChecks,
+  CalendarDays,
   FileText,
   BarChart2,
   Settings,
@@ -141,7 +142,7 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-type ScreenId = 'dashboard' | 'alarms' | 'tasks' | 'lists' | 'notes' | 'stats' | 'settings';
+type ScreenId = 'dashboard' | 'day' | 'alarms' | 'tasks' | 'lists' | 'notes' | 'stats' | 'settings';
 
 /**
  * True when this webview is the mini overlay window rather than the main app.
@@ -244,7 +245,7 @@ function MainShell() {
       const target = custom.detail?.toLowerCase();
       if (
         target &&
-        ['dashboard', 'alarms', 'tasks', 'lists', 'notes', 'stats', 'settings'].includes(target)
+        ['dashboard', 'day', 'alarms', 'tasks', 'lists', 'notes', 'stats', 'settings'].includes(target)
       ) {
         soundService.playUiClick();
         setActiveTab(target as ScreenId);
@@ -352,6 +353,7 @@ function MainShell() {
 
   const navItems: Array<{ id: ScreenId; label: string; icon: React.ReactNode }> = [
     { id: 'dashboard', label: t.navDashboard, icon: <Clock size={18} /> },
+    { id: 'day', label: t.navDay, icon: <CalendarDays size={18} /> },
     { id: 'alarms', label: t.navAlarms, icon: <Bell size={18} /> },
     { id: 'tasks', label: t.navTasks, icon: <CheckSquare size={18} /> },
     { id: 'lists', label: t.navLists, icon: <ListChecks size={18} /> },

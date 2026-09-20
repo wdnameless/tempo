@@ -460,3 +460,61 @@ export function currentFocusSound(): FocusSoundId;          // читает temp
 лицензионных вопросов и ноль веса в сборке (решение пользователя). Существующая ссылка на
 YouTube остаётся отдельной строкой и играет через `MusicService`, как сейчас. Apple Music
 отсутствует (R21). Настройка `tempo_focus_sound` сохраняется между запусками.
+
+## 16. День, события и перенос задач — владелец: Wave 4
+
+### События и задачи в дне
+
+```ts
+// src/services/day.ts
+export interface DaySlot { startMin: number; endMin: number }
+/** Ключ дня — локальная дата "YYYY-MM-DD", не UTC. */
+export function dayKey(date: Date): string;
+
+/** Всё, что попадает в день: задачи со сроком/началом и события. */
+export interface DayItem {
+  kind: 'task' | 'event';
+  id: string;
+  title: string;
+  /** Минуты от полуночи; null у задачи без времени и у события «весь день». */
+  startMin: number | null;
+  endMin: number | null;
+  allDay: boolean;
+  done: boolean;
+  /** google | local — у событий; у задач null. */
+  source: 'google' | 'local' | null;
+  ref: TaskItem | CalendarEvent;
+}
+export function buildDay(input: {
+  date: Date; tasks: TaskItem[]; events: CalendarEvent[];
+}): DayItem[];
+/** Пересечения задач и событий — их показывают пользователю (сценарий спеки). */
+export function findConflicts(items: DayItem[]): Array<{ a: DayItem; b: DayItem }>;
+```
+
+`CalendarEvent` читается из таблицы `events`; `source` в ней `google` или `local`.
+Событие с `source = 'google'` в дне **не редактируется** — правка идёт в Google,
+изменение приезжает синхронизацией (спека, сценарий пересечения).
+
+### Перенос задач (R40)
+
+```ts
+// src/services/rollover.ts
+export interface RolloverSettings { enabled: boolean; afterHour: number }
+export function rolloverSettings(): RolloverSettings;      // tempo_rollover_enabled / tempo_rollover_hour
+export async function setRolloverSettings(next: Partial<RolloverSettings>): Promise<void>;
+/** Локальный часовой пояс пользователя строкой — показывается рядом с настройкой. */
+export function localTimeZone(): string;
+/** Один проход переноса. Идемпотентен: повторный вызов в тот же день ничего не меняет. */
+export async function runRollover(now?: Date): Promise<{ moved: number; cleared: number }>;
+```
+
+Правила (спека daily-planning):
+- **Выключено по умолчанию** и при выключенном переносе данные MUST NOT меняться.
+- Включён: после `afterHour` незавершённые задачи с `dueDate` **раньше сегодня** получают
+  `dueDate = сегодня`, а их устаревший `startAt` очищается (задача появляется в дне).
+- Идемпотентность: задача, уже перенесённая сегодня, не переносится повторно — иначе
+  пропущенный запуск задвоит историю.
+- Граница суток и смена пояса: день считается по **локальной** дате, поэтому смена пояса
+  сама по себе не создаёт и не теряет задачи; перенос — это смена `dueDate`, а не копия.
+- Запускается один раз при старте (`dbReady`) и при открытии экрана дня.

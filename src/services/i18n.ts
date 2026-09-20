@@ -73,6 +73,34 @@ export interface Translations {
   listsToTask: string;
   listsDelete: string;
 
+  navDay: string;
+  titleDay: string;
+  dayStepPlan: string;
+  dayStepExecute: string;
+  dayStepReview: string;
+  dayToday: string;
+  dayTomorrow: string;
+  dayYesterday: string;
+  dayEmpty: string;
+  dayEmptyHint: string;
+  dayPickMain: string;
+  dayUnplanned: string;
+  dayDone: string;
+  dayUnfinished: string;
+  dayCarryOver: string;
+  dayCarriedOver: string;
+  dayAllDay: string;
+  dayConflict: string;
+  dayConflictHint: string;
+  dayNewEvent: string;
+  dayEventTitle: string;
+  dayFromGoogle: string;
+  rollover: string;
+  rolloverAfter: string;
+  rolloverHint: string;
+  rolloverTimezone: string;
+  rolloverDisabledHint: string;
+
   // Pomodoro (wave 1)
   pomodoroFocus: string;
   pomodoroShortRest: string;
@@ -208,6 +236,33 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     listsName: 'Название',
     listsToTask: 'В задачу',
     listsDelete: 'Удалить список',
+    navDay: 'День',
+    titleDay: 'Планирование дня',
+    dayStepPlan: 'План',
+    dayStepExecute: 'День',
+    dayStepReview: 'Обзор',
+    dayToday: 'Сегодня',
+    dayTomorrow: 'Завтра',
+    dayYesterday: 'Вчера',
+    dayEmpty: 'На этот день ничего не запланировано',
+    dayEmptyHint: 'Выберите задачи на сегодня и расставьте их по слотам — или добавьте событие.',
+    dayPickMain: 'Выберите главное на сегодня',
+    dayUnplanned: 'Без времени',
+    dayDone: 'Сделано за день',
+    dayUnfinished: 'Незавершённое',
+    dayCarryOver: 'Перенести на завтра',
+    dayCarriedOver: 'Перенесено на завтра',
+    dayAllDay: 'Весь день',
+    dayConflict: 'Пересечение',
+    dayConflictHint: 'Это время уже занято — выберите другое',
+    dayNewEvent: 'Новое событие',
+    dayEventTitle: 'Название события',
+    dayFromGoogle: 'Из Google',
+    rollover: 'Перенос задач',
+    rolloverAfter: 'Переносить после',
+    rolloverHint: 'Незавершённые задачи прошлых дней переезжают на сегодня, устаревшее время начала очищается.',
+    rolloverTimezone: 'Часовой пояс',
+    rolloverDisabledHint: 'Выключено: задачи остаются в своих днях.',
     pomodoroFocus: 'Фокус',
     pomodoroShortRest: 'Перерыв',
     pomodoroLongRest: 'Длинный перерыв',
@@ -339,6 +394,33 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     listsName: 'Name',
     listsToTask: 'To task',
     listsDelete: 'Delete list',
+    navDay: 'Day',
+    titleDay: 'Daily planning',
+    dayStepPlan: 'Plan',
+    dayStepExecute: 'Day',
+    dayStepReview: 'Review',
+    dayToday: 'Today',
+    dayTomorrow: 'Tomorrow',
+    dayYesterday: 'Yesterday',
+    dayEmpty: 'Nothing planned for this day',
+    dayEmptyHint: 'Pick what matters today and place it in slots — or add an event.',
+    dayPickMain: 'Pick what matters most today',
+    dayUnplanned: 'Without a time',
+    dayDone: 'Done today',
+    dayUnfinished: 'Unfinished',
+    dayCarryOver: 'Move to tomorrow',
+    dayCarriedOver: 'Moved to tomorrow',
+    dayAllDay: 'All day',
+    dayConflict: 'Overlap',
+    dayConflictHint: 'That time is taken — pick another',
+    dayNewEvent: 'New event',
+    dayEventTitle: 'Event title',
+    dayFromGoogle: 'From Google',
+    rollover: 'Task rollover',
+    rolloverAfter: 'Carry over after',
+    rolloverHint: 'Unfinished tasks from older days move onto today and their stale start time is cleared.',
+    rolloverTimezone: 'Time zone',
+    rolloverDisabledHint: 'Off: tasks stay in their own days.',
     pomodoroFocus: 'Focus',
     pomodoroShortRest: 'Break',
     pomodoroLongRest: 'Long break',
