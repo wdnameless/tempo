@@ -569,3 +569,86 @@ links_backlinks(kind, id) -> Vec<BacklinkRow>            // { kind, id, title } 
 - Обратные ссылки считаются по `links`, а не поиском подстроки: «[[Название]]» в тексте и связь в
   таблице — одно и то же событие, и разъехаться они не должны.
 - После изменений вызывается `reindex('note')` (Rust уже индексирует `note`).
+
+## 18. Рисунки и медиа — владелец: Wave 6 (использует Wave 7)
+
+### Модель холста (чистая, без DOM)
+
+Холст бесконечный: сцена — векторные штрихи в мировых координатах, вид — окно над ними.
+Модель отделена от рендера, поэтому её можно проверить без браузера, а бюджет 60 к/с —
+измерить в тесте (R46).
+
+```ts
+// src/services/canvas.ts
+export type ToolId = 'pen' | 'marker' | 'eraser' | 'line' | 'rect' | 'ellipse' | 'text';
+export interface StrokePoint { x: number; y: number; pressure: number }
+export interface Stroke {
+  id: string; tool: ToolId; color: string; width: number;
+  points: StrokePoint[];
+  /** Только для text: строка и её размер. */
+  text?: string;
+}
+export interface Scene { version: 1; strokes: Stroke[] }
+export interface Viewport { x: number; y: number; zoom: number }
+
+export function emptyScene(): Scene;
+export function screenToWorld(point: { x: number; y: number }, view: Viewport): { x: number; y: number };
+export function worldToScreen(point: { x: number; y: number }, view: Viewport): { x: number; y: number };
+export function strokeBounds(stroke: Stroke): { minX: number; minY: number; maxX: number; maxY: number };
+export function visibleStrokes(scene: Scene, view: Viewport, size: { width: number; height: number }): Stroke[];
+/** Строит список для отрисовки за кадр: отсечение + порядок. Горячий путь. */
+export function buildFrame(scene: Scene, view: Viewport, size: { width: number; height: number }): Stroke[];
+export function eraseAt(scene: Scene, point: { x: number; y: number }, radius: number): Scene;
+export function sceneToSvg(scene: Scene): string;
+export function serializeScene(scene: Scene): string;
+export function parseScene(json: string): Scene;      // терпимый: битый JSON → пустая сцена
+```
+
+Правила:
+- Штрих с `pressure` рисуется пером с переменной толщиной; **ластик удаляет штрихи целиком**
+  (пересечение курсора с их границами), а не пиксели: сцена остаётся векторной, иначе SVG-экспорт
+  потеряет смысл.
+- `parseScene` MUST NOT бросать: испорченный `scene_json` даёт пустую сцену, а не падение экрана.
+- `buildFrame` — единственный горячий путь: он вызывается каждый кадр, и именно его время
+  проверяется бюджетом (R46). Порог: 500 штрихов, 60 кадров — не более 1000 мс суммарно
+  (≈16.7 мс на кадр), с запасом, чтобы тест ловил алгоритмическую деградацию, а не шум машины.
+
+### Хранение рисунков
+
+```ts
+// src/services/drawings.ts
+export interface DrawingMeta { id: string; title: string; previewPath: string | null; updatedAt: string }
+export function listDrawings(): Promise<DrawingMeta[]>;          // по updatedAt убыв.
+export function loadScene(id: string): Promise<Scene>;
+export async function createDrawing(title?: string, scene?: Scene): Promise<DrawingMeta>;
+export async function saveScene(id: string, scene: Scene): Promise<DrawingMeta>;
+export async function renameDrawing(id: string, title: string): Promise<DrawingMeta>;
+export async function setPreview(id: string, previewPath: string | null): Promise<DrawingMeta>;
+/** Мягко удаляет строку И удаляет файл превью: файл без строки — мусор, который никто не найдёт. */
+export async function deleteDrawing(id: string): Promise<void>;
+```
+Таблица `drawings` хранит `scene_json` и `preview_path`; строка идёт через общий `repo()`.
+
+### Медиа (R43) — реализация §9
+
+```ts
+// src/services/assets.ts
+export interface AssetRef { kind: 'drawing' | 'audio' | 'screen' | 'preview'; path: string; bytes: number }
+export async function assetSave(kind: AssetRef['kind'], name: string, bytes: Uint8Array): Promise<AssetRef>;
+export async function assetDelete(ref: AssetRef | string): Promise<void>;
+export async function assetUsage(): Promise<{ total: number; byKind: Record<string, number> }>;
+export async function assetPrune(limitBytes: number): Promise<{ removed: number; freed: number }>;
+```
+
+Rust-команды (файлы живут в `<data>/assets/<kind>/`, рядом с `tempo.db`):
+
+```rust
+asset_save(kind, name, data_base64) -> AssetRef   // base64, а не массив чисел: превью бывает в сотни КБ
+asset_delete(path) -> ()                          // путь проверяется: только внутри assets/
+asset_usage() -> { total, by_kind }
+asset_prune(limit_bytes) -> { removed, freed }    // сначала корзина (файлы без живой строки), затем самые старые
+```
+
+Правила: `asset_delete` MUST NOT трогать файл вне каталога медиа — путь приходит со стороны JS;
+`asset_prune` вызывается при старте, если занято больше потолка (`tempo_media_limit_bytes`,
+по умолчанию 1 ГБ); занятое место показывается в настройках строкой `storageUsage`.

@@ -114,6 +114,27 @@ export interface Translations {
   notesUnpin: string;
   notesLinkHint: string;
 
+  navDrawings: string;
+  drawingsNew: string;
+  drawingsEmpty: string;
+  drawToolPen: string;
+  drawToolMarker: string;
+  drawToolEraser: string;
+  drawToolLine: string;
+  drawToolRect: string;
+  drawToolEllipse: string;
+  drawToolText: string;
+  drawColor: string;
+  drawWidth: string;
+  drawZoom: string;
+  drawReset: string;
+  drawExportPng: string;
+  drawExportSvg: string;
+  drawToolbarHint: string;
+  drawingsDelete: string;
+  storageUsage: string;
+  storageUsageHint: string;
+
   // Pomodoro (wave 1)
   pomodoroFocus: string;
   pomodoroShortRest: string;
@@ -288,6 +309,26 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     notesPin: 'Закрепить',
     notesUnpin: 'Открепить',
     notesLinkHint: '[[ — ссылка на другую заметку',
+    navDrawings: 'Рисунки',
+    drawingsNew: 'Новый рисунок',
+    drawingsEmpty: 'Пока пусто. Создайте рисунок — холст бесконечный, рисуйте куда угодно.',
+    drawToolPen: 'Перо',
+    drawToolMarker: 'Маркер',
+    drawToolEraser: 'Ластик',
+    drawToolLine: 'Линия',
+    drawToolRect: 'Прямоугольник',
+    drawToolEllipse: 'Эллипс',
+    drawToolText: 'Текст',
+    drawColor: 'Цвет',
+    drawWidth: 'Толщина',
+    drawZoom: 'Масштаб',
+    drawReset: 'Сбросить вид',
+    drawExportPng: 'Экспорт PNG',
+    drawExportSvg: 'Экспорт SVG',
+    drawToolbarHint: 'Колесо — зум, средняя кнопка или пробел — панорама',
+    drawingsDelete: 'Удалить рисунок',
+    storageUsage: 'Занято медиа',
+    storageUsageHint: 'Рисунки, записи и превью. Старое удаляется автоматически при превышении потолка.',
     pomodoroFocus: 'Фокус',
     pomodoroShortRest: 'Перерыв',
     pomodoroLongRest: 'Длинный перерыв',
@@ -458,6 +499,26 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     notesPin: 'Pin',
     notesUnpin: 'Unpin',
     notesLinkHint: '[[ links to another note',
+    navDrawings: 'Drawings',
+    drawingsNew: 'New drawing',
+    drawingsEmpty: 'Nothing yet. Create a drawing — the canvas is infinite, draw anywhere.',
+    drawToolPen: 'Pen',
+    drawToolMarker: 'Marker',
+    drawToolEraser: 'Eraser',
+    drawToolLine: 'Line',
+    drawToolRect: 'Rectangle',
+    drawToolEllipse: 'Ellipse',
+    drawToolText: 'Text',
+    drawColor: 'Colour',
+    drawWidth: 'Width',
+    drawZoom: 'Zoom',
+    drawReset: 'Reset view',
+    drawExportPng: 'Export PNG',
+    drawExportSvg: 'Export SVG',
+    drawToolbarHint: 'Wheel zooms, middle button or space pans',
+    drawingsDelete: 'Delete drawing',
+    storageUsage: 'Media used',
+    storageUsageHint: 'Drawings, recordings and previews. The oldest is pruned when the cap is exceeded.',
     pomodoroFocus: 'Focus',
     pomodoroShortRest: 'Break',
     pomodoroLongRest: 'Long break',
