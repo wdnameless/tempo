@@ -5,6 +5,7 @@ import {
   CheckSquare,
   ListChecks,
   CalendarDays,
+  Calendar,
   PenTool,
   FileText,
   BarChart2,
@@ -24,6 +25,7 @@ import { SettingsView } from './components/SettingsView';
 import { Alarms } from './components/Alarms';
 import { TasksView } from './components/TasksView';
 import { DayView } from './components/DayView';
+import { CalendarView } from './components/CalendarView';
 import { ListsView } from './components/ListsView';
 import { NotesView } from './components/NotesView';
 import { DrawingsView } from './components/DrawingsView';
@@ -149,7 +151,7 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-type ScreenId = 'dashboard' | 'day' | 'alarms' | 'tasks' | 'lists' | 'notes' | 'drawings' | 'recordings' | 'stats' | 'settings';
+type ScreenId = 'dashboard' | 'day' | 'calendar' | 'alarms' | 'tasks' | 'lists' | 'notes' | 'drawings' | 'recordings' | 'stats' | 'settings';
 
 /**
  * True when this webview is the mini overlay window rather than the main app.
@@ -250,7 +252,7 @@ function MainShell() {
       const target = custom.detail?.toLowerCase();
       if (
         target &&
-        ['dashboard', 'day', 'alarms', 'tasks', 'lists', 'notes', 'drawings', 'recordings', 'stats', 'settings'].includes(target)
+        ['dashboard', 'day', 'calendar', 'alarms', 'tasks', 'lists', 'notes', 'drawings', 'recordings', 'stats', 'settings'].includes(target)
       ) {
         soundService.playUiClick();
         setActiveTab(target as ScreenId);
@@ -370,6 +372,7 @@ function MainShell() {
   const navItems: Array<{ id: ScreenId; label: string; icon: React.ReactNode }> = [
     { id: 'dashboard', label: t.navDashboard, icon: <Clock size={18} /> },
     { id: 'day', label: t.navDay, icon: <CalendarDays size={18} /> },
+    { id: 'calendar', label: t.navCalendar, icon: <Calendar size={18} /> },
     { id: 'alarms', label: t.navAlarms, icon: <Bell size={18} /> },
     { id: 'tasks', label: t.navTasks, icon: <CheckSquare size={18} /> },
     { id: 'lists', label: t.navLists, icon: <ListChecks size={18} /> },
@@ -534,6 +537,7 @@ function MainShell() {
                 />
               )}
               {activeTab === 'day' && <DayView />}
+              {activeTab === 'calendar' && <CalendarView />}
 
 
               {activeTab === 'tasks' && <TasksView />}

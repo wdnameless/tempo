@@ -237,9 +237,13 @@ describe('DayView component', () => {
     const carryOverBtn = screen.getByText(t.dayCarryOver);
     fireEvent.click(carryOverBtn);
 
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const expectedTomorrow = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+
     await waitFor(() => {
       expect(moveTask).toHaveBeenCalledWith('unf-1', {
-        dueDate: '2026-09-21',
+        dueDate: expectedTomorrow,
         startAt: null,
       });
     });

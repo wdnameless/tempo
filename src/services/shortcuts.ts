@@ -320,6 +320,16 @@ export function registerDefaultShortcuts(): void {
     description: 'shortcutDailyPlanning',
     run: () => dispatchNavigate('daily-planning'),
   });
+  // 4. Calendar (C)
+  registerShortcut({
+    id: 'nav-calendar',
+    keys: ['C'],
+    scope: 'app',
+    group: 'navigation',
+    description: 'shortcutNavCalendar',
+    run: () => dispatchNavigate('calendar'),
+  });
+
 
   // 4. Tasks (T)
   registerShortcut({

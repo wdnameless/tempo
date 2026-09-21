@@ -222,6 +222,32 @@ export interface Translations {
   listsToTask: string;
   listsDelete: string;
 
+  navCalendar: string;
+  calendarMonth: string;
+  calendarWeek: string;
+  calendarDay: string;
+  calendarToday: string;
+  calendarNewEvent: string;
+  calendarEditEvent: string;
+  calendarDeleteEvent: string;
+  calendarEventTitle: string;
+  calendarAllDay: string;
+  calendarStart: string;
+  calendarEnd: string;
+  calendarLocation: string;
+  calendarSource: string;
+  calendarSourceLocal: string;
+  calendarSourceGoogle: string;
+  calendarSourceTask: string;
+  calendarFilterAll: string;
+  calendarShowTasks: string;
+  calendarEmptyMonth: string;
+  calendarEmptyDay: string;
+  calendarSave: string;
+  calendarCancel: string;
+  calendarConfirmDelete: string;
+  calendarTimeSlotError: string;
+
   navDay: string;
   titleDay: string;
   dayStepPlan: string;
@@ -602,6 +628,32 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     listsName: 'Название',
     listsToTask: 'В задачу',
     listsDelete: 'Удалить список',
+    navCalendar: 'Календарь',
+    calendarMonth: 'Месяц',
+    calendarWeek: 'Неделя',
+    calendarDay: 'День',
+    calendarToday: 'Сегодня',
+    calendarNewEvent: 'Новое событие',
+    calendarEditEvent: 'Редактировать событие',
+    calendarDeleteEvent: 'Удалить событие',
+    calendarEventTitle: 'Название события',
+    calendarAllDay: 'Весь день',
+    calendarStart: 'Начало',
+    calendarEnd: 'Конец',
+    calendarLocation: 'Место проведения',
+    calendarSource: 'Источник',
+    calendarSourceLocal: 'Локальный',
+    calendarSourceGoogle: 'Google',
+    calendarSourceTask: 'Задача',
+    calendarFilterAll: 'Все события',
+    calendarShowTasks: 'Показывать задачи',
+    calendarEmptyMonth: 'В этом месяце нет событий',
+    calendarEmptyDay: 'На этот день нет событий',
+    calendarSave: 'Сохранить',
+    calendarCancel: 'Отмена',
+    calendarConfirmDelete: 'Удалить это событие?',
+    calendarTimeSlotError: 'Время окончания не может быть раньше времени начала',
+
     navDay: 'День',
     titleDay: 'Планирование дня',
     dayStepPlan: 'План',
@@ -975,6 +1027,32 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     listsName: 'Name',
     listsToTask: 'To task',
     listsDelete: 'Delete list',
+    navCalendar: 'Calendar',
+    calendarMonth: 'Month',
+    calendarWeek: 'Week',
+    calendarDay: 'Day',
+    calendarToday: 'Today',
+    calendarNewEvent: 'New Event',
+    calendarEditEvent: 'Edit Event',
+    calendarDeleteEvent: 'Delete Event',
+    calendarEventTitle: 'Event Title',
+    calendarAllDay: 'All Day',
+    calendarStart: 'Start',
+    calendarEnd: 'End',
+    calendarLocation: 'Location',
+    calendarSource: 'Source',
+    calendarSourceLocal: 'Local',
+    calendarSourceGoogle: 'Google',
+    calendarSourceTask: 'Task',
+    calendarFilterAll: 'All Events',
+    calendarShowTasks: 'Show Tasks',
+    calendarEmptyMonth: 'No events in this month',
+    calendarEmptyDay: 'No events for this day',
+    calendarSave: 'Save',
+    calendarCancel: 'Cancel',
+    calendarConfirmDelete: 'Delete this event?',
+    calendarTimeSlotError: 'End time cannot be earlier than start time',
+
     navDay: 'Day',
     titleDay: 'Daily planning',
     dayStepPlan: 'Plan',
