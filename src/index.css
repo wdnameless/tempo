@@ -14,15 +14,15 @@
 }
 
 :root {
-  --bg: #0A0A0B;
-  --surface: #101012;
-  --elevated: #17171B;
-  --text: #EDEDF0;
-  --text-muted: #9A9AA5;
-  --text-faint: #5C5C66;
-  --border: #232329;
-  --accent: #F59E0B;
-  --accent-soft: rgba(245, 158, 11, 0.14);
+  --bg: #000000;
+  --surface: #0a0a0c;
+  --elevated: #111114;
+  --text: #FFFFFF;
+  --text-muted: rgba(255, 255, 255, 0.55);
+  --text-faint: rgba(255, 255, 255, 0.25);
+  --border: rgba(255, 255, 255, 0.08);
+  --accent: #FFFFFF;
+  --accent-soft: rgba(255, 255, 255, 0.12);
 }
 
 @layer base {

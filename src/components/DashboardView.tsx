@@ -5,7 +5,8 @@ import React, { useState } from "react";
 import { ThemeColors, DynamicUIConfig, AlarmItem, AISettings, TaskItem, NoteItem } from "../types";
 import { Timer } from "./Timer";
 import { Alarms } from "./Alarms";
-
+import { WinterCanvas } from "./WinterCanvas";
+import { WinterBottomPlayer } from "./WinterBottomPlayer";
 export interface DashboardViewProps {
   theme: ThemeColors;
   /** Dial and layout config, passed through to the timer and the alarm list. */
@@ -53,7 +54,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   });
   const [showWidgetPicker, setShowWidgetPicker] = useState(false);
-
+  const [ambientMode, setAmbientMode] = useState(true);
   const toggleWidget = (widgetId: string) => {
     setActiveWidgets((prev) => {
       const next = prev.includes(widgetId) ? prev.filter((id) => id !== widgetId) : [...prev, widgetId];
@@ -63,8 +64,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   };
 
 
+  if (ambientMode) {
+    return (
+      <div className="relative w-full h-full overflow-hidden bg-black select-none">
+        {/* Fullscreen Ambient Canvas matching Screenshot 1 */}
+        <WinterCanvas className="absolute inset-0" />
+
+        {/* Subtle toggle for widgets */}
+        <button
+          type="button"
+          onClick={() => setAmbientMode(false)}
+          aria-label="Виджеты"
+          className="absolute top-4 right-4 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono text-white/30 hover:text-white/80 hover:bg-white/10 transition-colors"
+        >
+          <LayoutGrid className="w-3.5 h-3.5" />
+          <span>Виджеты</span>
+        </button>
+
+        {/* Floating Bottom Player Dock matching Screenshot 1 [ ☰ | ⭘ 24:43 | ⏸ 🔊 ] */}
+        <WinterBottomPlayer />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col items-center w-full h-full space-y-4">
+    <div className="flex flex-col items-center w-full h-full space-y-4 relative">
+      {/* Ambient switch back button */}
+      <button
+        type="button"
+        onClick={() => setAmbientMode(true)}
+        className="absolute top-2 left-6 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+      >
+        <span>✦ Winter Ambient</span>
+      </button>
       {/* Main Module Content */}
       <div className="w-full flex-1 flex flex-col items-center justify-start overflow-y-auto">
         {/* Dashboard Header with Add Widget button */}

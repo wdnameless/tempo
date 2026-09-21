@@ -184,7 +184,7 @@ function MainShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     return StoreService.getPreference<boolean>('tempo_sidebar_collapsed', false);
   });
-
+  const [sidebarOverlayOpen, setSidebarOverlayOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ScreenId>('dashboard');
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
@@ -240,6 +240,7 @@ function MainShell() {
   useEffect(() => {
     const handleToggleSidebar = () => {
       soundService.playUiClick();
+      setSidebarOverlayOpen((prev) => !prev);
       setSidebarCollapsed((prev) => {
         const next = !prev;
         StoreService.setPreference('tempo_sidebar_collapsed', next);
@@ -435,8 +436,14 @@ function MainShell() {
           {/* Left Sidebar */}
           <aside
             data-testid="sidebar"
-            className={`border-r border-[var(--border)] bg-[var(--surface)] flex flex-col justify-between transition-[width] duration-200 shrink-0 ${
-              sidebarCollapsed ? 'w-14' : 'w-52'
+            className={`border-r border-white/10 bg-[#060608]/95 backdrop-blur-2xl flex flex-col justify-between transition-all duration-200 shadow-2xl z-40 ${
+              ['dashboard', 'drawings', 'stats'].includes(activeTab) ? 'absolute left-0 top-0 bottom-0' : 'relative shrink-0'
+            } ${
+              ['dashboard', 'drawings', 'stats'].includes(activeTab) && !sidebarOverlayOpen
+                ? '-translate-x-full w-14 opacity-0 pointer-events-none'
+                : sidebarCollapsed
+                ? 'w-14'
+                : 'translate-x-0 w-52 opacity-100'
             }`}
           >
             <div className="flex flex-col p-2 gap-1">
@@ -503,7 +510,7 @@ function MainShell() {
 
           {/* Main content area */}
           <main className="flex-1 flex flex-col overflow-hidden bg-[var(--bg)] relative">
-            <div className="flex-1 overflow-y-auto overflow-x-hidden p-6">
+            <div className={`flex-1 overflow-y-auto overflow-x-hidden ${['dashboard', 'drawings', 'stats'].includes(activeTab) ? 'p-0' : 'p-6'}`}>
               {activeTab === 'dashboard' && (
                 <DashboardView
                   theme={theme}

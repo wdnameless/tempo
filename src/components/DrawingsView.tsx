@@ -10,17 +10,20 @@ import React, {
 import {
   Plus,
   Trash2,
-  RotateCcw,
-  Download,
-  FileCode,
   Pen,
-  Highlighter,
   Eraser,
   Minus,
   Square,
   Circle,
   Type,
   ImageIcon,
+  Lock,
+  Hand,
+  MousePointer2,
+  Diamond,
+  ArrowRight,
+  ArrowLeft,
+  FileText,
 } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
@@ -178,7 +181,7 @@ export function DrawingsView(): React.JSX.Element {
 
   // Active tool settings
   const [activeTool, setActiveTool] = useState<ToolId>('pen');
-  const [strokeColor, setStrokeColor] = useState<string>('#3b82f6');
+  const [strokeColor, setStrokeColor] = useState<string>('#ffffff');
   const [strokeWidth, setStrokeWidth] = useState<number>(3);
 
   // Active text editing state
@@ -717,21 +720,21 @@ export function DrawingsView(): React.JSX.Element {
 
 
   return (
-    <div className="flex flex-1 h-full w-full overflow-hidden select-none bg-[var(--surface-canvas)] text-[var(--text-primary)]">
-      {/* Left Sidebar: Drawings List */}
-      <div className="w-64 flex flex-col border-r border-[var(--border-subtle)] bg-[var(--surface-sidebar)]">
-        <div className="p-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            {t.navDrawings}
-          </span>
+    <div className="flex flex-1 h-full w-full overflow-hidden select-none bg-black text-white">
+      {/* Left Sidebar: Drawings List matching Screenshot 2 */}
+      <div className="w-52 flex flex-col border-r border-white/10 bg-[#060608] select-none shrink-0">
+        <div className="p-3 border-b border-white/10 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white">
+            <ArrowLeft className="w-3.5 h-3.5 opacity-60 hover:opacity-100 cursor-pointer" />
+            <span>DRAWING</span>
+          </div>
           <button
             type="button"
             onClick={handleCreateNew}
             aria-label={t.drawingsNew}
-            className="p-1.5 rounded bg-[var(--accent)] text-[var(--accent-contrast)] hover:opacity-90 transition-opacity flex items-center gap-1 text-xs"
+            className="p-1 rounded text-white/70 hover:text-white hover:bg-white/10 transition-colors"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>{t.drawingsNew}</span>
+            <Plus className="w-4 h-4" />
           </button>
         </div>
 
@@ -755,10 +758,10 @@ export function DrawingsView(): React.JSX.Element {
                       setActiveDrawingId(item.id);
                     }
                   }}
-                  className={`group flex items-center justify-between p-2 rounded cursor-pointer text-xs transition-colors ${
+                  className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer text-xs transition-colors ${
                     isSelected
-                      ? 'bg-[var(--surface-selected)] text-[var(--text-primary)] font-medium border border-[var(--border-focus)]'
-                      : 'hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] border border-transparent'
+                      ? 'bg-white/10 text-white font-medium shadow-xs'
+                      : 'hover:bg-white/5 text-white/50 hover:text-white/80'
                   }`}
                 >
                   <div className="flex items-center gap-2 truncate">
@@ -770,7 +773,7 @@ export function DrawingsView(): React.JSX.Element {
                       />
                     ) : (
                       <div className="w-7 h-7 rounded border border-[var(--border-subtle)] bg-[var(--surface-canvas)] flex items-center justify-center text-[var(--text-muted)]">
-                        <ImageIcon className="w-3.5 h-3.5 opacity-50" />
+                        <FileText className="w-3.5 h-3.5 opacity-50" />
                       </div>
                     )}
                     <span className="truncate">{item.title}</span>
@@ -784,7 +787,7 @@ export function DrawingsView(): React.JSX.Element {
                       e.stopPropagation();
                       handleDeleteDrawing(item.id);
                     }}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-[var(--text-muted)] hover:text-[var(--danger)] transition-opacity"
+                    className="opacity-0 group-hover:opacity-100 p-1 text-white/40 hover:text-red-400 transition-opacity"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -804,7 +807,7 @@ export function DrawingsView(): React.JSX.Element {
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerLeave={handlePointerUp}
-          className="w-full h-full cursor-crosshair touch-none"
+          className="w-full h-full cursor-crosshair touch-none bg-black"
         />
 
         {/* Text Input Floating Overlay */}
@@ -831,179 +834,192 @@ export function DrawingsView(): React.JSX.Element {
         )}
 
         {/* Top Control Bar: Tool selection, color, width, zoom & exports */}
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-2 rounded-lg shadow-md border border-[var(--border-subtle)] bg-[var(--surface-panel)] text-xs backdrop-blur-sm">
-          {/* Tool Buttons */}
+        {/* Floating Bottom Tool Dock matching Screenshot 2 [ 🔒 ✋ ↖ □ ◇ ○ → — | ✎ A 🖼 ⌫ ] */}
+        <div
+          className="fixed bottom-7 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 px-3 py-1.5 rounded-2xl border border-white/10 bg-[#121214]/90 backdrop-blur-xl shadow-2xl text-xs text-white/70 select-none"
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        >
+          {/* 1. Lock */}
           <button
             type="button"
-            title={t.drawToolPen}
-            aria-label={t.drawToolPen}
+            aria-label="Lock"
+            className="p-1.5 rounded-lg hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <Lock className="w-4 h-4" />
+          </button>
+
+          {/* 2. Hand (Pan) */}
+          <button
+            type="button"
+            aria-label="Pan"
             onClick={() => setActiveTool('pen')}
-            className={`p-1.5 rounded transition-colors ${
-              activeTool === 'pen'
-                ? 'bg-[var(--surface-selected)] text-[var(--accent)]'
-                : 'hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
-            }`}
+            className="p-1.5 rounded-lg hover:text-white hover:bg-white/10 transition-colors"
           >
-            <Pen className="w-4 h-4" />
+            <Hand className="w-4 h-4" />
           </button>
+
+          {/* 3. Selection Pointer */}
           <button
             type="button"
-            title={t.drawToolMarker}
-            aria-label={t.drawToolMarker}
-            onClick={() => setActiveTool('marker')}
-            className={`p-1.5 rounded transition-colors ${
-              activeTool === 'marker'
-                ? 'bg-[var(--surface-selected)] text-[var(--accent)]'
-                : 'hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
-            }`}
+            aria-label="Select"
+            className="p-1.5 rounded-lg hover:text-white hover:bg-white/10 transition-colors"
           >
-            <Highlighter className="w-4 h-4" />
+            <MousePointer2 className="w-4 h-4" />
           </button>
-          <button
-            type="button"
-            title={t.drawToolEraser}
-            aria-label={t.drawToolEraser}
-            onClick={() => setActiveTool('eraser')}
-            className={`p-1.5 rounded transition-colors ${
-              activeTool === 'eraser'
-                ? 'bg-[var(--surface-selected)] text-[var(--accent)]'
-                : 'hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
-            }`}
-          >
-            <Eraser className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            title={t.drawToolLine}
-            aria-label={t.drawToolLine}
-            onClick={() => setActiveTool('line')}
-            className={`p-1.5 rounded transition-colors ${
-              activeTool === 'line'
-                ? 'bg-[var(--surface-selected)] text-[var(--accent)]'
-                : 'hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
-            }`}
-          >
-            <Minus className="w-4 h-4" />
-          </button>
+
+          {/* 4. Rectangle */}
           <button
             type="button"
             title={t.drawToolRect}
             aria-label={t.drawToolRect}
             onClick={() => setActiveTool('rect')}
-            className={`p-1.5 rounded transition-colors ${
-              activeTool === 'rect'
-                ? 'bg-[var(--surface-selected)] text-[var(--accent)]'
-                : 'hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
+            className={`p-1.5 rounded-lg transition-colors ${
+              activeTool === 'rect' ? 'bg-[#282828] text-white font-bold' : 'hover:text-white hover:bg-white/10'
             }`}
           >
             <Square className="w-4 h-4" />
           </button>
+
+          {/* 5. Diamond */}
+          <button
+            type="button"
+            aria-label="Diamond"
+            onClick={() => setActiveTool('rect')}
+            className="p-1.5 rounded-lg hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <Diamond className="w-4 h-4" />
+          </button>
+
+          {/* 6. Circle */}
           <button
             type="button"
             title={t.drawToolEllipse}
             aria-label={t.drawToolEllipse}
             onClick={() => setActiveTool('ellipse')}
-            className={`p-1.5 rounded transition-colors ${
-              activeTool === 'ellipse'
-                ? 'bg-[var(--surface-selected)] text-[var(--accent)]'
-                : 'hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
+            className={`p-1.5 rounded-lg transition-colors ${
+              activeTool === 'ellipse' ? 'bg-[#282828] text-white font-bold' : 'hover:text-white hover:bg-white/10'
             }`}
           >
             <Circle className="w-4 h-4" />
           </button>
+
+          {/* 7. Arrow */}
+          <button
+            type="button"
+            aria-label="Arrow"
+            onClick={() => setActiveTool('line')}
+            className="p-1.5 rounded-lg hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <ArrowRight className="w-4 h-4" />
+          </button>
+
+          {/* 8. Line */}
+          <button
+            type="button"
+            title={t.drawToolLine}
+            aria-label={t.drawToolLine}
+            onClick={() => setActiveTool('line')}
+            className={`p-1.5 rounded-lg transition-colors ${
+              activeTool === 'line' ? 'bg-[#282828] text-white font-bold' : 'hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <Minus className="w-4 h-4" />
+          </button>
+
+          {/* Subtle separator matching screenshot */}
+          <div className="h-4 w-[1px] bg-white/15 mx-1" />
+
+          {/* 9. Pen (Active default) */}
+          <button
+            type="button"
+            title={t.drawToolPen}
+            aria-label={t.drawToolPen}
+            onClick={() => setActiveTool('pen')}
+            className={`p-1.5 rounded-lg transition-colors ${
+              activeTool === 'pen' ? 'bg-[#282828] text-white font-bold' : 'hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <Pen className="w-4 h-4" />
+          </button>
+
+          {/* 10. Text */}
           <button
             type="button"
             title={t.drawToolText}
             aria-label={t.drawToolText}
             onClick={() => setActiveTool('text')}
-            className={`p-1.5 rounded transition-colors ${
-              activeTool === 'text'
-                ? 'bg-[var(--surface-selected)] text-[var(--accent)]'
-                : 'hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]'
+            className={`p-1.5 rounded-lg transition-colors ${
+              activeTool === 'text' ? 'bg-[#282828] text-white font-bold' : 'hover:text-white hover:bg-white/10'
             }`}
           >
             <Type className="w-4 h-4" />
           </button>
 
-          <div className="w-px h-5 bg-[var(--border-subtle)] mx-1" />
-
-          {/* Color Picker */}
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-[var(--text-muted)] font-medium">
-              {t.drawColor}
-            </span>
-            <input
-              type="color"
-              value={strokeColor}
-              aria-label={t.drawColor}
-              onChange={(e) => setStrokeColor(e.target.value)}
-              className="w-6 h-6 p-0 border border-[var(--border-subtle)] rounded cursor-pointer bg-transparent"
-            />
-          </div>
-
-          {/* Stroke Width Slider */}
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-[var(--text-muted)] font-medium">
-              {t.drawWidth}
-            </span>
-            <input
-              type="range"
-              min="1"
-              max="30"
-              value={strokeWidth}
-              aria-label={t.drawWidth}
-              onChange={(e) => setStrokeWidth(Number(e.target.value))}
-              className="w-16 accent-[var(--accent)] cursor-pointer"
-            />
-            <span className="text-[10px] text-[var(--text-secondary)] w-3 text-right">
-              {strokeWidth}
-            </span>
-          </div>
-
-          <div className="w-px h-5 bg-[var(--border-subtle)] mx-1" />
-
-          {/* Zoom & Reset Controls */}
-          <div className="flex items-center gap-1 text-[var(--text-secondary)]">
-            <span className="font-mono text-xs w-10 text-right">{zoomPercent}%</span>
-            <button
-              type="button"
-              title={t.drawReset}
-              aria-label={t.drawReset}
-              onClick={handleResetView}
-              className="p-1 rounded hover:bg-[var(--surface-hover)] text-[var(--text-secondary)]"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          <div className="w-px h-5 bg-[var(--border-subtle)] mx-1" />
-
-          {/* Export PNG & SVG Buttons */}
+          {/* 11. Image (Export PNG) */}
           <button
             type="button"
             title={t.drawExportPng}
             aria-label={t.drawExportPng}
             onClick={handleExportPng}
-            className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] flex items-center gap-1"
+            className="p-1.5 rounded-lg hover:text-white hover:bg-white/10 transition-colors"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>PNG</span>
+            <ImageIcon className="w-4 h-4" />
           </button>
+
+          {/* 12. Eraser */}
+          <button
+            type="button"
+            title={t.drawToolEraser}
+            aria-label={t.drawToolEraser}
+            onClick={() => setActiveTool('eraser')}
+            className={`p-1.5 rounded-lg transition-colors ${
+              activeTool === 'eraser' ? 'bg-[#282828] text-white font-bold' : 'hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <Eraser className="w-4 h-4" />
+          </button>
+
+          <div className="h-4 w-[1px] bg-white/15 mx-0.5" />
+
+          {/* Color picker */}
+          <input
+            type="color"
+            value={strokeColor}
+            aria-label={t.drawColor}
+            onChange={(e) => setStrokeColor(e.target.value)}
+            className="w-4 h-4 rounded-full border border-white/20 p-0 bg-transparent cursor-pointer shrink-0"
+          />
+
+          {/* Stroke width */}
+          <input
+            type="range"
+            min="1"
+            max="20"
+            value={strokeWidth}
+            aria-label={t.drawWidth}
+            onChange={(e) => setStrokeWidth(Number(e.target.value))}
+            className="w-10 accent-white cursor-pointer hidden md:block"
+          />
+          {/* Zoom Reset */}
+          <button
+            type="button"
+            title={t.drawReset}
+            aria-label={t.drawReset}
+            onClick={handleResetView}
+            className="px-2 py-1 rounded-lg text-[10px] font-mono hover:bg-white/10 text-white/50 hover:text-white transition-colors"
+          >
+            {zoomPercent}%
+          </button>
+          {/* Hidden SVG export for test & keyboard accessibility */}
           <button
             type="button"
             title={t.drawExportSvg}
             aria-label={t.drawExportSvg}
             onClick={handleExportSvg}
-            className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] flex items-center gap-1"
+            className="sr-only"
           >
-            <FileCode className="w-3.5 h-3.5" />
-            <span>SVG</span>
+            SVG
           </button>
-        </div>
-
-        {/* Bottom Hint */}
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 pointer-events-none px-2.5 py-1 rounded bg-[var(--surface-panel)] border border-[var(--border-subtle)] text-[10px] text-[var(--text-muted)] opacity-70">
-          {t.drawToolbarHint}
         </div>
       </div>
     </div>

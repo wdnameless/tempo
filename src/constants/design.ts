@@ -9,16 +9,17 @@ export interface Palette {
 }
 
 export const PALETTE: Palette = {
-  bg: '#0A0A0B',
-  surface: '#101012',
-  elevated: '#17171B',
-  text: '#EDEDF0',
-  textMuted: '#9A9AA5',
-  textFaint: '#5C5C66',
-  border: '#232329',
+  bg: '#000000',
+  surface: '#0A0A0C',
+  elevated: '#111114',
+  text: '#FFFFFF',
+  textMuted: 'rgba(255, 255, 255, 0.55)',
+  textFaint: 'rgba(255, 255, 255, 0.25)',
+  border: 'rgba(255, 255, 255, 0.08)',
 };
 
 export type AccentId =
+  | 'white'
   | 'amber'
   | 'orange'
   | 'red'
@@ -28,9 +29,10 @@ export type AccentId =
   | 'teal'
   | 'green';
 
-export const DEFAULT_ACCENT: AccentId = 'amber';
+export const DEFAULT_ACCENT: AccentId = 'white';
 
 export const ACCENTS: Record<AccentId, string> = {
+  white: '#FFFFFF',
   amber: '#F59E0B',
   orange: '#F97316',
   red: '#EF4444',

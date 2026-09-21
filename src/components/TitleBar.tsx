@@ -1,5 +1,5 @@
 import React from 'react';
-import { Minus, X, Maximize2, Minimize2, Pin, PinOff, Hourglass, PictureInPicture2, Globe, RefreshCw } from 'lucide-react';
+import { Minus, X, Maximize2, Minimize2, Pin, PinOff, PictureInPicture2, Globe, RefreshCw } from 'lucide-react';
 import { ThemeColors } from '../types';
 import { WindowService } from '../services/window';
 
@@ -35,16 +35,16 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         if ((e.target as HTMLElement).closest('button')) return;
         WindowService.startDragging();
       }}
-      className="w-full flex items-center justify-between px-3 py-2 select-none cursor-move transition-colors bg-[var(--bg)] border-b border-[var(--border)]"
+      className="w-full flex items-center justify-between px-4 py-2.5 select-none cursor-move transition-colors bg-black/60 backdrop-blur-md border-b border-white/5"
     >
       <div className="flex items-center space-x-1.5 cursor-pointer" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {!isCompact && (
-          <>
-            <Hourglass size={13} className="text-[var(--text-muted)]" />
-            <span className="text-xs font-bold tracking-wider uppercase opacity-75 hover:opacity-100 text-[var(--text-muted)]">
-              Tempo
+          <div className="flex flex-col select-none">
+            <span className="text-sm font-extrabold tracking-[0.2em] uppercase text-white font-sans leading-tight">
+              WINTER
             </span>
-          </>
+            <div className="w-5 h-[2px] bg-white mt-0.5 rounded-full" />
+          </div>
         )}
         {isCompact && (
           <div className="flex items-center space-x-1">
@@ -75,7 +75,11 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         )}
       </div>
 
-      <div className="flex items-center space-x-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+      <div className="flex items-center space-x-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        <div className="flex flex-col items-end mr-2 select-none leading-none opacity-60 hover:opacity-90 transition-opacity">
+          <span className="text-[11px] font-mono tracking-widest font-bold text-white">IOIO</span>
+          <span className="text-[9px] font-mono text-white/50 tracking-wider mt-0.5">V.0.0.31</span>
+        </div>
         {/* Language switch RU/EN */}
         {onToggleLang && (
           <button

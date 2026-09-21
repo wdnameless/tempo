@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { themeFromTokens } from '../themes';
-import { ACCENTS, type AccentId } from '../design';
+import { ACCENTS, DEFAULT_ACCENT, type AccentId } from '../design';
 
 const accentIds = Object.keys(ACCENTS) as AccentId[];
 
@@ -25,7 +25,7 @@ describe('themeFromTokens bridge', () => {
   it('falls back to default accent when given invalid accent', () => {
     // @ts-expect-error testing invalid input fallback
     const theme = themeFromTokens('invalid-theme-id');
-    expect(theme.accent).toBe(ACCENTS.amber);
-    expect(theme.id).toBe('amber');
+    expect(theme.accent).toBe(ACCENTS[DEFAULT_ACCENT]);
+    expect(theme.id).toBe(DEFAULT_ACCENT);
   });
 });
