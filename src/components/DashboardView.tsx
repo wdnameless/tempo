@@ -95,7 +95,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         onClick={() => setAmbientMode(true)}
         className="absolute top-2 left-6 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-white/50 hover:text-white hover:bg-white/10 transition-colors"
       >
-        <span>✦ Winter Ambient</span>
+        <span>✦ Эмбиент</span>
       </button>
       {/* Main Module Content */}
       <div className="w-full flex-1 flex flex-col items-center justify-start overflow-y-auto">

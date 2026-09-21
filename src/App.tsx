@@ -184,7 +184,6 @@ function MainShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     return StoreService.getPreference<boolean>('tempo_sidebar_collapsed', false);
   });
-  const [sidebarOverlayOpen, setSidebarOverlayOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ScreenId>('dashboard');
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
@@ -240,7 +239,6 @@ function MainShell() {
   useEffect(() => {
     const handleToggleSidebar = () => {
       soundService.playUiClick();
-      setSidebarOverlayOpen((prev) => !prev);
       setSidebarCollapsed((prev) => {
         const next = !prev;
         StoreService.setPreference('tempo_sidebar_collapsed', next);
@@ -433,17 +431,10 @@ function MainShell() {
         )}
 
         <div className="flex flex-1 overflow-hidden relative">
-          {/* Left Sidebar */}
           <aside
             data-testid="sidebar"
-            className={`border-r border-white/10 bg-[#060608]/95 backdrop-blur-2xl flex flex-col justify-between transition-all duration-200 shadow-2xl z-40 ${
-              ['dashboard', 'drawings', 'stats'].includes(activeTab) ? 'absolute left-0 top-0 bottom-0' : 'relative shrink-0'
-            } ${
-              ['dashboard', 'drawings', 'stats'].includes(activeTab) && !sidebarOverlayOpen
-                ? '-translate-x-full w-14 opacity-0 pointer-events-none'
-                : sidebarCollapsed
-                ? 'w-14'
-                : 'translate-x-0 w-52 opacity-100'
+            className={`border-r border-white/10 bg-[#060608] flex flex-col justify-between transition-[width] duration-200 shrink-0 select-none z-30 ${
+              sidebarCollapsed ? 'w-14' : 'w-52'
             }`}
           >
             <div className="flex flex-col p-2 gap-1">
@@ -458,8 +449,8 @@ function MainShell() {
                     aria-current={isActive ? 'page' : undefined}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors relative ${
                       isActive
-                        ? 'bg-[var(--accent-soft)] text-[var(--accent)] font-semibold'
-                        : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]'
+                        ? 'bg-white/10 text-white font-semibold'
+                        : 'text-white/50 hover:text-white hover:bg-white/5'
                     } ${sidebarCollapsed ? 'justify-center px-0' : ''}`}
                   >
                     <span className="shrink-0">{item.icon}</span>
@@ -469,7 +460,7 @@ function MainShell() {
               })}
             </div>
 
-            <div className="p-2 border-t border-[var(--border)] flex flex-col gap-1">
+            <div className="p-2 border-t border-white/10 flex flex-col gap-1">
               <button
                 onClick={() => {
                   soundService.playUiClick();
@@ -479,8 +470,8 @@ function MainShell() {
                 aria-label="AI Ассистент"
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                   isAiOpen
-                    ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]'
+                    ? 'bg-white/10 text-white font-semibold'
+                    : 'text-white/50 hover:text-white hover:bg-white/5'
                 } ${sidebarCollapsed ? 'justify-center px-0' : ''}`}
               >
                 <Bot size={18} className="shrink-0" />
@@ -492,7 +483,7 @@ function MainShell() {
                 onClick={handleToggleSidebar}
                 title={sidebarCollapsed ? 'Развернуть меню (Cmd+S)' : 'Свернуть меню (Cmd+S)'}
                 aria-label={sidebarCollapsed ? 'Развернуть меню' : 'Свернуть меню'}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)] transition-colors ${
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/50 hover:text-white hover:bg-white/5 transition-colors ${
                   sidebarCollapsed ? 'justify-center px-0' : ''
                 }`}
               >

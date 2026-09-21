@@ -413,9 +413,9 @@ export function RecordingsView(): React.ReactElement {
               setActiveTab('audio');
               setErrorMessage(null);
             }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
               activeTab === 'audio'
-                ? 'bg-[var(--accent)] text-[var(--accent-fg)]'
+                ? 'bg-white text-black shadow-sm'
                 : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]'
             } ${isRecording ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
@@ -429,9 +429,9 @@ export function RecordingsView(): React.ReactElement {
               setActiveTab('screen');
               setErrorMessage(null);
             }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
               activeTab === 'screen'
-                ? 'bg-[var(--accent)] text-[var(--accent-fg)]'
+                ? 'bg-white text-black shadow-sm'
                 : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]'
             } ${isRecording ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
@@ -621,9 +621,9 @@ export function RecordingsView(): React.ReactElement {
             {!isRecording ? (
               <button
                 type="button"
-                onClick={handleStart}
-                className="flex items-center gap-2 px-5 py-2 rounded-lg bg-[var(--accent)] text-[var(--accent-fg)] text-sm font-medium hover:opacity-90 transition-opacity"
-              >
+              onClick={handleStart}
+              className="flex items-center gap-2 px-5 py-2 rounded-lg bg-white text-black text-sm font-bold shadow-sm hover:opacity-90 transition-opacity"
+            >
                 <Play size={16} />
                 {t.recStart}
               </button>
@@ -649,9 +649,9 @@ export function RecordingsView(): React.ReactElement {
 
                 <button
                   type="button"
-                  onClick={handleStop}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent)] text-[var(--accent-fg)] text-sm font-medium hover:opacity-90 transition-opacity"
-                >
+                onClick={handleStop}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-black text-sm font-bold shadow-sm hover:opacity-90 transition-opacity"
+              >
                   <Square size={16} />
                   {t.recStop}
                 </button>

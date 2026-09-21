@@ -39,11 +39,11 @@ export const TitleBar: React.FC<TitleBarProps> = ({
     >
       <div className="flex items-center space-x-1.5 cursor-pointer" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {!isCompact && (
-          <div className="flex flex-col select-none">
-            <span className="text-sm font-extrabold tracking-[0.2em] uppercase text-white font-sans leading-tight">
-              WINTER
+          <div className="flex flex-col select-none pt-0.5">
+            <span className="text-sm font-black tracking-[0.25em] uppercase text-white font-sans leading-none">
+              TEMPO
             </span>
-            <div className="w-5 h-[2px] bg-white mt-0.5 rounded-full" />
+            <div className="w-5 h-[2px] bg-white mt-1 rounded-full" />
           </div>
         )}
         {isCompact && (
@@ -77,8 +77,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
       <div className="flex items-center space-x-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <div className="flex flex-col items-end mr-2 select-none leading-none opacity-60 hover:opacity-90 transition-opacity">
-          <span className="text-[11px] font-mono tracking-widest font-bold text-white">IOIO</span>
-          <span className="text-[9px] font-mono text-white/50 tracking-wider mt-0.5">V.0.0.31</span>
+          <span className="text-[11px] font-mono tracking-widest font-bold text-white">TEMPO</span>
+          <span className="text-[9px] font-mono text-white/50 tracking-wider mt-0.5">V.0.16.0</span>
         </div>
         {/* Language switch RU/EN */}
         {onToggleLang && (
