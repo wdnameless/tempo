@@ -22,7 +22,8 @@ import {
 import { parseLinks, upsertLinks, backlinksOf, type LinkRef, type BacklinkItem } from '../services/linking';
 import { renderMarkdown } from '../services/markdown';
 import { I18nService } from '../services/i18n';
-import { IconButton } from './ui';
+import { onDataChanged } from '../services/appEvents';
+import { Card, ScreenHeader, EmptyState, IconButton, Divider } from './ui';
 import type { NoteItem } from '../types';
 
 interface AutocompleteState {
@@ -95,11 +96,16 @@ export function NotesView(): React.ReactElement {
     }
   }, []);
 
-  // Initial load
+  // Initial load and live data sync
   useEffect(() => {
     void reloadNotes();
+    const unsub = onDataChanged((table) => {
+      if (table === 'notes') {
+        void reloadNotes();
+      }
+    });
+    return unsub;
   }, [reloadNotes]);
-
   /**
    * The editor's draft follows the selected note, but only until the user types.
    *
@@ -359,279 +365,327 @@ export function NotesView(): React.ReactElement {
   };
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-[var(--bg)] text-[var(--text)]">
-      {/* Left Pane: Notes List (collapses on narrow screens) */}
-      <div
-        className={`flex flex-col border-r border-[var(--border)] bg-[var(--surface)] transition-all duration-200
-          ${
-            mobileShowList
-              ? 'absolute inset-0 z-20 flex w-full md:relative md:w-64 lg:w-72'
-              : 'hidden md:flex md:w-64 lg:w-72'
-          }`}
-      >
-        {/* Header with New Note button */}
-        <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2.5">
-          <div className="flex items-center space-x-2">
-            <FileText className="h-4 w-4 text-[var(--accent)]" />
-            <span className="text-sm font-semibold tracking-tight text-[var(--text)]">
+    <div className="flex flex-col h-full w-full select-none space-y-4 text-[var(--text)]">
+      <ScreenHeader
+        title={
+          <div className="flex items-center gap-2">
+            <FileText size={18} style={{ color: 'var(--accent)' }} />
+            <span className="text-base font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
               {t.titleNotes}
             </span>
-            <span className="rounded-full bg-[var(--elevated)] border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
+            <span
+              className="text-xs px-2 py-0.5 rounded-full font-mono font-medium"
+              style={{
+                backgroundColor: 'var(--elevated)',
+                color: 'var(--text-muted)',
+                border: '1px solid var(--border)',
+              }}
+            >
               {notes.length}
             </span>
           </div>
-          <IconButton
-            icon={<Plus size={16} />}
-            label={t.notesNew}
+        }
+        action={
+          <button
+            type="button"
             onClick={handleCreateNote}
-          />
-        </div>
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] font-medium text-xs shadow-xs transition-opacity hover:opacity-90 bg-[var(--accent)] text-[var(--bg)]"
+          >
+            <Plus size={14} />
+            <span>{t.notesNew}</span>
+          </button>
+        }
+        className="pb-0"
+      />
 
-        {/* Notes Items List */}
-        <div className="flex-1 overflow-y-auto divide-y divide-[var(--border)]/30">
-          {loading ? (
-            <div className="p-4 text-center text-xs text-[var(--text-muted)]">...</div>
-          ) : notes.length === 0 ? (
-            <div className="p-8 text-center text-xs text-[var(--text-muted)]">
-              {t.notesEmpty}
-            </div>
-          ) : (
-            notes.map((item) => {
-              const isSelected = item.id === selectedNoteId;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedNoteId(item.id);
-                    setMobileShowList(false);
-                  }}
-                  className={`group relative flex w-full flex-col p-3 text-left transition-colors ${
-                    isSelected
-                      ? 'bg-[var(--accent-soft)] text-[var(--text)]'
-                      : 'hover:bg-[var(--surface-hover)] text-[var(--text-muted)]'
-                  }`}
-                >
-                  <div className="flex w-full items-center justify-between">
-                    <span
-                      className={`truncate text-sm font-medium ${
-                        isSelected ? 'text-[var(--accent)]' : 'text-[var(--text)]'
-                      }`}
+      <Card variant="surface" padding="none" className="flex flex-1 overflow-hidden min-h-0 relative border border-[var(--border)]">
+        {/* Left Pane: Notes List (collapses on narrow screens) */}
+        <div
+          className={`flex flex-col border-r border-[var(--border)] bg-[var(--surface)] transition-all duration-200
+            ${
+              mobileShowList
+                ? 'absolute inset-0 z-20 flex w-full md:relative md:w-64 lg:w-72'
+                : 'hidden md:flex md:w-64 lg:w-72'
+            }`}
+        >
+          {/* Header inside pane for mobile */}
+          <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2.5 md:hidden">
+            <span className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+              {t.titleNotes}
+            </span>
+            <IconButton
+              icon={<Plus size={16} />}
+              label={t.notesNew}
+              onClick={handleCreateNote}
+            />
+          </div>
+
+          {/* Notes Items List */}
+          <div className="flex-1 overflow-y-auto divide-y divide-[var(--border)]/40">
+            {loading ? (
+              <div className="p-4 text-center text-xs text-[var(--text-muted)]">...</div>
+            ) : notes.length === 0 ? (
+              <div className="p-4">
+                <EmptyState
+                  icon={<FileText className="w-8 h-8 text-[var(--text-faint)]" />}
+                  title={t.notesEmpty}
+                  action={
+                    <button
+                      type="button"
+                      onClick={handleCreateNote}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] font-medium text-xs shadow-xs transition-opacity hover:opacity-90 bg-[var(--accent)] text-[var(--bg)]"
                     >
-                      {getNoteLabel(item)}
-                    </span>
-                    {item.pinned && (
-                      <Pin className="h-3.5 w-3.5 flex-shrink-0 text-[var(--accent)] ml-1" />
-                    )}
-                  </div>
-                  <div className="mt-1 flex items-center justify-between text-xs text-[var(--text-muted)]">
-                    <span className="truncate pr-2">
-                      {item.body.split('\n')[0] || ''}
-                    </span>
-                    <span className="flex-shrink-0 text-[10px]">
-                      {new Date(item.updatedAt).toLocaleDateString(undefined, {
-                        month: 'numeric',
-                        day: 'numeric',
-                      })}
-                    </span>
-                  </div>
-                </button>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      {/* Right Pane: Selected Note Editor / Preview & Backlinks */}
-      <div className="relative flex flex-1 flex-col overflow-hidden bg-[var(--bg)]">
-        {currentNote ? (
-          <>
-            {/* Editor Toolbar */}
-            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2 bg-[var(--surface)] select-none">
-              <div className="flex items-center space-x-2">
-                {/* Back to list on narrow viewport */}
-                <button
-                  type="button"
-                  onClick={() => setMobileShowList(true)}
-                  className="flex items-center text-xs text-[var(--text-muted)] hover:text-[var(--text)] md:hidden"
-                >
-                  <ChevronLeft className="mr-1 h-4 w-4" />
-                  {t.titleNotes}
-                </button>
-
-                {/* Broken link warning */}
-                {hasBrokenLink && (
-                  <div className="flex items-center space-x-1 text-[var(--phase-focus,#F59E0B)] text-xs px-2 py-0.5 rounded-md bg-[var(--phase-focus,#F59E0B)]/10 border border-[var(--phase-focus,#F59E0B)]/20">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    <span>{t.notesBrokenLink}</span>
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center space-x-1">
-                {/* Preview toggle */}
-                <IconButton
-                  icon={isPreview ? <Edit3 size={16} /> : <Eye size={16} />}
-                  label={t.notesPreview}
-                  active={isPreview}
-                  onClick={() => setIsPreview(!isPreview)}
-                />
-
-                {/* Pin toggle */}
-                <IconButton
-                  icon={currentNote.pinned ? <PinOff size={16} /> : <Pin size={16} />}
-                  label={currentNote.pinned ? t.notesUnpin : t.notesPin}
-                  active={currentNote.pinned}
-                  onClick={() => handleTogglePin(currentNote.id)}
-                />
-
-                {/* Delete note */}
-                <IconButton
-                  icon={<Trash2 size={16} />}
-                  label={t.notesDelete}
-                  onClick={() => handleDeleteNote(currentNote.id)}
+                      <Plus size={14} />
+                      <span>{t.notesNew}</span>
+                    </button>
+                  }
                 />
               </div>
-            </div>
-
-            {/* Main Content Area */}
-            <div className="flex flex-1 flex-col overflow-y-auto p-4 md:p-6 space-y-4">
-              {/* Title Input */}
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onBlur={handleTitleBlur}
-                placeholder={t.titleNotes}
-                className="w-full bg-transparent text-lg font-semibold tracking-tight text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none"
-              />
-
-              {/* Body: Edit or Preview */}
-              <div className="relative flex-1 min-h-[220px]">
-                {isPreview ? (
-                  <div
-                    data-testid="notes-markdown-preview"
-                    className="prose dark:prose-invert max-w-none text-[var(--text)] leading-relaxed"
+            ) : (
+              notes.map((item) => {
+                const isSelected = item.id === selectedNoteId;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedNoteId(item.id);
+                      setMobileShowList(false);
+                    }}
+                    className={`group relative flex w-full flex-col p-3 text-left transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'bg-[var(--accent-soft)] text-[var(--text)]'
+                        : 'hover:bg-[var(--elevated)] text-[var(--text-muted)]'
+                    }`}
                   >
-                    {renderMarkdown(body, 'preview-')}
-                  </div>
-                ) : (
-                  <>
-                    <textarea
-                      ref={textareaRef}
-                      value={body}
-                      onChange={handleBodyChange}
-                      onBlur={handleBodyBlur}
-                      onKeyDown={handleKeyDown}
-                      placeholder={t.notesBody}
-                      className="h-full min-h-[260px] w-full resize-none bg-transparent font-mono text-sm leading-relaxed text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none"
-                    />
-
-                    {/* Autocomplete Popup */}
-                    {autocomplete && (
-                      <div
-                        data-testid="notes-autocomplete"
-                        className="absolute left-4 top-16 z-30 w-72 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] shadow-lg overflow-hidden"
+                    <div className="flex w-full items-center justify-between">
+                      <span
+                        className={`truncate text-sm font-medium ${
+                          isSelected ? 'text-[var(--accent)]' : 'text-[var(--text)]'
+                        }`}
                       >
-                        <div className="px-3 py-1.5 text-[11px] font-medium text-[var(--text-muted)] border-b border-[var(--border)]">
-                          {t.notesLinkHint}
-                        </div>
-                        <div className="max-h-48 overflow-y-auto py-1">
-                          {suggestions.length > 0 ? (
-                            suggestions.map((suggestion, index) => {
-                              const isSelected = index === autocomplete.selectedIndex;
-                              return (
-                                <button
-                                  key={suggestion}
-                                  type="button"
-                                  onClick={() => void insertLink(suggestion)}
-                                  className={`flex w-full items-center px-3 py-1.5 text-left text-xs ${
-                                    isSelected
-                                      ? 'bg-[var(--accent)] text-[var(--bg)]'
-                                      : 'text-[var(--text)] hover:bg-[var(--surface-hover)]'
-                                  }`}
-                                >
-                                  <LinkIcon className="mr-2 h-3.5 w-3.5 opacity-70" />
-                                  <span className="truncate">{suggestion}</span>
-                                </button>
-                              );
-                            })
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void handleCreateTargetAndLink(autocomplete.query)
-                              }
-                              className="flex w-full items-center px-3 py-1.5 text-left text-xs bg-[var(--accent-soft)] text-[var(--accent)] hover:bg-[var(--accent)]/20"
-                            >
-                              <Plus className="mr-2 h-3.5 w-3.5" />
-                              <span className="truncate">
-                                {t.notesCreateTarget.replace(
-                                  '{title}',
-                                  autocomplete.query
-                                )}
-                              </span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
+                        {getNoteLabel(item)}
+                      </span>
+                      {item.pinned && (
+                        <Pin className="h-3.5 w-3.5 flex-shrink-0 text-[var(--accent)] ml-1" />
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-xs text-[var(--text-muted)]">
+                      <span className="truncate pr-2">
+                        {item.body.split('\n')[0] || ''}
+                      </span>
+                      <span className="flex-shrink-0 text-[10px] text-[var(--text-faint)]">
+                        {new Date(item.updatedAt).toLocaleDateString(undefined, {
+                          month: 'numeric',
+                          day: 'numeric',
+                        })}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
 
-              {/* Backlinks Panel */}
-              <div data-testid="notes-backlinks-panel" className="mt-8 border-t border-[var(--border)] pt-4">
-                <div className="flex items-center space-x-2 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
-                  <LinkIcon className="h-3.5 w-3.5" />
-                  <span>{t.notesBacklinks}</span>
-                  {backlinks.length > 0 && (
-                    <span className="rounded-full bg-[var(--border)]/40 px-1.5 py-0.2 text-[10px]">
-                      {backlinks.length}
-                    </span>
-                  )}
-                </div>
+        {/* Right Pane: Selected Note Editor / Preview & Backlinks */}
+        <div className="relative flex flex-1 flex-col overflow-hidden bg-[var(--surface)]">
+          {currentNote ? (
+            <>
+              {/* Editor Toolbar */}
+              <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2 bg-[var(--surface)] select-none">
+                <div className="flex items-center space-x-2">
+                  {/* Back to list on narrow viewport */}
+                  <button
+                    type="button"
+                    onClick={() => setMobileShowList(true)}
+                    className="flex items-center text-xs text-[var(--text-muted)] hover:text-[var(--text)] md:hidden cursor-pointer"
+                  >
+                    <ChevronLeft className="mr-1 h-4 w-4" />
+                    {t.titleNotes}
+                  </button>
 
-                <div className="mt-2">
-                  {backlinks.length === 0 ? (
-                    <p className="text-xs text-[var(--text-muted)]/60">{t.notesNoBacklinks}</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {backlinks.map((bl) => (
-                        <button
-                          key={`${bl.kind}-${bl.id}`}
-                          type="button"
-                          onClick={() => {
-                            if (bl.kind === 'note') {
-                              setSelectedNoteId(bl.id);
-                            }
-                          }}
-                          className="flex items-center space-x-1.5 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-xs text-[var(--text)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
-                        >
-                          <FileText className="h-3 w-3 text-[var(--text-muted)]" />
-                          <span>{bl.title || t.titleNotes}</span>
-                        </button>
-                      ))}
+                  {/* Broken link warning */}
+                  {hasBrokenLink && (
+                    <div className="flex items-center space-x-1 text-[var(--accent-amber,#F59E0B)] text-xs px-2 py-0.5 rounded-[6px] bg-[var(--elevated)] border border-[var(--accent-amber,#F59E0B)]/30">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      <span>{t.notesBrokenLink}</span>
                     </div>
                   )}
                 </div>
+                <div className="flex items-center space-x-1">
+                  {/* Preview toggle */}
+                  <IconButton
+                    icon={isPreview ? <Edit3 size={16} /> : <Eye size={16} />}
+                    label={t.notesPreview}
+                    active={isPreview}
+                    onClick={() => setIsPreview(!isPreview)}
+                  />
+
+                  {/* Pin toggle */}
+                  <IconButton
+                    icon={currentNote.pinned ? <PinOff size={16} /> : <Pin size={16} />}
+                    label={currentNote.pinned ? t.notesUnpin : t.notesPin}
+                    active={currentNote.pinned}
+                    onClick={() => handleTogglePin(currentNote.id)}
+                  />
+
+                  {/* Delete note */}
+                  <IconButton
+                    icon={<Trash2 size={16} />}
+                    label={t.notesDelete}
+                    onClick={() => handleDeleteNote(currentNote.id)}
+                  />
+                </div>
               </div>
-            </div>
-          </>
-        ) : (
-          /* Empty state when no note is selected or exist */
-          <div className="flex h-full flex-col items-center justify-center p-8 text-center">
-            <FileText className="h-10 w-10 text-[var(--text-faint)] mb-3" />
-            <p className="text-sm font-medium text-[var(--text)]">{t.notesEmpty}</p>
-            <div className="mt-4">
-              <IconButton
-                icon={<Plus size={16} />}
-                label={t.notesNew}
-                onClick={handleCreateNote}
+
+              {/* Main Content Area */}
+              <div className="flex flex-1 flex-col overflow-y-auto p-4 md:p-6 space-y-3">
+                {/* Title Input */}
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onBlur={handleTitleBlur}
+                  placeholder={t.titleNotes}
+                  className="w-full bg-transparent text-lg font-semibold tracking-tight text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none"
+                />
+
+                <Divider />
+
+                {/* Body: Edit or Preview */}
+                <div className="relative flex-1 min-h-[220px]">
+                  {isPreview ? (
+                    <div
+                      data-testid="notes-markdown-preview"
+                      className="prose dark:prose-invert max-w-none text-[var(--text)] leading-relaxed"
+                    >
+                      {renderMarkdown(body, 'preview-')}
+                    </div>
+                  ) : (
+                    <>
+                      <textarea
+                        ref={textareaRef}
+                        value={body}
+                        onChange={handleBodyChange}
+                        onBlur={handleBodyBlur}
+                        onKeyDown={handleKeyDown}
+                        placeholder={t.notesBody}
+                        className="h-full min-h-[260px] w-full resize-none bg-transparent font-mono text-sm leading-relaxed text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none"
+                      />
+
+                      {/* Autocomplete Popup */}
+                      {autocomplete && (
+                        <div
+                          data-testid="notes-autocomplete"
+                          className="absolute left-4 top-16 z-30 w-72 rounded-[10px] border border-[var(--border)] bg-[var(--elevated)] shadow-lg overflow-hidden"
+                        >
+                          <div className="px-3 py-1.5 text-[11px] font-medium text-[var(--text-muted)] border-b border-[var(--border)]">
+                            {t.notesLinkHint}
+                          </div>
+                          <div className="max-h-48 overflow-y-auto py-1">
+                            {suggestions.length > 0 ? (
+                              suggestions.map((suggestion, index) => {
+                                const isSelected = index === autocomplete.selectedIndex;
+                                return (
+                                  <button
+                                    key={suggestion}
+                                    type="button"
+                                    onClick={() => void insertLink(suggestion)}
+                                    className={`flex w-full items-center px-3 py-1.5 text-left text-xs ${
+                                      isSelected
+                                        ? 'bg-[var(--accent)] text-[var(--bg)]'
+                                        : 'text-[var(--text)] hover:bg-[var(--surface-hover)]'
+                                    }`}
+                                  >
+                                    <LinkIcon className="mr-2 h-3.5 w-3.5 opacity-70" />
+                                    <span className="truncate">{suggestion}</span>
+                                  </button>
+                                );
+                              })
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleCreateTargetAndLink(autocomplete.query)
+                                }
+                                className="flex w-full items-center px-3 py-1.5 text-left text-xs bg-[var(--accent-soft)] text-[var(--accent)] hover:bg-[var(--accent)]/20"
+                              >
+                                <Plus className="mr-2 h-3.5 w-3.5" />
+                                <span className="truncate">
+                                  {t.notesCreateTarget.replace(
+                                    '{title}',
+                                    autocomplete.query
+                                  )}
+                                </span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Backlinks Panel */}
+                <div data-testid="notes-backlinks-panel" className="mt-8 border-t border-[var(--border)] pt-4">
+                  <div className="flex items-center space-x-2 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                    <LinkIcon className="h-3.5 w-3.5" />
+                    <span>{t.notesBacklinks}</span>
+                    {backlinks.length > 0 && (
+                      <span className="rounded-full bg-[var(--elevated)] border border-[var(--border)] px-1.5 py-0.2 text-[10px]">
+                        {backlinks.length}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-2">
+                    {backlinks.length === 0 ? (
+                      <p className="text-xs text-[var(--text-muted)]">{t.notesNoBacklinks}</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {backlinks.map((bl) => (
+                          <button
+                            key={`${bl.kind}-${bl.id}`}
+                            type="button"
+                            onClick={() => {
+                              if (bl.kind === 'note') {
+                                setSelectedNoteId(bl.id);
+                              }
+                            }}
+                            className="flex items-center space-x-1.5 rounded-[8px] border border-[var(--border)] bg-[var(--elevated)] px-2.5 py-1 text-xs text-[var(--text)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors cursor-pointer"
+                          >
+                            <FileText className="h-3 w-3 text-[var(--text-muted)]" />
+                            <span>{bl.title || t.titleNotes}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            /* Empty state when no note is selected */
+            <div className="flex h-full flex-1 flex-col items-center justify-center p-8">
+              <EmptyState
+                icon={<FileText className="w-10 h-10 text-[var(--text-faint)]" />}
+                title={t.notesEmpty}
+                action={
+                  <button
+                    type="button"
+                    onClick={handleCreateNote}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] font-medium text-xs shadow-xs transition-opacity hover:opacity-90 bg-[var(--accent)] text-[var(--bg)]"
+                  >
+                    <Plus size={14} />
+                    <span>{t.notesNew}</span>
+                  </button>
+                }
               />
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }

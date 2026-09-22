@@ -23,6 +23,7 @@ import {
 } from '../services/tasks';
 import { StoreService } from '../services/store';
 import { I18nService } from '../services/i18n';
+import { onDataChanged } from '../services/appEvents';
 import { Row, Segmented, IconButton } from './ui';
 
 /**
@@ -98,6 +99,16 @@ export function TasksView() {
 
   useEffect(() => {
     void reload();
+  }, [reload]);
+
+  // Subscribe to data changes
+  useEffect(() => {
+    const unsubscribe = onDataChanged((table) => {
+      if (table === 'tasks') {
+        void reload();
+      }
+    });
+    return unsubscribe;
   }, [reload]);
 
   // Listen to search reveal events

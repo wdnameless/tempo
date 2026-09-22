@@ -19,10 +19,11 @@ import {
 } from '../services/stats';
 import { listTasks } from '../services/tasks';
 import { I18nService } from '../services/i18n';
+import { onDataChanged } from '../services/appEvents';
+import { Card, ScreenHeader, EmptyState } from './ui';
 import type { TaskItem } from '../types';
 import { WinterCanvas } from './WinterCanvas';
 import { WinterBottomPlayer } from './WinterBottomPlayer';
-
 export interface StatsViewProps {
   tasks?: TaskItem[];
 }
@@ -54,8 +55,16 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
       }
     };
     void load();
+
+    const unsub = onDataChanged((table) => {
+      if (table === 'tasks' || table === 'events' || table === 'lists') {
+        void load();
+      }
+    });
+
     return () => {
       active = false;
+      unsub();
     };
   }, [tasksProp]);
 
@@ -134,8 +143,8 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center p-8 text-sm text-white/50 bg-black">
-        <Clock className="w-5 h-5 animate-spin mr-2 text-white" />
+      <div className="flex-1 flex items-center justify-center p-8 text-sm text-[var(--text-muted)] bg-[var(--bg)]">
+        <Clock className="w-5 h-5 animate-spin mr-2 text-[var(--accent)]" />
         <span>Loading statistics...</span>
       </div>
     );
@@ -149,18 +158,18 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
         className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[var(--bg)] text-[var(--text)] relative h-full w-full select-none"
       >
         <WinterCanvas className="absolute inset-0" />
-        <div className="w-16 h-16 rounded-[14px] bg-[var(--elevated)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--text)] shadow-xl z-10">
-          <BarChart3 className="w-8 h-8 text-[var(--text-faint)]" />
-        </div>
-        <h2 className="text-base font-semibold text-[var(--text)] mb-1 z-10">
-          {t.statsEmptyTitle}
-        </h2>
-        <p className="text-xs text-[var(--text-muted)] max-w-sm mb-6 leading-relaxed z-10">
-          {t.statsEmptyBody}
-        </p>
-        <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] px-3 py-1.5 rounded-full bg-[var(--elevated)] border border-[var(--border)] z-10">
-          <Sparkles className="w-3.5 h-3.5 text-[var(--accent)]" />
-          <span>{t.statsEmptyHint}</span>
+        <div className="z-10 w-full max-w-md">
+          <EmptyState
+            icon={<BarChart3 className="w-8 h-8 text-[var(--text-faint)]" />}
+            title={t.statsEmptyTitle}
+            description={t.statsEmptyBody}
+            action={
+              <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] px-3 py-1.5 rounded-full bg-[var(--elevated)] border border-[var(--border)]">
+                <Sparkles className="w-3.5 h-3.5 text-[var(--accent)]" />
+                <span>{t.statsEmptyHint}</span>
+              </div>
+            }
+          />
         </div>
         <WinterBottomPlayer />
       </div>
@@ -170,54 +179,69 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
   const max7DaySec = Math.max(1, ...last7Days.map((d) => d.seconds));
 
   return (
-    <div className="relative flex-1 h-full w-full overflow-hidden bg-black text-white select-none">
+    <div className="relative flex-1 h-full w-full overflow-hidden bg-[var(--bg)] text-[var(--text)] select-none">
       {/* 1. Ambient Background Animation on Left / Full Space */}
       <WinterCanvas className="absolute inset-0" />
 
-      {/* 2. Right Floating Statistics Panel matching Screenshot 3 */}
+      {/* 2. Right Floating Statistics Panel */}
       <div className="w-full max-w-[430px] ml-auto h-full overflow-y-auto p-6 space-y-3.5 relative z-10 select-none no-scrollbar pb-24">
         {/* Header Title */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-            {t.statsTitle}
-          </h1>
-
-          {/* Hidden toggle for testing & accessibility */}
-          <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5 text-[11px]">
-            <button
-              type="button"
-              data-testid="toggle-period-day"
-              onClick={() => setPeriod('day')}
-              className={`px-2 py-0.5 rounded transition-colors ${
-                period === 'day' ? 'bg-[var(--accent)] text-[var(--bg)] font-semibold' : 'text-[var(--text-muted)]'
-              }`}
+        <ScreenHeader
+          title={
+            <div className="flex items-center gap-2">
+              <BarChart3 size={18} style={{ color: 'var(--accent)' }} />
+              <span>{t.statsTitle}</span>
+            </div>
+          }
+          action={
+            <div
+              role="radiogroup"
+              className="inline-flex p-1 rounded-[10px] items-center gap-1 bg-[var(--surface)] border border-[var(--border)]"
             >
-              {t.statsPeriodDay}
-            </button>
-            <button
-              type="button"
-              data-testid="toggle-period-week"
-              onClick={() => setPeriod('week')}
-              className={`px-2 py-0.5 rounded transition-colors ${
-                period === 'week' ? 'bg-[var(--accent)] text-[var(--bg)] font-semibold' : 'text-[var(--text-muted)]'
-              }`}
-            >
-              {t.statsPeriodWeek}
-            </button>
-          </div>
-        </div>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={period === 'day'}
+                data-testid="toggle-period-day"
+                onClick={() => setPeriod('day')}
+                className={`px-2.5 py-1 text-xs font-medium rounded-[6px] transition-all duration-150 cursor-pointer select-none ${
+                  period === 'day'
+                    ? 'bg-[var(--accent)] text-[var(--bg)] font-semibold shadow-xs'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                {t.statsPeriodDay}
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={period === 'week'}
+                data-testid="toggle-period-week"
+                onClick={() => setPeriod('week')}
+                className={`px-2.5 py-1 text-xs font-medium rounded-[6px] transition-all duration-150 cursor-pointer select-none ${
+                  period === 'week'
+                    ? 'bg-[var(--accent)] text-[var(--bg)] font-semibold shadow-xs'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                {t.statsPeriodWeek}
+              </button>
+            </div>
+          }
+          className="pb-1"
+        />
 
-        {/* Card 1: Focus Activity (Screenshot 3 top card) */}
-        <div className="p-4 rounded-[14px] bg-[var(--surface)] border border-[var(--border)] shadow-sm space-y-3">
-          <div className="flex items-center justify-between text-xs font-semibold text-white">
+        {/* Card 1: Focus Activity */}
+        <Card variant="surface" padding="md" className="space-y-3">
+          <div className="flex items-center justify-between text-xs font-semibold text-[var(--text)]">
             <span>Focus Activity</span>
-            {/* 5-step legend squares matching Screenshot 3 */}
+            {/* 5-step legend squares */}
             <div className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-[1px] bg-white/15" />
-              <span className="w-1.5 h-1.5 rounded-[1px] bg-white/35" />
-              <span className="w-1.5 h-1.5 rounded-[1px] bg-white/60" />
-              <span className="w-1.5 h-1.5 rounded-[1px] bg-white/80" />
-              <span className="w-1.5 h-1.5 rounded-[1px] bg-white" />
+              <span className="w-1.5 h-1.5 rounded-[1px] bg-[var(--text)] opacity-15" />
+              <span className="w-1.5 h-1.5 rounded-[1px] bg-[var(--text)] opacity-35" />
+              <span className="w-1.5 h-1.5 rounded-[1px] bg-[var(--text)] opacity-60" />
+              <span className="w-1.5 h-1.5 rounded-[1px] bg-[var(--text)] opacity-80" />
+              <span className="w-1.5 h-1.5 rounded-[1px] bg-[var(--text)]" />
             </div>
           </div>
 
@@ -235,39 +259,39 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
                 title={`${b.date}: ${formatFocus(b.seconds)}`}
                 className="w-3.5 h-3.5 rounded-[2px] transition-transform hover:scale-125"
                 style={{
-                  backgroundColor: b.seconds > 0 ? '#ffffff' : '#141416',
+                  backgroundColor: b.seconds > 0 ? 'var(--accent)' : 'var(--elevated)',
                   opacity: b.seconds === 0 ? 0.35 : Math.max(0.4, Math.min(1.0, b.seconds / 7200)),
                 }}
               />
             ))}
           </div>
-        </div>
+        </Card>
 
-        {/* Card 2: Current Streak (Screenshot 3 middle card) */}
-        <div className="p-4 rounded-[14px] bg-[var(--surface)] border border-[var(--border)] shadow-sm flex items-center justify-between relative overflow-hidden">
+        {/* Card 2: Current Streak */}
+        <Card variant="surface" padding="md" className="flex items-center justify-between relative overflow-hidden">
           <div className="space-y-1 z-10">
-            <div className="text-xs font-semibold text-white">Current Streak</div>
+            <div className="text-xs font-semibold text-[var(--text)]">Current Streak</div>
             <div className="flex items-baseline gap-1.5">
               <span
                 data-testid="current-streak"
-                className="text-4xl font-black text-white font-sans tracking-tight leading-none"
+                className="text-4xl font-black text-[var(--text)] font-sans tracking-tight leading-none"
               >
                 {streakCurrent}
               </span>
-              <span className="text-xs text-white/50">days</span>
+              <span className="text-xs text-[var(--text-muted)]">days</span>
             </div>
-            <div className="text-[11px] text-white/40">
+            <div className="text-[11px] text-[var(--text-faint)]">
               Longest: {streakLongest}
             </div>
           </div>
 
-          {/* Right side: Glowing smooth white area sparkline curve matching Screenshot 3 */}
+          {/* Right side: Glowing smooth area sparkline curve */}
           <div className="w-36 h-16 relative">
             <svg viewBox="0 0 140 60" className="w-full h-full overflow-visible">
               <defs>
                 <linearGradient id="winterStreakGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#ffffff" stopOpacity="0.35" />
-                  <stop offset="100%" stopColor="#ffffff" stopOpacity="0.0" />
+                  <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.35" />
+                  <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.0" />
                 </linearGradient>
               </defs>
               <path
@@ -277,19 +301,19 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
               <path
                 d="M 0 55 C 35 55, 65 52, 95 28 C 115 12, 128 5, 140 18"
                 fill="none"
-                stroke="#ffffff"
+                stroke="var(--accent)"
                 strokeWidth="2.5"
                 strokeLinecap="round"
               />
             </svg>
           </div>
-        </div>
+        </Card>
 
-        {/* Card 3: Focused Time (Screenshot 3 bottom card) */}
-        <div className="p-4 rounded-[14px] bg-[var(--surface)] border border-[var(--border)] shadow-sm space-y-3">
-          <div className="flex items-center justify-between text-xs font-semibold text-white">
+        {/* Card 3: Focused Time */}
+        <Card variant="surface" padding="md" className="space-y-3">
+          <div className="flex items-center justify-between text-xs font-semibold text-[var(--text)]">
             <span>Focused Time</span>
-            <span className="text-[10px] font-mono tracking-widest text-white/40 uppercase">
+            <span className="text-[10px] font-mono tracking-widest text-[var(--text-faint)] uppercase">
               LAST 7 DAYS
             </span>
           </div>
@@ -303,10 +327,10 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
                   <div
                     className={`w-full rounded-t-sm transition-all duration-300 ${
                       d.isToday
-                        ? 'bg-white'
+                        ? 'bg-[var(--accent)]'
                         : d.seconds > 0
-                        ? 'bg-white/60 hover:bg-white/90'
-                        : 'bg-white/10'
+                        ? 'bg-[var(--accent)] opacity-60 hover:opacity-90'
+                        : 'bg-[var(--elevated)]'
                     }`}
                     style={{ height: `${heightPct}%` }}
                     title={`${d.key}: ${formatFocus(d.seconds)}`}
@@ -316,24 +340,23 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
             })}
           </div>
 
-          {/* 7 Day pill buttons with active underline bar matching Screenshot 3 */}
-          <div className="grid grid-cols-7 gap-1 pt-2 border-t border-white/5 text-center">
+          {/* 7 Day pill buttons with active underline bar */}
+          <div className="grid grid-cols-7 gap-1 pt-2 border-t border-[var(--border)] text-center">
             {last7Days.map((d) => (
-              <div key={d.key} className="flex flex-col items-center py-1">
-                <span className="text-[10px] text-white/45 font-medium">{d.weekday}</span>
-                <span className={`text-xs font-bold mt-0.5 ${d.isToday ? 'text-white' : 'text-white/80'}`}>
+               <div key={d.key} className="flex flex-col items-center py-1">
+                <span className="text-[10px] text-[var(--text-faint)] font-medium">{d.weekday}</span>
+                <span className={`text-xs font-bold mt-0.5 ${d.isToday ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}>
                   {d.dayNum}
                 </span>
                 {d.isToday ? (
-                  <div className="w-4 h-[2px] bg-white rounded-full mt-1.5" />
+                  <div className="w-4 h-[2px] bg-[var(--accent)] rounded-full mt-1.5" />
                 ) : (
                   <div className="w-4 h-[2px] mt-1.5" />
                 )}
               </div>
             ))}
           </div>
-        </div>
-
+        </Card>
         {/* Hidden test and compatibility elements for StatsView.test.tsx */}
         <div className="sr-only" aria-hidden="true">
           <span data-testid="period-focus-label">

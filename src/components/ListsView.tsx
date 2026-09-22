@@ -21,6 +21,7 @@ import {
   moveListItemToTask,
 } from '../services/tasks';
 import { I18nService } from '../services/i18n';
+import { onDataChanged } from '../services/appEvents';
 import { Row, IconButton } from './ui';
 
 export function ListsView() {
@@ -52,6 +53,16 @@ export function ListsView() {
 
   useEffect(() => {
     void reload();
+  }, [reload]);
+
+  // Subscribe to data changes
+  useEffect(() => {
+    const unsubscribe = onDataChanged((table) => {
+      if (table === 'lists' || table === 'tasks') {
+        void reload();
+      }
+    });
+    return unsubscribe;
   }, [reload]);
 
   // Handle reveal event from search palette

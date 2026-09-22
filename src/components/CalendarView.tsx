@@ -8,8 +8,10 @@ import {
   X,
   CheckCircle2,
   Circle,
+  Calendar as CalendarIcon,
 } from 'lucide-react';
 import { I18nService } from '../services/i18n';
+import { onDataChanged } from '../services/appEvents';
 import {
   listEvents,
   createLocalEvent,
@@ -32,7 +34,7 @@ import {
   tasksToCalendarEvents,
   formatCalendarPeriod,
 } from '../services/calendar';
-import { Segmented, type SegmentOption } from './ui';
+import { Card, ScreenHeader, Segmented, type SegmentOption, Field } from './ui';
 
 export function CalendarView() {
   const t = I18nService.t();
@@ -79,8 +81,13 @@ export function CalendarView() {
 
   useEffect(() => {
     void reloadData();
+    const unsub = onDataChanged((table) => {
+      if (table === 'events' || table === 'tasks') {
+        void reloadData();
+      }
+    });
+    return unsub;
   }, [reloadData]);
-
   // Combined events and task-events
   const allEvents = useMemo(() => {
     let combined: CalendarEvent[] = [...events];
@@ -249,117 +256,125 @@ export function CalendarView() {
 
   return (
     <div
-      className="flex flex-col h-full w-full overflow-hidden select-none"
+      className="flex flex-col h-full w-full select-none space-y-4"
       style={{ backgroundColor: 'var(--bg)', color: 'var(--text)' }}
     >
-      {/* Header toolbar */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border)] shrink-0 flex-wrap gap-3 select-none">
-        {/* Left: Navigation & Period Title */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center rounded-md border border-[var(--border)] bg-[var(--surface)] p-0.5">
+      {/* Header bar */}
+      <ScreenHeader
+        title={
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <CalendarIcon size={18} style={{ color: 'var(--accent)' }} />
+              <span className="text-base font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+                {formatCalendarPeriod(currentDate, viewMode, I18nService.getLang())}
+              </span>
+            </div>
+            <div className="flex items-center rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-0.5">
+              <button
+                type="button"
+                aria-label="Previous"
+                onClick={handlePrev}
+                className="p-1 rounded-[6px] hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Today"
+                onClick={handleToday}
+                className="px-2.5 py-0.5 text-xs font-medium rounded-[6px] hover:bg-[var(--elevated)] transition-colors text-[var(--text)] cursor-pointer"
+              >
+                {t.calendarToday}
+              </button>
+              <button
+                type="button"
+                aria-label="Next"
+                onClick={handleNext}
+                className="p-1 rounded-[6px] hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        }
+        action={
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* View mode Segmented switcher */}
+            <Segmented
+              value={viewMode}
+              onChange={(m) => setViewMode(m)}
+              options={viewModeOptions}
+            />
+
+            {/* Show tasks toggle */}
             <button
               type="button"
-              aria-label="Previous"
-              onClick={handlePrev}
-              className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+              onClick={() => setShowTasks(!showTasks)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] border text-xs font-medium transition-colors cursor-pointer ${
+                showTasks
+                  ? 'bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent)]'
+                  : 'bg-[var(--surface)] text-[var(--text-muted)] border-[var(--border)] hover:bg-[var(--elevated)]'
+              }`}
             >
-              <ChevronLeft className="w-4 h-4" />
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>{t.calendarShowTasks}</span>
             </button>
+
+            {/* Source filter */}
+            <div className="flex items-center rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setSourceFilter('all')}
+                className={`px-2 py-1 rounded-[6px] transition-colors cursor-pointer ${
+                  sourceFilter === 'all'
+                    ? 'bg-[var(--elevated)] text-[var(--text)] font-semibold'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                {t.calendarFilterAll}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSourceFilter('local')}
+                className={`flex items-center gap-1 px-2 py-1 rounded-[6px] transition-colors cursor-pointer ${
+                  sourceFilter === 'local'
+                    ? 'bg-[var(--elevated)] text-[var(--accent)] font-semibold'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
+                <span>{t.calendarSourceLocal}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSourceFilter('google')}
+                className={`flex items-center gap-1 px-2 py-1 rounded-[6px] transition-colors cursor-pointer ${
+                  sourceFilter === 'google'
+                    ? 'bg-[var(--elevated)] text-[var(--accent-blue,#3B82F6)] font-semibold'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-[var(--accent-blue,#3B82F6)]" />
+                <span>{t.calendarSourceGoogle}</span>
+              </button>
+            </div>
+
+            {/* New Event Button */}
             <button
               type="button"
-              aria-label="Today"
-              onClick={handleToday}
-              className="px-2.5 py-1 text-xs font-medium rounded hover:bg-[var(--surface-hover)] transition-colors text-[var(--text)]"
+              onClick={() => openCreateModal()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] font-medium text-xs shadow-xs transition-opacity hover:opacity-90 bg-[var(--accent)] text-[var(--bg)] cursor-pointer"
             >
-              {t.calendarToday}
-            </button>
-            <button
-              type="button"
-              aria-label="Next"
-              onClick={handleNext}
-              className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
-            >
-              <ChevronRight className="w-4 h-4" />
+              <Plus className="w-4 h-4" />
+              <span>{t.calendarNewEvent}</span>
             </button>
           </div>
+        }
+        className="pb-0"
+      />
 
-          <h1 className="text-lg font-semibold tracking-tight text-[var(--text)]">
-            {formatCalendarPeriod(currentDate, viewMode, I18nService.getLang())}
-          </h1>
-        </div>
-
-        {/* Center: View mode Segmented switcher */}
-        <div className="flex items-center gap-2">
-          <Segmented
-            value={viewMode}
-            onChange={(m) => setViewMode(m)}
-            options={viewModeOptions}
-          />
-        </div>
-
-        {/* Right: Filters & New Event Button */}
-        <div className="flex items-center gap-2.5">
-          {/* Show tasks toggle */}
-          <button
-            type="button"
-            onClick={() => setShowTasks(!showTasks)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-colors ${
-              showTasks
-                ? 'bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent)]'
-                : 'bg-[var(--surface)] text-[var(--text-muted)] border-[var(--border)] hover:bg-[var(--surface-hover)]'
-            }`}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>{t.calendarShowTasks}</span>
-          </button>
-
-          {/* Source filter */}
-          <div className="flex items-center rounded-md border border-[var(--border)] bg-[var(--surface)] p-0.5 text-xs">
-            <button
-              type="button"
-              onClick={() => setSourceFilter('all')}
-              className={`px-2 py-1 rounded transition-colors ${
-                sourceFilter === 'all' ? 'bg-[var(--surface-hover)] text-[var(--text)] font-semibold' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
-              }`}
-            >
-              {t.calendarFilterAll}
-            </button>
-            <button
-              type="button"
-              onClick={() => setSourceFilter('local')}
-              className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
-                sourceFilter === 'local' ? 'bg-[var(--surface-hover)] text-[var(--accent)] font-semibold' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
-              <span>{t.calendarSourceLocal}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSourceFilter('google')}
-              className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
-                sourceFilter === 'google' ? 'bg-[var(--surface-hover)] text-blue-400 font-semibold' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-blue-500" />
-              <span>{t.calendarSourceGoogle}</span>
-            </button>
-          </div>
-
-          {/* New Event Button */}
-          <button
-            type="button"
-            onClick={() => openCreateModal()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium text-xs shadow-sm transition-opacity hover:opacity-90 bg-[var(--accent)] text-[var(--bg)]"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{t.calendarNewEvent}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main View Area */}
-      <div className="flex-1 overflow-y-auto min-h-0 relative">
+      <Card variant="surface" padding="none" className="flex-1 overflow-hidden min-h-0 flex flex-col border border-[var(--border)]">
+        <div className="flex-1 overflow-y-auto min-h-0 relative">
         {/* 1. MONTH VIEW */}
         {viewMode === 'month' && (
           <div className="flex flex-col h-full min-h-[600px] p-4">
@@ -713,6 +728,7 @@ export function CalendarView() {
           </div>
         )}
       </div>
+      </Card>
 
       {/* Modal Dialog for Event Creation and Editing */}
       {modalOpen && (
@@ -721,8 +737,10 @@ export function CalendarView() {
           aria-modal="true"
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
         >
-          <div
-            className="w-full max-w-md rounded-[14px] p-5 shadow-2xl border border-[var(--border)] bg-[var(--surface)] space-y-4 animate-in fade-in zoom-in-95 duration-150 text-[var(--text)]"
+          <Card
+            variant="surface"
+            padding="lg"
+            className="w-full max-w-md shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150 text-[var(--text)]"
           >
             <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
               <h2 className="text-base font-semibold tracking-tight">
@@ -731,7 +749,7 @@ export function CalendarView() {
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
-                className="p-1 rounded-md hover:bg-[var(--surface-hover)] text-[var(--text-muted)] transition-colors"
+                className="p-1 rounded-[6px] hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -739,16 +757,13 @@ export function CalendarView() {
 
             <form onSubmit={handleSaveEvent} className="space-y-4">
               {formError && (
-                <div className="p-2.5 rounded-lg bg-red-950/50 border border-red-800/60 text-red-200 text-xs">
+                <div className="p-2.5 rounded-[8px] bg-[var(--elevated)] border border-[var(--accent-red,#EF4444)]/40 text-[var(--accent-red,#EF4444)] text-xs">
                   {formError}
                 </div>
               )}
 
               {/* Title */}
-              <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
-                  {t.calendarEventTitle}
-                </label>
+              <Field label={t.calendarEventTitle} required>
                 <input
                   autoFocus
                   type="text"
@@ -756,9 +771,9 @@ export function CalendarView() {
                   value={formTitle}
                   onChange={(e) => setFormTitle(e.target.value)}
                   placeholder="e.g. Weekly Strategy Sync"
-                  className="w-full px-3 py-2 rounded-md border text-sm bg-[var(--bg)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none"
+                  className="w-full px-3 py-2 rounded-[8px] border text-sm bg-[var(--elevated)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none"
                 />
-              </div>
+              </Field>
 
               {/* All-day toggle */}
               <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
@@ -772,70 +787,58 @@ export function CalendarView() {
               </label>
 
               {/* Date */}
-              <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
-                  Дата
-                </label>
+              <Field label="Дата" required>
                 <input
                   type="date"
                   required
                   value={formDate}
                   onChange={(e) => setFormDate(e.target.value)}
-                  className="w-full px-3 py-1.5 rounded-md border text-sm bg-[var(--bg)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none font-mono"
+                  className="w-full px-3 py-1.5 rounded-[8px] border text-sm bg-[var(--elevated)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none font-mono"
                 />
-              </div>
+              </Field>
 
               {/* Time inputs if not all-day */}
               {!formAllDay && (
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
-                      {t.calendarStart}
-                    </label>
+                  <Field label={t.calendarStart} required>
                     <input
                       type="time"
                       required
                       value={formStartTime}
                       onChange={(e) => setFormStartTime(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-md border text-sm bg-[var(--bg)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none font-mono"
+                      className="w-full px-3 py-1.5 rounded-[8px] border text-sm bg-[var(--elevated)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none font-mono"
                     />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
-                      {t.calendarEnd}
-                    </label>
+                  </Field>
+                  <Field label={t.calendarEnd} required>
                     <input
                       type="time"
                       required
                       value={formEndTime}
                       onChange={(e) => setFormEndTime(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-md border text-sm bg-[var(--bg)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none font-mono"
+                      className="w-full px-3 py-1.5 rounded-[8px] border text-sm bg-[var(--elevated)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none font-mono"
                     />
-                  </div>
+                  </Field>
                 </div>
               )}
 
               {/* Location */}
-              <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
-                  {t.calendarLocation}
-                </label>
+              <Field label={t.calendarLocation}>
                 <input
                   type="text"
                   value={formLocation}
                   onChange={(e) => setFormLocation(e.target.value)}
                   placeholder="Online / Office 402"
-                  className="w-full px-3 py-2 rounded-md border text-sm bg-[var(--bg)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none"
+                  className="w-full px-3 py-2 rounded-[8px] border text-sm bg-[var(--elevated)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none"
                 />
-              </div>
+              </Field>
 
               {/* Buttons */}
-              <div className="flex items-center justify-between pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex items-center justify-between pt-2 border-t border-[var(--border)]">
                 {editingEvent && editingEvent.source === 'local' ? (
                   <button
                     type="button"
                     onClick={handleDeleteEvent}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-950/40 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-medium text-[var(--accent-red,#EF4444)] hover:bg-[var(--elevated)] transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>{t.calendarDeleteEvent}</span>
@@ -848,20 +851,20 @@ export function CalendarView() {
                   <button
                     type="button"
                     onClick={() => setModalOpen(false)}
-                    className="px-3 py-1.5 rounded-md text-xs font-medium border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)] transition-colors"
+                    className="px-3 py-1.5 rounded-[8px] text-xs font-medium border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--elevated)] transition-colors cursor-pointer"
                   >
                     {t.calendarCancel}
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-1.5 rounded-md text-xs font-medium shadow-sm transition-opacity hover:opacity-90 bg-[var(--accent)] text-[var(--bg)]"
+                    className="px-4 py-1.5 rounded-[8px] text-xs font-medium shadow-xs transition-opacity hover:opacity-90 bg-[var(--accent)] text-[var(--bg)] cursor-pointer"
                   >
                     {t.calendarSave}
                   </button>
                 </div>
               </div>
             </form>
-          </div>
+          </Card>
         </div>
       )}
     </div>
