@@ -186,8 +186,8 @@ pub fn remove_filler_words(text: &str) -> String {
             let end = start + mf.len();
             let prev_char = s[..start].chars().next_back();
             let next_char = s[end..].chars().next();
-            let prev_bound = prev_char.map_or(true, |c| !c.is_alphanumeric());
-            let next_bound = next_char.map_or(true, |c| !c.is_alphanumeric());
+            let prev_bound = prev_char.is_none_or(|c| !c.is_alphanumeric());
+            let next_bound = next_char.is_none_or(|c| !c.is_alphanumeric());
 
             if prev_bound && next_bound {
                 s.replace_range(start..end, "");
@@ -264,7 +264,7 @@ fn clean_punctuation_artefacts(s: &str) -> String {
         out = out.replace("  ", " ");
     }
 
-    let trimmed = out.trim_start_matches(|c: char| c == ',' || c == ' ' || c == ';').trim();
+    let trimmed = out.trim_start_matches([',', ' ', ';']).trim();
     if trimmed.is_empty() {
         return String::new();
     }

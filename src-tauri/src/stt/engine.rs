@@ -26,9 +26,7 @@ pub struct TranscribeOptions {
 /// - `translate_to_english`: sets `task = Task::Translate` and `target_language = Some("en")`
 /// - `custom_words`: formats into `WhisperRunOptions.initial_prompt` decode bias
 pub fn build_run_options(opts: &TranscribeOptions) -> RunOptions {
-    let mut ro = RunOptions::default();
-
-    ro.language = opts.language.as_deref().and_then(|l| {
+    let language = opts.language.as_deref().and_then(|l| {
         let trimmed = l.trim();
         if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("auto") {
             None
@@ -37,22 +35,27 @@ pub fn build_run_options(opts: &TranscribeOptions) -> RunOptions {
         }
     });
 
-    if opts.translate_to_english {
-        ro.task = Task::Translate;
-        ro.target_language = Some("en".to_string());
-    }
+    let joined_words = opts.custom_words.join(", ");
+    let family = if joined_words.trim().is_empty() {
+        None
+    } else {
+        Some(RunExtension::Whisper(WhisperRunOptions {
+            initial_prompt: Some(joined_words),
+            ..Default::default()
+        }))
+    };
 
-    if !opts.custom_words.is_empty() {
-        let joined = opts.custom_words.join(", ");
-        if !joined.trim().is_empty() {
-            ro.family = Some(RunExtension::Whisper(WhisperRunOptions {
-                initial_prompt: Some(joined),
-                ..Default::default()
-            }));
-        }
+    RunOptions {
+        language,
+        task: if opts.translate_to_english {
+            Task::Translate
+        } else {
+            Task::Transcribe
+        },
+        target_language: opts.translate_to_english.then(|| "en".to_string()),
+        family,
+        ..Default::default()
     }
-
-    ro
 }
 
 pub struct EngineManager {
