@@ -66,6 +66,11 @@ import {
 } from './services/update';
 import { isTauri } from './services/platform';
 import { installShortcutLayer } from './services/shortcuts';
+import { onDataChanged } from './services/appEvents';
+import { listAlarms } from './services/alarms';
+import { listTasks } from './services/tasks';
+import { listNotes } from './services/notes';
+import { TimerService } from './services/timer';
 
 interface StoredChatShape {
   id: string;
@@ -194,6 +199,7 @@ function MainShell() {
   const [alarms, setAlarms] = useState<AlarmItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [notes, setNotes] = useState<NoteItem[]>([]);
+  const [timerMinutes, setTimerMinutes] = useState<number | undefined>(undefined);
 
   const [aiSettings, setAiSettings] = useState<AISettings>({
     apiKey: '',
@@ -302,6 +308,25 @@ function MainShell() {
     };
 
     void loadState();
+  }, []);
+  // Re-read affected entities when assistant writes data (R01)
+  useEffect(() => {
+    return onDataChanged(async (table) => {
+      try {
+        if (table === 'alarms') {
+          const fresh = await listAlarms();
+          setAlarms(fresh.map((a) => ({ ...a, title: a.label } as unknown as AlarmItem)));
+        } else if (table === 'tasks') {
+          const fresh = await listTasks();
+          setTasks(fresh);
+        } else if (table === 'notes') {
+          const fresh = await listNotes();
+          setNotes(fresh);
+        }
+      } catch (err) {
+        console.error('Failed to reload entity on data-changed signal:', err);
+      }
+    });
   }, []);
 
   // Startup assets pruning, and carrying preferences over from the previous name.
@@ -547,6 +572,7 @@ function MainShell() {
                     void StoreService.persist({ tasks: newTasks });
                   }}
                   notes={notes}
+                  timerMinutes={timerMinutes}
                 />
               )}
 
@@ -621,7 +647,11 @@ function MainShell() {
                   setDynamicUi(cfg);
                 }}
                 onApplyAlarms={(newAlarms) => {
-                  setAlarms((prev) => [...prev, ...newAlarms]);
+                  setAlarms((prev) => {
+                    const existingIds = new Set(prev.map((a) => a.id));
+                    const uniqueNew = newAlarms.filter((a) => !existingIds.has(a.id));
+                    return [...prev, ...uniqueNew];
+                  });
                 }}
                 messages={chatMessages}
                 onSendMessage={(msg: ChatMessage) =>
@@ -636,7 +666,9 @@ function MainShell() {
                   setChatMessages(cleanChat);
                   void StoreService.persist({ chatMessages: cleanChat as never });
                 }}
-                onSetTimerMinutes={() => {
+                onSetTimerMinutes={(minutes: number) => {
+                  setTimerMinutes(minutes);
+                  void TimerService.setDuration(minutes);
                   setActiveTab('dashboard');
                 }}
                 onNavigateToModule={(mod) => {

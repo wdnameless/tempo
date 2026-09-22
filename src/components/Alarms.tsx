@@ -1,523 +1,743 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Bell, BellOff, Volume2, Sparkles, Loader2, StickyNote } from 'lucide-react';
-import { ThemeColors, AlarmItem, AISettings, DynamicUIConfig } from '../types';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  Plus,
+  Trash2,
+  Bell,
+  Clock,
+  Check,
+  X,
+  StickyNote,
+} from 'lucide-react';
+import type { ThemeColors, AlarmItem, AISettings, DynamicUIConfig } from '../types';
 import { soundService } from '../services/sound';
-import { AIService } from '../services/ai';
+import { I18nService, type Translations } from '../services/i18n';
+import {
+  listAlarms,
+  saveAlarm,
+  deleteAlarm as apiDeleteAlarm,
+  toggleAlarm as apiToggleAlarm,
+  previewAlarms,
+  type Alarm,
+  type AlarmRepeat,
+  type AlarmPreview,
+  toAlarm,
+} from '../services/alarms';
+import { onDataChanged } from '../services/appEvents';
+import { Card, EmptyState, Field, Toggle } from './ui';
 
-/** Short weekday labels, indexed 0 = Sunday to match the stored data. */
-const WEEKDAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+/** Short weekday labels, indexed 0 = Sunday to match stored format */
+export const WEEKDAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'] as const;
 
-interface AlarmsProps {
-  theme: ThemeColors;
-  alarms: AlarmItem[];
+export interface AlarmsProps {
+  theme?: ThemeColors;
+  alarms?: AlarmItem[];
   aiSettings?: AISettings;
-  onUpdateAlarms: (alarms: AlarmItem[]) => void;
+  onUpdateAlarms?: (alarms: AlarmItem[]) => void;
   onOpenAISettings?: () => void;
   dynamicUi?: DynamicUIConfig;
 }
 
-/**
- * Standalone alarms and saved schedules.
- *
- * Ringing is not handled here: firing and the ringing takeover live in
- * `AlarmCenter` above the tabs, so an alarm rings whatever screen is open.
- */
+export function formatNextFiring(nextIso: string | undefined, disabled: boolean, t: Translations): string {
+  if (disabled) return t.alarmsDisabled;
+  if (!nextIso) return t.alarmsNever;
+
+  try {
+    const d = new Date(nextIso);
+    if (isNaN(d.getTime())) return nextIso;
+
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+    const isToday =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow =
+      d.getFullYear() === tomorrow.getFullYear() &&
+      d.getMonth() === tomorrow.getMonth() &&
+      d.getDate() === tomorrow.getDate();
+
+    const connector = t.alarmsToday === 'Today' ? 'at' : 'в';
+    if (isToday) return `${t.alarmsToday} ${connector} ${timeStr}`;
+    if (isTomorrow) return `${t.alarmsTomorrow} ${connector} ${timeStr}`;
+
+    const dateStr = `${pad(d.getDate())}.${pad(d.getMonth() + 1)}`;
+    return `${dateStr} ${connector} ${timeStr}`;
+  } catch {
+    return nextIso;
+  }
+}
+
+function toAlarmItem(alarm: Alarm): AlarmItem {
+  return {
+    id: alarm.id,
+    title: alarm.label,
+    label: alarm.label,
+    time: alarm.time,
+    repeat: alarm.repeat as AlarmItem['repeat'],
+    days: alarm.days,
+    enabled: alarm.enabled,
+    sound: alarm.sound,
+    voicePrompt: alarm.voicePrompt || undefined,
+    note: alarm.note || undefined,
+    ...(alarm.scheduleId ? { scheduleId: alarm.scheduleId } : {}),
+    ...(alarm.date ? { date: alarm.date } : {}),
+    ...(alarm.intervalMinutes !== null && alarm.intervalMinutes !== undefined
+      ? { intervalMinutes: alarm.intervalMinutes }
+      : {}),
+    ...(alarm.windowStart ? { windowStart: alarm.windowStart } : {}),
+    ...(alarm.windowEnd ? { windowEnd: alarm.windowEnd } : {}),
+  } as unknown as AlarmItem;
+}
+
 export const Alarms: React.FC<AlarmsProps> = ({
   theme,
-  alarms,
-  aiSettings,
+  alarms: propsAlarms,
   onUpdateAlarms,
-  onOpenAISettings,
   dynamicUi,
 }) => {
-  const [newTime, setNewTime] = useState('08:00');
-  const [newLabel, setNewLabel] = useState('Утренняя разминка');
-  const [newRepeat, setNewRepeat] = useState<AlarmItem['repeat']>('days');
-  /** Weekdays the new alarm runs on; only used when repeat is 'days'. */
-  const [newDays, setNewDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const t = I18nService.t();
+
+  // Internal alarms state
+  const [localAlarms, setLocalAlarms] = useState<Alarm[]>([]);
+  const effectiveAlarms: Alarm[] = useMemo(() => {
+    if (propsAlarms && propsAlarms.length > 0) {
+      return propsAlarms.map(toAlarm);
+    }
+    return localAlarms;
+  }, [propsAlarms, localAlarms]);
+
+  // Next firing previews
+  const [previews, setPreviews] = useState<Record<string, AlarmPreview>>({});
+
+  // Clock
   const [currentTime, setCurrentTime] = useState('');
 
-  /**
-   * Adds or removes a weekday, keeping the list sorted so labels read in order.
-   *
-   * The last remaining day cannot be removed: an alarm in "days" mode with no
-   * days matches nothing, so it would sit in the list labelled "Каждый день"
-   * and never ring. Refusing the last removal keeps every saved alarm able to
-   * fire.
-   */
-  const toggleNewDay = (day: number) => {
-    soundService.playUiClick();
-    setNewDays((prev) => {
-      if (prev.includes(day)) {
-        if (prev.length === 1) return prev;
-        return prev.filter((d) => d !== day);
-      }
-      return [...prev, day].sort((a, b) => a - b);
-    });
-  };
-  /** The alarm whose note field is open; null when none is. */
+  // Form states: Create / Edit in ONE place
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [label, setLabel] = useState('Утренняя разминка');
+  const [time, setTime] = useState('08:00');
+  const [repeat, setRepeat] = useState<AlarmRepeat>('days');
+  const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [date, setDate] = useState<string>(() => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  });
+  const [intervalMinutes, setIntervalMinutes] = useState<number>(60);
+  const [windowStart, setWindowStart] = useState<string>('08:00');
+  const [windowEnd, setWindowEnd] = useState<string>('20:00');
+  const [note, setNote] = useState<string>('');
+
+  // Note inline editing state for backwards compatibility with tests
   const [noteEditingId, setNoteEditingId] = useState<string | null>(null);
+  const [inlineNoteValue, setInlineNoteValue] = useState<string>('');
+  const [inlineNoteOriginal, setInlineNoteOriginal] = useState<string>('');
 
-  /** Writes an alarm's note, dropping the field when it's emptied. */
-  const setAlarmNote = (id: string, note: string) => {
-    onUpdateAlarms(alarms.map((a) => (a.id === id ? { ...a, note: note || undefined } : a)));
-  };
-
-  /** Applies a partial change to one alarm, leaving the rest untouched. */
-  const patchAlarm = (id: string, patch: Partial<AlarmItem>) => {
-    onUpdateAlarms(alarms.map((a) => (a.id === id ? { ...a, ...patch } : a)));
-  };
-
-  const isDerived = (alarm: AlarmItem) => Boolean(alarm.scheduleId);
-  /** Changes an alarm's time, rejecting anything that is not a clock time. */
-  const editAlarmTime = (id: string, value: string) => {
-    if (!/^\d{1,2}:\d{2}$/.test(value)) return;
-    patchAlarm(id, { time: value.padStart(5, '0') });
-  };
-
-  /**
-   * Toggles one weekday on an existing alarm.
-   *
-   * Like the create form, the last day is not removable: an alarm that matches
-   * no weekday is indistinguishable from a broken one.
-   */
-  const toggleAlarmDay = (alarm: AlarmItem, day: number) => {
-    soundService.playUiClick();
-    if (alarm.days.includes(day) && alarm.days.length === 1) return;
-    const days = alarm.days.includes(day)
-      ? alarm.days.filter((d) => d !== day)
-      : [...alarm.days, day].sort((a, b) => a - b);
-    patchAlarm(alarm.id, { days, repeat: 'days' });
-  };
-
-  // AI Smart Setup state
-  const [showAiModal, setShowAiModal] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('Вот моя тренировка: в 7:00 подъем, в 7:15 силовая разминка, в 19:30 вечерняя растяжка');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
-
-  // Display clock only. Firing is owned by the Rust scheduler so alarms ring
-  // with this tab closed, the window hidden, or the app in the tray.
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now
-        .getMinutes()
-        .toString()
-        .padStart(2, '0')}`;
-      setCurrentTime(timeStr);
-    };
-
-    updateTime();
-    const interval = window.setInterval(updateTime, 1000);
-    return () => window.clearInterval(interval);
+  const fetchPreviews = useCallback(async (list: Alarm[]) => {
+    try {
+      const p = await previewAlarms(list);
+      const map: Record<string, AlarmPreview> = {};
+      for (const item of p) {
+        map[item.id] = item;
+      }
+      setPreviews(map);
+    } catch (e) {
+      console.warn('Failed to load alarm previews:', e);
+    }
   }, []);
 
-  const toggleAlarm = (id: string) => {
-    soundService.playCountdownTick();
-    onUpdateAlarms(
-      alarms.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a))
-    );
-  };
+  const refreshAlarms = useCallback(async () => {
+    try {
+      const dbList = await listAlarms();
+      setLocalAlarms(dbList);
+      void fetchPreviews(dbList);
+      if (onUpdateAlarms) {
+        onUpdateAlarms(dbList.map(toAlarmItem));
+      }
+    } catch (e) {
+      console.warn('Failed to refresh alarms:', e);
+    }
+  }, [fetchPreviews, onUpdateAlarms]);
 
-  const deleteAlarm = (id: string) => {
-    soundService.playCountdownTick();
-    onUpdateAlarms(alarms.filter((a) => a.id !== id));
-  };
-
-  const addAlarm = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTime) return;
-
-    soundService.playCountdownTick();
-    const newAlarm: AlarmItem = {
-      id: Date.now().toString(),
-      title: newLabel || 'Будильник',
-      label: newLabel || 'Будильник',
-      time: newTime,
-      repeat: newRepeat,
-      days: newRepeat === 'days' ? newDays : [],
-      enabled: true,
-      sound: 'gentle',
-      voicePrompt: newLabel,
+  // Loads through the promise itself, not through a callback that sets state:
+  // the repo's lint forbids a synchronous setState reachable from an effect body.
+  useEffect(() => {
+    let active = true;
+    const indexPreviews = (list: AlarmPreview[]) => {
+      const map: Record<string, AlarmPreview> = {};
+      for (const item of list) map[item.id] = item;
+      return map;
     };
 
-    onUpdateAlarms([...alarms, newAlarm]);
-    setNewLabel('');
+    const load = propsAlarms
+      ? previewAlarms(propsAlarms.map(toAlarm)).then((list) => {
+          if (active) setPreviews(indexPreviews(list));
+        })
+      : listAlarms().then((dbList) => {
+          if (!active) return;
+          setLocalAlarms(dbList);
+          onUpdateAlarms?.(dbList.map(toAlarmItem));
+          return previewAlarms(dbList).then((list) => {
+            if (active) setPreviews(indexPreviews(list));
+          });
+        });
+
+    void load.catch((e) => console.warn('Failed to load alarms:', e));
+    return () => {
+      active = false;
+    };
+  }, [propsAlarms, onUpdateAlarms]);
+
+  // Subscribe to data changes
+  useEffect(() => {
+    const unsubscribe = onDataChanged((table) => {
+      if (table === 'alarms') {
+        void refreshAlarms();
+      }
+    });
+    return unsubscribe;
+  }, [refreshAlarms]);
+
+  // Display clock
+  useEffect(() => {
+    const tick = () => {
+      const d = new Date();
+      setCurrentTime(
+        `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      );
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const toggleDay = (dayIndex: number) => {
+    soundService.playUiClick();
+    setDays((prev) => {
+      if (prev.includes(dayIndex)) {
+        if (prev.length === 1) return prev; // Do not allow empty days
+        return prev.filter((d) => d !== dayIndex);
+      }
+      return [...prev, dayIndex].sort((a, b) => a - b);
+    });
   };
 
-  const handleAiSchedule = async () => {
-    if (!aiSettings?.apiKey) {
-      onOpenAISettings?.();
-      return;
-    }
-    setAiLoading(true);
-    setAiError(null);
-    try {
-      soundService.playCountdownTick();
-      const { alarms: newAlarms, error } = await AIService.generateAlarms(aiPrompt, aiSettings);
-      if (newAlarms.length > 0) {
-        onUpdateAlarms([...alarms, ...newAlarms]);
-        soundService.speak(`ИИ настроил ${newAlarms.length} будильников!`);
-        setShowAiModal(false);
-      } else {
-        setAiError('Не удалось выделить будильники из запроса.');
-      }
-      // The model being unreachable is worth saying out loud even when the
-      // offline parser managed to produce something.
-      if (error) setAiError(error);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Ошибка при обращении к ИИ';
-      setAiError(msg);
-      soundService.playBeep(200, 0.4, 0.4);
-    } finally {
-      setAiLoading(false);
-    }
+  const resetForm = () => {
+    setEditingId(null);
+    setLabel('Утренняя разминка');
+    setTime('08:00');
+    setRepeat('days');
+    setDays([1, 2, 3, 4, 5]);
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    setDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+    setIntervalMinutes(60);
+    setWindowStart('08:00');
+    setWindowEnd('20:00');
+    setNote('');
   };
+
+  const handleEditClick = (alarm: Alarm) => {
+    soundService.playUiClick();
+    setEditingId(alarm.id);
+    setLabel(alarm.label);
+    setTime(alarm.time);
+    setRepeat(alarm.repeat);
+    setDays(alarm.days && alarm.days.length > 0 ? alarm.days : [1, 2, 3, 4, 5]);
+    if (alarm.date) setDate(alarm.date);
+    if (alarm.intervalMinutes) setIntervalMinutes(alarm.intervalMinutes);
+    if (alarm.windowStart) setWindowStart(alarm.windowStart);
+    if (alarm.windowEnd) setWindowEnd(alarm.windowEnd);
+    setNote(alarm.note || '');
+  };
+
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    soundService.playUiClick();
+
+    const alarmData: Alarm = {
+      id: editingId || `alarm_${Date.now()}`,
+      label: label.trim() || t.alarmsNew,
+      time,
+      repeat,
+      days: repeat === 'days' ? days : [],
+      date: repeat === 'date' ? date : null,
+      intervalMinutes: repeat === 'interval' ? Number(intervalMinutes) || 60 : null,
+      windowStart: repeat === 'interval' ? windowStart : null,
+      windowEnd: repeat === 'interval' ? windowEnd : null,
+      enabled: true,
+      sound: 'gentle',
+      note: note.trim() || null,
+    };
+
+    // Update parent
+    const updatedList = editingId
+      ? effectiveAlarms.map((a) => (a.id === editingId ? alarmData : a))
+      : [alarmData, ...effectiveAlarms];
+
+    setLocalAlarms(updatedList);
+    onUpdateAlarms?.(updatedList.map(toAlarmItem));
+
+    await saveAlarm(alarmData);
+    void fetchPreviews(updatedList);
+    resetForm();
+  };
+
+  const handleToggle = async (id: string, currentEnabled: boolean) => {
+    soundService.playUiClick();
+    const updated = effectiveAlarms.map((a) =>
+      a.id === id ? { ...a, enabled: !currentEnabled } : a
+    );
+    setLocalAlarms(updated);
+    onUpdateAlarms?.(updated.map(toAlarmItem));
+    await apiToggleAlarm(id, !currentEnabled);
+    void fetchPreviews(updated);
+  };
+
+  const handleDelete = async (id: string) => {
+    soundService.playUiClick();
+    const updated = effectiveAlarms.filter((a) => a.id !== id);
+    setLocalAlarms(updated);
+    onUpdateAlarms?.(updated.map(toAlarmItem));
+    await apiDeleteAlarm(id);
+    void fetchPreviews(updated);
+    if (editingId === id) resetForm();
+  };
+
+  // In-place edits for backwards compatibility with tests
+  const editAlarmTime = async (alarm: Alarm, newTimeVal: string) => {
+    if (!/^\d{2}:\d{2}$/.test(newTimeVal)) return;
+    const updated = { ...alarm, time: newTimeVal };
+    const list = effectiveAlarms.map((a) => (a.id === alarm.id ? updated : a));
+    setLocalAlarms(list);
+    onUpdateAlarms?.(list.map(toAlarmItem));
+    await saveAlarm(updated);
+    void fetchPreviews(list);
+  };
+
+  const toggleAlarmDay = async (alarm: Alarm, dayIndex: number) => {
+    soundService.playUiClick();
+    const curDays = alarm.days ?? [];
+    let nextDays: number[];
+    if (curDays.includes(dayIndex)) {
+      if (curDays.length === 1) return; // Prevent removing the last day
+      nextDays = curDays.filter((d) => d !== dayIndex);
+    } else {
+      nextDays = [...curDays, dayIndex].sort((a, b) => a - b);
+    }
+    const updated = { ...alarm, days: nextDays, repeat: 'days' as const };
+    const list = effectiveAlarms.map((a) => (a.id === alarm.id ? updated : a));
+    setLocalAlarms(list);
+    onUpdateAlarms?.(list.map(toAlarmItem));
+    await saveAlarm(updated);
+    void fetchPreviews(list);
+  };
+
+  const startNoteEdit = (alarm: Alarm) => {
+    setNoteEditingId(alarm.id);
+    setInlineNoteValue(alarm.note || '');
+    setInlineNoteOriginal(alarm.note || '');
+  };
+
+  const commitNoteEdit = async (alarm: Alarm, overrideVal?: string) => {
+    const raw = overrideVal !== undefined ? overrideVal : inlineNoteValue;
+    const val = raw.trim();
+    const updated = { ...alarm, note: val || null };
+    const list = effectiveAlarms.map((a) => (a.id === alarm.id ? updated : a));
+    setLocalAlarms(list);
+    onUpdateAlarms?.(list.map(toAlarmItem));
+    setNoteEditingId(null);
+    await saveAlarm(updated);
+  };
+
+  const cancelNoteEdit = () => {
+    setNoteEditingId(null);
+    setInlineNoteValue(inlineNoteOriginal);
+  };
+
+  // Both shapes carry an optional scheduleId; `Alarm` is the narrowed one.
+  const isDerived = (a: Alarm | AlarmItem) => Boolean(a.scheduleId);
 
   return (
-    <div className="flex flex-col w-full max-w-[340px] px-1 py-1 space-y-2.5 overflow-hidden">
-      {/* Responsive Header bar */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5 w-full">
-        <div className="flex items-center space-x-1.5 shrink-0">
-          <Bell size={15} style={{ color: theme.subtext }} />
-          <span className="text-xs font-bold tracking-wider uppercase opacity-90 truncate">
-            Будильники
+    <div
+      className="flex flex-col w-full max-w-full space-y-4"
+      style={{
+        color: theme?.text || 'var(--text)',
+      }}
+    >
+      {/* Header bar */}
+      <div className="flex items-center justify-between gap-2 select-none">
+        <div className="flex items-center gap-2">
+          <Bell size={18} style={{ color: 'var(--accent)' }} />
+          <h2 className="text-base font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+            {t.alarmsTitle}
+          </h2>
+          <span
+            className="text-xs px-2 py-0.5 rounded-full font-mono font-medium"
+            style={{
+              backgroundColor: 'var(--elevated)',
+              color: 'var(--text-muted)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            {effectiveAlarms.length}
           </span>
         </div>
-        <div className="flex items-center space-x-1 shrink-0">
-          {dynamicUi?.layout?.showSleepButton !== false && (
-            <button
-              onClick={() => {
-                const sleepAlarm: AlarmItem = {
-                  id: 'sleep_' + Date.now(),
-                  title: 'Отход ко сну (Wind-down)',
-                  time: '23:00',
-                  repeat: 'daily',
-                  days: [],
-                  enabled: true,
-                  sound: 'gentle',
-                  voicePrompt: 'Пора готовиться ко сну. Закрой рабочие вкладки и отдохни.',
-                };
-                onUpdateAlarms([sleepAlarm, ...alarms]);
-                soundService.playUiClick();
-                soundService.speak('Будильник ко сну установлен на 23:00');
-              }}
-              className="px-2 py-0.5 text-[10px] font-semibold rounded-lg border transition-colors shrink-0" style={{ borderColor: theme.border, color: theme.subtext }}
-              title="Reverse Alarm: Будильник ко сну"
-            >
-              🌙 Ко сну
-            </button>
-          )}
-          {dynamicUi?.layout?.showAiScheduleButton !== false && (
-            <button
-              onClick={() => setShowAiModal(true)}
-              className="flex items-center space-x-1 px-2 py-0.5 text-[10px] font-bold rounded-lg transition-all shadow-sm shrink-0"
-              style={{
-                backgroundColor: theme.border,
-                color: theme.text,
-                border: `1px solid ${theme.border}`,
-              }}
-            >
-              <Sparkles size={11} className="animate-pulse" />
-              <span>ИИ</span>
-            </button>
-          )}
-          {dynamicUi?.layout?.showCurrentTimeBadge !== false && (
-            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-black/40 border border-white/5 shrink-0">
-              {currentTime || '--:--'}
-            </span>
-          )}
-        </div>
+
+        {dynamicUi?.layout?.showCurrentTimeBadge !== false && (
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] text-xs font-mono font-medium border"
+            style={{
+              backgroundColor: 'var(--elevated)',
+              borderColor: 'var(--border)',
+              color: 'var(--text-muted)',
+            }}
+          >
+            <Clock size={13} />
+            <span>{currentTime || '--:--'}</span>
+          </div>
+        )}
       </div>
 
-      {/* AI Orchestration Modal Banner */}
-      {showAiModal && (
-        <div
-          className="p-4 rounded-2xl border backdrop-blur-2xl flex flex-col space-y-2 animate-in fade-in zoom-in-95 duration-150"
-          style={{
-            backgroundColor: theme.cardBg,
-            borderColor: theme.border,
-            boxShadow: '0 18px 48px rgba(0,0,0,0.45)',
-          }}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-1.5 text-xs font-bold" style={{ color: theme.text }}>
-              <Sparkles size={14} />
-              <span>Умная расстановка будильников ИИ</span>
-            </div>
+      {/* Unified Create / Edit Form in ONE place (R09 / R10) */}
+      <Card variant="surface" padding="md" className="space-y-3">
+        <div className="flex items-center justify-between pb-1 border-b border-[var(--border)]">
+          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            {editingId ? t.alarmsSave : t.alarmsNew}
+          </span>
+          {editingId && (
             <button
-              onClick={() => setShowAiModal(false)}
-              className="text-xs opacity-60 hover:opacity-100"
+              type="button"
+              onClick={resetForm}
+              className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] flex items-center gap-1"
             >
-              ✕
+              <X size={12} />
+              <span>{t.alarmsCancel}</span>
             </button>
+          )}
+        </div>
+
+        <form onSubmit={handleFormSubmit} className="space-y-3">
+          <div className="flex flex-col sm:flex-row gap-2">
+            {/* Time */}
+            <Field label={t.alarmsTime} className="shrink-0 sm:w-28">
+              <input
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                required
+                className="w-full bg-[var(--elevated)] text-sm font-mono px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
+              />
+            </Field>
+
+            {/* Label */}
+            <Field label={t.alarmsLabel} className="flex-1">
+              <input
+                type="text"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder="Название будильника..."
+                className="w-full bg-[var(--elevated)] text-sm px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
+              />
+            </Field>
+
+            {/* Repeat Mode Select (5 modes) */}
+            <Field label={t.alarmsNext} className="shrink-0 sm:w-36">
+              <select
+                value={repeat}
+                onChange={(e) => setRepeat(e.target.value as AlarmRepeat)}
+                title="Как часто звонить"
+                className="w-full bg-[var(--elevated)] text-xs px-2.5 py-2 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)] cursor-pointer"
+              >
+                <option value="once">{t.alarmsRepeatOnce}</option>
+                <option value="daily">{t.alarmsRepeatDaily}</option>
+                <option value="days">{t.alarmsRepeatDays}</option>
+                <option value="date">{t.alarmsRepeatDate}</option>
+                <option value="interval">{t.alarmsRepeatInterval}</option>
+              </select>
+            </Field>
           </div>
-          <p className="text-[11px] opacity-70">
-            Напишите вашу тренировку, режим дня или задачи в свободной форме — ИИ сам расставит точное время и голосовые напоминания.
-          </p>
-          <textarea
-            value={aiPrompt}
-            onChange={(e) => setAiPrompt(e.target.value)}
-            rows={2}
-            className="w-full text-xs p-2 rounded-lg bg-black/40 border border-white/10 focus:outline-none"
-            style={{ color: theme.text }}
-            placeholder="Например: Вот моя тренировка: в 7:00 подъем, в 7:15 разминка, в 19:30 растяжка"
-          />
-          {aiError && <div className="text-[11px] text-red-400 font-medium">{aiError}</div>}
-          <div className="flex items-center justify-end space-x-2 pt-1">
+
+          {/* Conditional mode controls */}
+          {/* Weekday chips for 'days' */}
+          {repeat === 'days' && (
+            <Field label={t.alarmsRepeatDays}>
+              <div className="flex items-center gap-1 w-full flex-wrap sm:flex-nowrap">
+                {WEEKDAY_LABELS.map((wLabel, index) => {
+                  const active = days.includes(index);
+                  return (
+                    <button
+                      key={wLabel}
+                      type="button"
+                      onClick={() => toggleDay(index)}
+                      className="flex-1 min-w-[32px] h-7 rounded-[6px] text-xs font-semibold transition-colors border"
+                      style={{
+                        backgroundColor: active ? 'var(--accent)' : 'var(--elevated)',
+                        color: active ? 'var(--bg, #000)' : 'var(--text-muted)',
+                        borderColor: active ? 'var(--accent)' : 'var(--border)',
+                      }}
+                      title={`Звонить в ${wLabel}`}
+                      aria-pressed={active}
+                    >
+                      {wLabel}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+          )}
+
+          {/* Date picker for 'date' mode (R05) */}
+          {repeat === 'date' && (
+            <Field label={t.alarmsDate}>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                required
+                className="bg-[var(--elevated)] text-sm px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
+              />
+            </Field>
+          )}
+
+          {/* Interval settings for 'interval' mode (R06) */}
+          {repeat === 'interval' && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <Field label={`${t.alarmsIntervalEvery} (${t.alarmsIntervalMinutes})`}>
+                <input
+                  min="5"
+                  max="1440"
+                  step="5"
+                  value={intervalMinutes}
+                  onChange={(e) => setIntervalMinutes(Number(e.target.value) || 60)}
+                  className="w-full bg-[var(--elevated)] text-sm font-mono px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
+                />
+              </Field>
+              <Field label={t.alarmsWindowFrom}>
+                <input
+                  type="time"
+                  value={windowStart}
+                  onChange={(e) => setWindowStart(e.target.value)}
+                  className="w-full bg-[var(--elevated)] text-sm font-mono px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
+                />
+              </Field>
+              <Field label={t.alarmsWindowTo}>
+                <input
+                  type="time"
+                  value={windowEnd}
+                  onChange={(e) => setWindowEnd(e.target.value)}
+                  className="w-full bg-[var(--elevated)] text-sm font-mono px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
+                />
+              </Field>
+            </div>
+          )}
+
+          {/* Note input */}
+          <Field label={t.alarmsNote}>
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder={t.alarmsNotePlaceholder}
+              className="w-full bg-[var(--elevated)] text-xs px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
+            />
+          </Field>
+
+          {/* Submit Action */}
+          <div className="flex items-center justify-end gap-2 pt-1">
             <button
-              onClick={() => setShowAiModal(false)}
-              className="px-2.5 py-1 text-xs rounded-lg hover:bg-white/5 opacity-70"
-            >
-              Отмена
-            </button>
-            <button
-              onClick={handleAiSchedule}
-              disabled={aiLoading}
-              className="flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-lg shadow-sm"
+              type="submit"
+              title="Добавить будильник"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[8px] text-xs font-semibold shadow-sm transition-transform active:scale-95"
               style={{
-                backgroundColor: '#fafafa',
-                color: '#0a0a0a',
+                backgroundColor: 'var(--accent)',
+                color: 'var(--bg, #000)',
               }}
             >
-              {aiLoading ? (
-                <>
-                  <Loader2 size={13} className="animate-spin" />
-                  <span>Анализ и создание...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles size={13} />
-                  <span>Расставить расписание</span>
-                </>
-              )}
+              <Plus size={14} />
+              <span>{editingId ? t.alarmsSave : t.alarmsNew}</span>
             </button>
           </div>
-        </div>
-      )}
+        </form>
+      </Card>
 
-      {/* Quick Add Form */}
-      {/* Responsive Quick Add Form */}
-      <form
-        onSubmit={addAlarm}
-        className="flex items-center gap-1.5 p-2 rounded-2xl border w-full"
-        style={{ backgroundColor: theme.surface, borderColor: theme.border }}
-      >
-        <input
-          type="time"
-          value={newTime}
-          onChange={(e) => setNewTime(e.target.value)}
-          className="bg-black/40 text-xs font-mono px-2 py-1.5 rounded-lg border border-white/10 focus:outline-none w-[80px] shrink-0"
-          style={{ color: theme.text }}
-        />
-        <div className="flex flex-col gap-1 min-w-0 flex-1">
-          <input
-            type="text"
-            placeholder="Название будильника..."
-            value={newLabel}
-            onChange={(e) => setNewLabel(e.target.value)}
-            className="w-full bg-black/40 text-xs px-2 py-1.5 rounded-lg border border-white/10 focus:outline-none"
-            style={{ color: theme.text }}
+      {/* Alarm List with Next Firing times (R08) */}
+      <div className="flex flex-col space-y-2">
+        {effectiveAlarms.length === 0 ? (
+          <EmptyState
+            icon={<Bell size={24} />}
+            title={t.alarmsEmpty}
+            description={t.assistantPrompt}
           />
-          {/* Weekday chips, so "Пн, Ср, Пт" is expressible. The preset used to
-              hardcode Mon–Fri, which made a two-day alarm impossible. */}
-          <div className="flex items-center gap-0.5">
-            {WEEKDAY_LABELS.map((label, index) => {
-              const active = newRepeat === 'days' && newDays.includes(index);
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => toggleNewDay(index)}
-                  className="flex-1 h-5 rounded text-[9px] font-bold transition-colors"
-                  style={{
-                    backgroundColor: active ? 'rgba(255,255,255,0.16)' : 'transparent',
-                    color: active ? theme.text : theme.subtext,
-                    border: `1px solid ${active ? 'rgba(255,255,255,0.24)' : 'transparent'}`,
-                  }}
-                  title={`Звонить в ${label}`}
-                  aria-pressed={active}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <select
-          value={newRepeat}
-          onChange={(e) => setNewRepeat(e.target.value as AlarmItem['repeat'])}
-          className="bg-black/40 text-[10px] px-1 py-1.5 rounded-lg border border-white/10 focus:outline-none shrink-0 cursor-pointer self-start"
-          style={{ color: theme.text }}
-          title="Как часто звонить"
-        >
-          <option value="once" className="bg-neutral-900">Один раз</option>
-          <option value="daily" className="bg-neutral-900">Каждый день</option>
-          <option value="days" className="bg-neutral-900">По дням</option>
-        </select>
-        <button
-          type="submit"
-          className="w-7 h-7 rounded-lg transition-transform active:scale-95 flex items-center justify-center shrink-0"
-          style={{ backgroundColor: "#fafafa", color: "#0a0a0a" }}
-          title="Добавить будильник"
-        >
-          <Plus size={15} />
-        </button>
-      </form>
-      {/* Alarm List */}
-      {/* Alarm list. Each row can carry a note, which the ringing takeover shows
-          so "что именно надо сделать" is on the screen when the alarm fires. */}
-      <div className="flex flex-col space-y-2 max-h-[300px] overflow-y-auto pr-1">
-        {alarms.length === 0 ? (
-          <div className="text-center py-6 text-xs opacity-40">
-            Нет активных будильников. Добавьте вручную или нажмите «ИИ Настройка».
-          </div>
         ) : (
-          alarms.map((alarm) => (
-            <div
-              key={alarm.id}
-              className="flex items-center justify-between p-3 rounded-2xl border backdrop-blur-xl transition-all"
-              style={{
-                backgroundColor: alarm.enabled ? theme.cardBg : theme.surface,
-                // Interactive rows keep a boundary that clears the 3.0 UI floor.
-                borderColor: theme.border,
-                boxShadow: alarm.enabled ? '0 8px 24px rgba(0,0,0,0.32)' : 'none',
-                opacity: alarm.enabled ? 1 : 0.55,
-              }}
-            >
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={() => toggleAlarm(alarm.id)}
-                  disabled={isDerived(alarm)}
-                  className="p-1.5 rounded-lg transition-colors hover:bg-white/10 disabled:cursor-not-allowed"
-                  style={{ color: alarm.enabled ? theme.text : theme.subtext }}
-                  title={isDerived(alarm) ? 'Включается вместе с программой' : undefined}
-                >
-                  {alarm.enabled ? <Bell size={16} /> : <BellOff size={16} />}
-                </button>
-                <div className="flex flex-col">
-                  <div className="flex items-baseline space-x-2">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      defaultValue={alarm.time}
-                      readOnly={isDerived(alarm)}
-                      onBlur={(e) => editAlarmTime(alarm.id, e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                      className={`text-lg font-mono font-bold bg-transparent outline-none border-b border-transparent ${
-                        isDerived(alarm) ? 'cursor-not-allowed' : 'hover:border-white/20 focus:border-white/40'
-                      } w-[62px] ${alarm.enabled ? '' : 'line-through'}`}
-                      style={{ color: alarm.enabled ? theme.text : theme.subtext }}
-                      aria-label={`Время будильника ${alarm.label || alarm.title}`}
-                      title={isDerived(alarm)
-                        ? 'Время задаётся в самой программе — откройте её шаги во вкладке «Алармы»'
-                        : 'Время в формате 24 часа, например 07:30'}
-                    />
-                    <span className="text-xs font-medium truncate max-w-[120px]">
-                      {alarm.label || alarm.title}
-                    </span>
-                  </div>
-                  {/* Days are editable on the alarm itself, so changing "Пн–Пт"
-                      to "Сб, Вс" does not mean deleting and re-creating it. */}
-                  {alarm.repeat === 'days' && !isDerived(alarm) && (
-                    <div className="flex items-center gap-0.5 mt-0.5">
-                      {WEEKDAY_LABELS.map((label, index) => {
-                        const active = alarm.days.includes(index);
-                        return (
-                          <button
-                            key={label}
-                            type="button"
-                            onClick={() => toggleAlarmDay(alarm, index)}
-                            className="px-1 h-4 rounded text-[9px] font-bold transition-colors"
-                            style={{
-                              backgroundColor: active ? 'rgba(255,255,255,0.16)' : 'transparent',
-                              color: active ? theme.text : theme.subtext,
-                              opacity: active ? 1 : 0.5,
-                            }}
-                            title={`${active ? 'Убрать' : 'Добавить'} ${label}`}
-                            aria-pressed={active}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {alarm.note !== undefined && noteEditingId !== alarm.id && (
-                    <span className="text-[10px] opacity-70 truncate max-w-[180px] block" style={{ color: theme.subtext }}>
-                      {alarm.note}
-                    </span>
-                  )}
-                  {noteEditingId === alarm.id && (
-                    <input
-                      type="text"
-                      autoFocus
-                      defaultValue={alarm.note ?? ''}
-                      placeholder="Описание к будильнику..."
-                      onBlur={(e) => {
-                        // Escape already cancelled: the blur that follows would
-                        // otherwise save the text the user just abandoned.
-                        if (e.currentTarget.dataset.cancelled === 'true') {
-                          setNoteEditingId(null);
-                          return;
-                        }
-                        setAlarmNote(alarm.id, e.target.value);
-                        setNoteEditingId(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') e.currentTarget.blur();
-                        if (e.key === 'Escape') {
-                          e.currentTarget.dataset.cancelled = 'true';
-                          e.currentTarget.blur();
-                        }
-                      }}
-                      className="mt-0.5 text-[10px] bg-black/40 px-1.5 py-1 rounded border border-white/10 focus:outline-none"
-                      style={{ color: theme.text }}
-                      aria-label="Описание будильника"
-                    />
-                  )}
-                  <span className="text-[10px] opacity-60">
-                    {alarm.repeat === 'once' ? 'Один раз' : alarm.repeat === 'daily' ? 'Каждый день' : alarm.days.map((d) => WEEKDAY_LABELS[d]).join(', ')}
-                  </span>
-                  {alarm.voicePrompt && (
-                    <span className="text-[10px] opacity-60 flex items-center space-x-1 truncate max-w-[180px]">
-                      <Volume2 size={10} className="shrink-0" />
-                      <span className="truncate">{alarm.voicePrompt}</span>
-                    </span>
-                  )}
-                </div>
-              </div>
+          effectiveAlarms.map((alarm) => {
+            const derived = isDerived(alarm);
+            const preview = previews[alarm.id];
+            const nextIso = preview?.next?.[0];
+            const nextHuman = formatNextFiring(nextIso, !alarm.enabled, t);
 
-              <div className="flex items-center space-x-1">
-                <button
-                  onClick={() => setNoteEditingId(noteEditingId === alarm.id ? null : alarm.id)}
-                  disabled={isDerived(alarm)}
-                  title={isDerived(alarm)
-                    ? 'Описание задаётся в шаге программы'
-                    : alarm.note ? 'Показать описание' : 'Добавить описание'}
-                  className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
-                  style={{ color: alarm.note ? theme.accent : theme.subtext, opacity: alarm.note ? 1 : 0.6 }}
-                >
-                  <StickyNote size={14} />
-                </button>
-                <button
-                  onClick={() => soundService.speak(alarm.voicePrompt || alarm.label || alarm.title)}
-                  title="Прослушать голос"
-                  className="p-1.5 rounded-lg hover:bg-white/10 opacity-60 hover:opacity-100"
-                >
-                  <Volume2 size={14} />
-                </button>
-                <button
-                  onClick={() => deleteAlarm(alarm.id)}
-                  title="Удалить"
-                  className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400 opacity-60 hover:opacity-100 transition-colors"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          ))
+            return (
+              <Card
+                key={alarm.id}
+                variant="surface"
+                padding="sm"
+                className={`flex flex-col gap-2 transition-all ${
+                  alarm.enabled ? 'opacity-100' : 'opacity-55'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  {/* Time + Next firing indicator */}
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <input
+                      type="text"
+                      aria-label={`Время будильника ${alarm.label}`}
+                      readOnly={derived}
+                      value={alarm.time}
+                      onChange={(e) => editAlarmTime(alarm, e.target.value)}
+                      onBlur={(e) => editAlarmTime(alarm, e.target.value)}
+                      className={`w-16 font-mono text-base font-semibold bg-transparent border-b border-dashed border-[var(--border)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)] ${
+                        derived ? 'cursor-default border-none' : 'cursor-text'
+                      }`}
+                    />
+
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span
+                          onClick={() => !derived && handleEditClick(alarm)}
+                          className={`text-sm font-medium truncate ${
+                            !derived ? 'hover:underline cursor-pointer' : ''
+                          }`}
+                          style={{ color: 'var(--text)' }}
+                        >
+                          {alarm.label}
+                        </span>
+                        {derived && (
+                          <span
+                            className="text-[10px] px-1.5 py-0.2 rounded border text-[var(--text-faint)] border-[var(--border)] shrink-0"
+                            title="Из программы"
+                          >
+                            Программа
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Next firing badge */}
+                      <span
+                        className="text-xs font-medium"
+                        style={{
+                          color: alarm.enabled ? 'var(--accent)' : 'var(--text-muted)',
+                        }}
+                      >
+                        {nextHuman}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Right actions: Toggle + Delete + Note */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={derived}
+                      title={derived ? 'Описание задаётся в шаге программы' : 'Добавить описание'}
+                      onClick={() => !derived && startNoteEdit(alarm)}
+                      className="p-1 rounded hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--text)] disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <StickyNote size={14} />
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={derived}
+                      onClick={() => handleToggle(alarm.id, alarm.enabled)}
+                      title={derived ? 'Включается вместе с программой' : (alarm.enabled ? 'Выключить будильник' : 'Включить будильник')}
+                      className="cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Toggle
+                        checked={alarm.enabled}
+                        onChange={() => {}}
+                        disabled={derived}
+                      />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(alarm.id)}
+                      title="Удалить"
+                      className="p-1.5 rounded-[6px] hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--accent-red,#EF4444)] transition-colors cursor-pointer"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Per-row weekday chips if repeat is 'days' */}
+                {alarm.repeat === 'days' && !derived && (
+                  <div className="flex items-center gap-1 pt-1 border-t border-[var(--border)]">
+                    {WEEKDAY_LABELS.map((wLabel, index) => {
+                      const active = (alarm.days ?? []).includes(index);
+                      return (
+                        <button
+                          key={wLabel}
+                          type="button"
+                          onClick={() => toggleAlarmDay(alarm, index)}
+                          title={active ? `Убрать ${wLabel}` : `Добавить ${wLabel}`}
+                          className="h-5 flex-1 rounded text-[10px] font-semibold transition-colors border"
+                          style={{
+                            backgroundColor: active ? 'var(--accent)' : 'transparent',
+                            color: active ? 'var(--bg, #000)' : 'var(--text-muted)',
+                            borderColor: active ? 'var(--accent)' : 'var(--border)',
+                          }}
+                        >
+                          {wLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Inline note edit or display */}
+                {noteEditingId === alarm.id ? (
+                  <div className="flex items-center gap-2 pt-1 border-t border-[var(--border)]">
+                    <input
+                      type="text"
+                      aria-label="Описание будильника"
+                      autoFocus
+                      value={inlineNoteValue}
+                      onChange={(e) => setInlineNoteValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void commitNoteEdit(alarm);
+                        if (e.key === 'Escape') cancelNoteEdit();
+                      }}
+                      onBlur={(e) => void commitNoteEdit(alarm, e.target.value)}
+                      placeholder={t.alarmsNotePlaceholder}
+                      className="flex-1 bg-[var(--elevated)] text-xs px-2 py-1 rounded border border-[var(--border)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+                    />
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        void commitNoteEdit(alarm);
+                      }}
+                      className="p-1 text-[var(--accent)]"
+                    >
+                      <Check size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  alarm.note && (
+                    <div className="text-xs text-[var(--text-muted)] italic pt-0.5 px-0.5 truncate">
+                      {alarm.note}
+                    </div>
+                  )
+                )}
+              </Card>
+            );
+          })
         )}
       </div>
     </div>

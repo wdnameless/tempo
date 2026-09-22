@@ -8,15 +8,7 @@ export interface Palette {
   border: string;
 }
 
-export const PALETTE: Palette = {
-  bg: '#000000',
-  surface: '#0A0A0C',
-  elevated: '#111114',
-  text: '#FFFFFF',
-  textMuted: 'rgba(255, 255, 255, 0.55)',
-  textFaint: 'rgba(255, 255, 255, 0.25)',
-  border: 'rgba(255, 255, 255, 0.08)',
-};
+
 
 export type AccentId =
   | 'white'
@@ -126,3 +118,17 @@ export function applyAccent(id: AccentId): void {
     document.documentElement.style.setProperty('--accent-soft', hexToRgba(color, 0.14));
   }
 }
+
+export const CSS_VARS = {
+  bg: 'var(--bg)',
+  surface: 'var(--surface)',
+  surfaceHover: 'var(--surface-hover)',
+  elevated: 'var(--elevated)',
+  text: 'var(--text)',
+  textMuted: 'var(--text-muted)',
+  textFaint: 'var(--text-faint)',
+  border: 'var(--border)',
+  borderStrong: 'var(--border-strong)',
+  accent: 'var(--accent)',
+  accentSoft: 'var(--accent-soft)',
+} as const;

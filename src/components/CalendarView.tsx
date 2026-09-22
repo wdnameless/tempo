@@ -253,13 +253,10 @@ export function CalendarView() {
       style={{ backgroundColor: 'var(--bg)', color: 'var(--text)' }}
     >
       {/* Header toolbar */}
-      <div
-        className="flex items-center justify-between px-6 py-3 border-b shrink-0 flex-wrap gap-3"
-        style={{ borderColor: 'var(--border)' }}
-      >
+      <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border)] shrink-0 flex-wrap gap-3 select-none">
         {/* Left: Navigation & Period Title */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center rounded-lg border p-0.5" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center rounded-md border border-[var(--border)] bg-[var(--surface)] p-0.5">
             <button
               type="button"
               aria-label="Previous"
@@ -272,7 +269,7 @@ export function CalendarView() {
               type="button"
               aria-label="Today"
               onClick={handleToday}
-              className="px-2.5 py-1 text-xs font-medium rounded hover:bg-[var(--surface-hover)] transition-colors"
+              className="px-2.5 py-1 text-xs font-medium rounded hover:bg-[var(--surface-hover)] transition-colors text-[var(--text)]"
             >
               {t.calendarToday}
             </button>
@@ -286,7 +283,7 @@ export function CalendarView() {
             </button>
           </div>
 
-          <h1 className="text-lg font-bold tracking-tight">
+          <h1 className="text-lg font-semibold tracking-tight text-[var(--text)]">
             {formatCalendarPeriod(currentDate, viewMode, I18nService.getLang())}
           </h1>
         </div>
@@ -306,9 +303,9 @@ export function CalendarView() {
           <button
             type="button"
             onClick={() => setShowTasks(!showTasks)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-colors ${
               showTasks
-                ? 'bg-[var(--surface-selected)] text-[var(--accent)] border-[var(--accent-soft)]'
+                ? 'bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent)]'
                 : 'bg-[var(--surface)] text-[var(--text-muted)] border-[var(--border)] hover:bg-[var(--surface-hover)]'
             }`}
           >
@@ -317,12 +314,12 @@ export function CalendarView() {
           </button>
 
           {/* Source filter */}
-          <div className="flex items-center rounded-lg border p-0.5 text-xs" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center rounded-md border border-[var(--border)] bg-[var(--surface)] p-0.5 text-xs">
             <button
               type="button"
               onClick={() => setSourceFilter('all')}
               className={`px-2 py-1 rounded transition-colors ${
-                sourceFilter === 'all' ? 'bg-[var(--surface-selected)] text-[var(--text)] font-semibold' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                sourceFilter === 'all' ? 'bg-[var(--surface-hover)] text-[var(--text)] font-semibold' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
               }`}
             >
               {t.calendarFilterAll}
@@ -331,7 +328,7 @@ export function CalendarView() {
               type="button"
               onClick={() => setSourceFilter('local')}
               className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
-                sourceFilter === 'local' ? 'bg-[var(--surface-selected)] text-[var(--accent)] font-semibold' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                sourceFilter === 'local' ? 'bg-[var(--surface-hover)] text-[var(--accent)] font-semibold' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
               }`}
             >
               <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
@@ -341,7 +338,7 @@ export function CalendarView() {
               type="button"
               onClick={() => setSourceFilter('google')}
               className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
-                sourceFilter === 'google' ? 'bg-[var(--surface-selected)] text-blue-400 font-semibold' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+                sourceFilter === 'google' ? 'bg-[var(--surface-hover)] text-blue-400 font-semibold' : 'text-[var(--text-muted)] hover:text-[var(--text)]'
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-blue-500" />
@@ -353,8 +350,7 @@ export function CalendarView() {
           <button
             type="button"
             onClick={() => openCreateModal()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-xs shadow-sm transition-opacity hover:opacity-90"
-            style={{ backgroundColor: 'var(--accent)', color: 'var(--bg)' }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium text-xs shadow-sm transition-opacity hover:opacity-90 bg-[var(--accent)] text-[var(--bg)]"
           >
             <Plus className="w-4 h-4" />
             <span>{t.calendarNewEvent}</span>
@@ -368,9 +364,9 @@ export function CalendarView() {
         {viewMode === 'month' && (
           <div className="flex flex-col h-full min-h-[600px] p-4">
             {/* Weekday headers: Mon..Sun */}
-            <div className="grid grid-cols-7 mb-2 text-center text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-              {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d, i) => (
-                <div key={d} className={`py-1 ${i >= 5 ? 'text-amber-500/80 font-semibold' : ''}`}>
+            <div className="grid grid-cols-7 mb-2 text-center text-xs font-medium text-[var(--text-muted)]">
+              {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
+                <div key={d} className="py-1">
                   {d}
                 </div>
               ))}
@@ -378,8 +374,7 @@ export function CalendarView() {
 
             {/* Month grid days */}
             <div
-              className="grid grid-cols-7 flex-1 border-t border-l rounded-lg overflow-hidden"
-              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+              className="grid grid-cols-7 flex-1 border-t border-l rounded-[14px] overflow-hidden border-[var(--border)] bg-[var(--surface)]"
             >
               {monthGrid.map((day) => {
                 const dayEvents = filterEventsForDay(allEvents, day.date);
@@ -389,10 +384,9 @@ export function CalendarView() {
                     key={day.dateKey}
                     data-testid={`calendar-day-cell-${day.dateKey}`}
                     onClick={() => openCreateModal(day.dateKey)}
-                    className={`min-h-[100px] p-1.5 border-r border-b flex flex-col transition-colors cursor-pointer group hover:bg-[var(--surface-hover)] ${
+                    className={`min-h-[100px] p-1.5 border-r border-b border-[var(--border)] flex flex-col transition-colors cursor-pointer group hover:bg-[var(--surface-hover)] ${
                       !day.isCurrentMonth ? 'opacity-35 bg-[var(--bg)]' : ''
-                    } ${day.isToday ? 'bg-[var(--surface-elevated)] ring-1 ring-[var(--accent)] ring-inset' : ''}`}
-                    style={{ borderColor: 'var(--border)' }}
+                    } ${day.isToday ? 'bg-[var(--elevated)] ring-1 ring-[var(--accent)] ring-inset' : ''}`}
                   >
                     {/* Day number & Quick add */}
                     <div className="flex items-center justify-between mb-1">
@@ -434,17 +428,11 @@ export function CalendarView() {
                               e.stopPropagation();
                               if (!isTask) openEditModal(evt);
                             }}
-                            className={`px-1.5 py-0.5 rounded text-[11px] truncate flex items-center gap-1 shadow-xs border ${
-                              isTask
-                                ? 'bg-amber-950/30 border-amber-800/40 text-amber-200'
-                                : isGoogle
-                                ? 'bg-blue-950/30 border-blue-800/40 text-blue-200'
-                                : 'bg-[var(--surface-elevated)] border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]'
-                            }`}
+                            className="px-1.5 py-0.5 rounded text-[11px] truncate flex items-center gap-1 border bg-[var(--elevated)] border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]"
                           >
                             <span
                               className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                                isTask ? 'bg-amber-400' : isGoogle ? 'bg-blue-400' : 'bg-[var(--accent)]'
+                                isTask ? 'bg-[var(--phase-focus,#F59E0B)]' : isGoogle ? 'bg-blue-400' : 'bg-[var(--accent)]'
                               }`}
                             />
                             {timeStr && <span className="font-mono text-[10px] opacity-75">{timeStr}</span>}
@@ -734,15 +722,10 @@ export function CalendarView() {
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
         >
           <div
-            className="w-full max-w-md rounded-xl p-5 shadow-2xl border space-y-4 animate-in fade-in zoom-in-95 duration-150"
-            style={{
-              backgroundColor: 'var(--surface-elevated)',
-              borderColor: 'var(--border)',
-              color: 'var(--text)',
-            }}
+            className="w-full max-w-md rounded-[14px] p-5 shadow-2xl border border-[var(--border)] bg-[var(--surface)] space-y-4 animate-in fade-in zoom-in-95 duration-150 text-[var(--text)]"
           >
-            <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: 'var(--border)' }}>
-              <h2 className="text-base font-bold">
+            <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
+              <h2 className="text-base font-semibold tracking-tight">
                 {editingEvent ? t.calendarEditEvent : t.calendarNewEvent}
               </h2>
               <button
@@ -773,7 +756,7 @@ export function CalendarView() {
                   value={formTitle}
                   onChange={(e) => setFormTitle(e.target.value)}
                   placeholder="e.g. Weekly Strategy Sync"
-                  className="w-full px-3 py-2 rounded-lg border text-sm bg-[var(--surface)] border-[var(--border)] focus:border-[var(--accent)] outline-none"
+                  className="w-full px-3 py-2 rounded-md border text-sm bg-[var(--bg)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none"
                 />
               </div>
 
@@ -798,7 +781,7 @@ export function CalendarView() {
                   required
                   value={formDate}
                   onChange={(e) => setFormDate(e.target.value)}
-                  className="w-full px-3 py-1.5 rounded-lg border text-sm bg-[var(--surface)] border-[var(--border)] focus:border-[var(--accent)] outline-none font-mono"
+                  className="w-full px-3 py-1.5 rounded-md border text-sm bg-[var(--bg)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none font-mono"
                 />
               </div>
 
@@ -814,7 +797,7 @@ export function CalendarView() {
                       required
                       value={formStartTime}
                       onChange={(e) => setFormStartTime(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-lg border text-sm bg-[var(--surface)] border-[var(--border)] focus:border-[var(--accent)] outline-none font-mono"
+                      className="w-full px-3 py-1.5 rounded-md border text-sm bg-[var(--bg)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none font-mono"
                     />
                   </div>
                   <div>
@@ -826,7 +809,7 @@ export function CalendarView() {
                       required
                       value={formEndTime}
                       onChange={(e) => setFormEndTime(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-lg border text-sm bg-[var(--surface)] border-[var(--border)] focus:border-[var(--accent)] outline-none font-mono"
+                      className="w-full px-3 py-1.5 rounded-md border text-sm bg-[var(--bg)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none font-mono"
                     />
                   </div>
                 </div>
@@ -842,7 +825,7 @@ export function CalendarView() {
                   value={formLocation}
                   onChange={(e) => setFormLocation(e.target.value)}
                   placeholder="Online / Office 402"
-                  className="w-full px-3 py-2 rounded-lg border text-sm bg-[var(--surface)] border-[var(--border)] focus:border-[var(--accent)] outline-none"
+                  className="w-full px-3 py-2 rounded-md border text-sm bg-[var(--bg)] border-[var(--border)] text-[var(--text)] focus:border-[var(--accent)] outline-none"
                 />
               </div>
 
@@ -865,15 +848,13 @@ export function CalendarView() {
                   <button
                     type="button"
                     onClick={() => setModalOpen(false)}
-                    className="px-3 py-1.5 rounded-lg border text-xs font-medium hover:bg-[var(--surface-hover)] transition-colors"
-                    style={{ borderColor: 'var(--border)' }}
+                    className="px-3 py-1.5 rounded-md text-xs font-medium border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)] transition-colors"
                   >
                     {t.calendarCancel}
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-opacity hover:opacity-90"
-                    style={{ backgroundColor: 'var(--accent)', color: 'var(--bg)' }}
+                    className="px-4 py-1.5 rounded-md text-xs font-medium shadow-sm transition-opacity hover:opacity-90 bg-[var(--accent)] text-[var(--bg)]"
                   >
                     {t.calendarSave}
                   </button>

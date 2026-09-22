@@ -6,6 +6,8 @@ import type { AlarmItem, ThemeColors } from '../types';
 import { soundService } from '../services/sound';
 import { StoreService } from '../services/store';
 import { isTauri } from '../services/platform';
+import { onDataChanged } from '../services/appEvents';
+import { listAlarms, alarmToScheduledAlarm, toAlarm } from '../services/alarms';
 
 /** "на 12 мин позже" — how far past its own time a missed alarm was noticed. */
 function formatLate(minutes: number): string {
@@ -84,18 +86,27 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
   useEffect(() => {
     if (!isTauri() || !hydrated) return;
     void invoke('sync_alarms', {
-      alarms: firings.map((a) => ({
-        id: a.id,
-        label: a.label || a.title,
-        time: a.time,
-        days: a.days ?? [],
-        repeat: a.repeat,
-        enabled: a.enabled,
-        sound: a.sound,
-        voice_prompt: a.voicePrompt ?? null,
-      })),
+      alarms: firings.map((a) => alarmToScheduledAlarm(toAlarm(a))),
     }).catch((e) => console.warn('Failed to sync alarms to scheduler:', e));
   }, [firings, hydrated]);
+
+  // Subscribe to data-changed signal to re-sync scheduler whenever alarms change
+  useEffect(() => {
+    if (!isTauri()) return;
+    const unsubscribe = onDataChanged(async (table) => {
+      if (table === 'alarms') {
+        try {
+          const latestAlarms = await listAlarms();
+          await invoke('sync_alarms', {
+            alarms: latestAlarms.map(alarmToScheduledAlarm),
+          });
+        } catch (e) {
+          console.warn('Failed to re-sync alarms on data change:', e);
+        }
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   // Keep the backend's own ringer at the user's volume, so an alarm that rings
   // while the window is hidden is as loud as one that rings on screen.

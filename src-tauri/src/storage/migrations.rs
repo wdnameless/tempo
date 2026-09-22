@@ -3,7 +3,7 @@
 
 use rusqlite::{params, Connection};
 
-pub const SCHEMA_VERSION_LATEST: u32 = 3;
+pub const SCHEMA_VERSION_LATEST: u32 = 4;
 
 pub fn migrate(conn: &Connection) -> Result<u32, String> {
     // 1. Ensure schema_version table exists
@@ -30,6 +30,9 @@ pub fn migrate(conn: &Connection) -> Result<u32, String> {
     }
     if current_version < 3 {
         apply_migration_0003(conn)?;
+    }
+    if current_version < 4 {
+        apply_migration_0004(conn)?;
     }
     // Return the latest applied version
     let latest_version: u32 = conn
@@ -329,36 +332,84 @@ CREATE INDEX IF NOT EXISTS idx_stt_history_created_at ON stt_history(created_at 
 
     Ok(())
 }
+fn apply_migration_0004(conn: &Connection) -> Result<(), String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Failed to start transaction for migration 0004: {e}"))?;
+
+    let existing_cols: Vec<String> = {
+        let mut stmt = tx
+            .prepare("PRAGMA table_info(alarms);")
+            .map_err(|e| format!("Failed to inspect alarms pragma: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| row.get(1))
+            .map_err(|e| format!("Failed to query table_info: {e}"))?;
+        rows.flatten().collect()
+    };
+
+    if !existing_cols.contains(&"date".to_string()) {
+        tx.execute("ALTER TABLE alarms ADD COLUMN date TEXT;", [])
+            .map_err(|e| format!("Migration 0004 ALTER TABLE date failed: {e}"))?;
+    }
+    if !existing_cols.contains(&"interval_minutes".to_string()) {
+        tx.execute("ALTER TABLE alarms ADD COLUMN interval_minutes INTEGER;", [])
+            .map_err(|e| format!("Migration 0004 ALTER TABLE interval_minutes failed: {e}"))?;
+    }
+    if !existing_cols.contains(&"window_start".to_string()) {
+        tx.execute("ALTER TABLE alarms ADD COLUMN window_start TEXT;", [])
+            .map_err(|e| format!("Migration 0004 ALTER TABLE window_start failed: {e}"))?;
+    }
+    if !existing_cols.contains(&"window_end".to_string()) {
+        tx.execute("ALTER TABLE alarms ADD COLUMN window_end TEXT;", [])
+            .map_err(|e| format!("Migration 0004 ALTER TABLE window_end failed: {e}"))?;
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    tx.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (?1, ?2);",
+        params![4, now],
+    )
+    .map_err(|e| format!("Failed to record schema version 4: {e}"))?;
+
+    tx.commit()
+        .map_err(|e| format!("Failed to commit migration 0004: {e}"))?;
+
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rusqlite::Connection;
 
-    #[test]
-    fn test_migration_0002_adds_device_id_column() {
-        let conn = Connection::open_in_memory().unwrap();
-        migrate(&conn).unwrap();
-        let mut stmt = conn.prepare("PRAGMA table_info(sync_outbox);").unwrap();
-        let cols: Vec<String> = stmt
-            .query_map([], |row| row.get(1))
+    fn table_columns(conn: &Connection, table: &str) -> Vec<String> {
+        let sql = format!("PRAGMA table_info({table});");
+        let mut stmt = conn.prepare(&sql).unwrap();
+        stmt.query_map([], |row| row.get(1))
             .unwrap()
             .map(|r| r.unwrap())
-            .collect();
+            .collect()
+    }
+
+    fn migrated_db() -> (Connection, u32) {
+        let conn = Connection::open_in_memory().unwrap();
+        let version = migrate(&conn).unwrap();
+        (conn, version)
+    }
+
+    #[test]
+    fn test_migration_0002_adds_device_id_column() {
+        let (conn, _) = migrated_db();
+        let cols = table_columns(&conn, "sync_outbox");
         assert!(cols.contains(&"device_id".to_string()), "sync_outbox must contain device_id column");
     }
 
     #[test]
     fn test_migration_0003_creates_stt_history_table() {
-        let conn = Connection::open_in_memory().unwrap();
-        let version = migrate(&conn).unwrap();
-        assert_eq!(version, 3);
-        let mut stmt = conn.prepare("PRAGMA table_info(stt_history);").unwrap();
-        let cols: Vec<String> = stmt
-            .query_map([], |row| row.get(1))
-            .unwrap()
-            .map(|r| r.unwrap())
-            .collect();
+        let (conn, version) = migrated_db();
+        assert_eq!(version, 4);
+        let cols = table_columns(&conn, "stt_history");
         assert!(cols.contains(&"id".to_string()));
         assert!(cols.contains(&"text".to_string()));
         assert!(cols.contains(&"created_at".to_string()));
@@ -370,5 +421,49 @@ mod tests {
         assert!(cols.contains(&"audio_path".to_string()));
         assert!(cols.contains(&"saved".to_string()));
         assert!(cols.contains(&"app_name".to_string()));
+    }
+
+    #[test]
+    fn test_migration_0004_adds_alarm_columns() {
+        let (conn, version) = migrated_db();
+        assert_eq!(version, 4);
+        let cols = table_columns(&conn, "alarms");
+        assert!(cols.contains(&"date".to_string()));
+        assert!(cols.contains(&"interval_minutes".to_string()));
+        assert!(cols.contains(&"window_start".to_string()));
+        assert!(cols.contains(&"window_end".to_string()));
+    }
+
+    #[test]
+    fn test_migration_0004_preserves_old_alarms_and_reads_none() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Run migration up to v3
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);",
+        ).unwrap();
+        apply_migration_0001(&conn).unwrap();
+        apply_migration_0002(&conn).unwrap();
+        apply_migration_0003(&conn).unwrap();
+
+        // Insert legacy alarm without new columns
+        conn.execute(
+            "INSERT INTO alarms (id, label, time, days, repeat, enabled, sound, voice_prompt, note, updated_at)
+             VALUES ('old1', 'Old Alarm', '07:30', '[]', 'daily', 1, 'gentle', NULL, NULL, '2026-01-01T00:00:00Z');",
+            [],
+        ).unwrap();
+
+        // Migrate to v4
+        let version = migrate(&conn).unwrap();
+        assert_eq!(version, 4);
+
+        // Read back via repo
+        let loaded = crate::storage::repo::get(&conn, "alarms", "old1").unwrap().expect("alarm exists");
+        assert_eq!(loaded["id"], "old1");
+        assert_eq!(loaded["label"], "Old Alarm");
+        assert_eq!(loaded["time"], "07:30");
+        assert!(loaded["date"].is_null());
+        assert!(loaded["interval_minutes"].is_null());
+        assert!(loaded["window_start"].is_null());
+        assert!(loaded["window_end"].is_null());
     }
 }

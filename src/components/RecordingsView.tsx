@@ -397,14 +397,16 @@ export function RecordingsView(): React.ReactElement {
   return (
     <div className="flex flex-col gap-6 max-w-5xl mx-auto w-full pb-12">
       {/* Header */}
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-[var(--text)]">
-          {t.navRecordings}
-        </h1>
-      </div>
+      <header className="flex items-start justify-between gap-4 pb-2 select-none">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <h1 className="text-lg font-semibold tracking-tight truncate text-[var(--text)]">
+            {t.navRecordings}
+          </h1>
+        </div>
+      </header>
 
       {/* Top Half: The Recorder */}
-      <div className="p-6 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex flex-col gap-5 shadow-sm">
+      <div className="p-6 rounded-[14px] bg-[var(--surface)] border border-[var(--border)] flex flex-col gap-5 shadow-sm">
         {/* Tabs: Audio vs Screen */}
         <div className="flex items-center gap-2 border-b border-[var(--border)] pb-3">
           <button
@@ -416,8 +418,8 @@ export function RecordingsView(): React.ReactElement {
             }}
             className={
               activeTab === 'audio'
-                ? 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors bg-white text-black shadow-sm'
-                : 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]'
+                ? 'flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors bg-[var(--accent)] text-[var(--bg)] shadow-sm'
+                : 'flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]'
             }
           >
             <Mic size={16} />
@@ -432,8 +434,8 @@ export function RecordingsView(): React.ReactElement {
             }}
             className={
               activeTab === 'screen'
-                ? 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors bg-white text-black shadow-sm'
-                : 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]'
+                ? 'flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors bg-[var(--accent)] text-[var(--bg)] shadow-sm'
+                : 'flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]'
             }
           >
             <Monitor size={16} />
@@ -673,8 +675,8 @@ export function RecordingsView(): React.ReactElement {
       {/* Bottom Half: The Library */}
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-[var(--text)]">
-            {t.navRecordings}
+          <h2 className="text-sm font-semibold tracking-tight text-[var(--text)]">
+            {t.recLibrary}
           </h2>
           {recordings.length > 0 && (
             <div className="flex items-center gap-3">
@@ -682,7 +684,7 @@ export function RecordingsView(): React.ReactElement {
                 type="button"
                 onClick={handleTranscribePending}
                 disabled={isTranscribingBatch || !!transcribingId}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-hover)] disabled:opacity-50 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[var(--border)] bg-[var(--surface)] text-xs font-medium text-[var(--text)] hover:bg-[var(--surface-hover)] disabled:opacity-50 transition-colors"
               >
                 {isTranscribingBatch ? (
                   <>
@@ -706,8 +708,11 @@ export function RecordingsView(): React.ReactElement {
         </div>
 
         {recordings.length === 0 ? (
-          <div className="p-8 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-center text-sm text-[var(--text-muted)]">
-            {t.recEmpty}
+          <div className="flex flex-col items-center justify-center text-center py-10 px-4 rounded-[14px] border border-dashed border-[var(--border)]">
+            <FileAudio className="w-8 h-8 text-[var(--text-faint)] mb-3" />
+            <div className="text-xs leading-relaxed max-w-sm text-[var(--text-muted)]">
+              {t.recEmpty}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -718,11 +723,11 @@ export function RecordingsView(): React.ReactElement {
               return (
                 <div
                   key={rec.id}
-                  className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex flex-col gap-3 transition-colors"
+                  className="p-4 rounded-[14px] bg-[var(--surface)] border border-[var(--border)] flex flex-col gap-3 transition-colors"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="p-2 rounded-lg bg-[var(--bg)] text-[var(--text)] shrink-0">
+                      <div className="p-2 rounded-md bg-[var(--elevated)] text-[var(--text)] shrink-0">
                         {isAudio ? <FileAudio size={18} /> : <FileVideo size={18} />}
                       </div>
 

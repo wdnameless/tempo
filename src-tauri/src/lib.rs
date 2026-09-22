@@ -401,11 +401,13 @@ async fn dismiss_alarm(id: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Alarms whose moment passed without ringing today, so the UI can say so
-/// instead of silently dropping them.
+/// Previews the next occurrences for a list of alarms.
 #[tauri::command]
-async fn missed_alarms_today() -> Result<Vec<scheduler::MissedAlarm>, String> {
-    Ok(scheduler::missed_today())
+async fn alarm_preview(
+    alarms: Vec<ScheduledAlarm>,
+    count: Option<usize>,
+) -> Result<Vec<scheduler::AlarmPreview>, String> {
+    Ok(scheduler::alarm_preview(alarms, count))
 }
 
 /// Resolves the directory the data file lives in.
@@ -514,7 +516,7 @@ pub fn run() {
             sync_alarms,
             snooze_alarm,
             dismiss_alarm,
-            missed_alarms_today,
+            alarm_preview,
             stop_alarm_sound,
             ringing_alarm_id,
             set_alarm_audio_prefs,

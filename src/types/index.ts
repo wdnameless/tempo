@@ -69,7 +69,7 @@ export interface ThemeColors {
  * "every day" in the Rust scheduler, so an alarm created as a one-off rang
  * forever. The intent is now explicit instead of inferred from an empty list.
  */
-export type RepeatMode = 'once' | 'daily' | 'days';
+export type RepeatMode = 'once' | 'daily' | 'days' | 'date' | 'interval';
 
 /**
  * A piece of work the user intends to do.
@@ -217,6 +217,14 @@ export interface AlarmItem {
   note?: string;
   /** Set when this alarm was expanded from a schedule step. */
   scheduleId?: string;
+  /** One-off calendar date, `YYYY-MM-DD`. Only for `repeat: 'date'`. */
+  date?: string | null;
+  /** Step in minutes. Only for `repeat: 'interval'`. */
+  intervalMinutes?: number | null;
+  /** Interval window start, `HH:MM`. */
+  windowStart?: string | null;
+  /** Interval window end, `HH:MM`. */
+  windowEnd?: string | null;
 }
 
 export interface AISettings {

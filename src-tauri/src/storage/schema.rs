@@ -122,6 +122,10 @@ static ALARMS_COLS: &[(&str, ColType)] = &[
     ("sound", ColType::Text),
     ("voice_prompt", ColType::Text),
     ("note", ColType::Text),
+    ("date", ColType::Text),
+    ("interval_minutes", ColType::Integer),
+    ("window_start", ColType::Text),
+    ("window_end", ColType::Text),
     ("updated_at", ColType::Text),
     ("deleted_at", ColType::Text),
 ];

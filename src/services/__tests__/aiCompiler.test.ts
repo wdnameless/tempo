@@ -211,4 +211,95 @@ describe('AICompilerService (R36)', () => {
       body: 'Текст заметки',
     });
   });
+
+  it('parses a schedule-shaped model reply into create_alarms with the right alarms', () => {
+    const modelReply = JSON.stringify({
+      action: 'create_alarms',
+      reply: 'Настроил расписание тренировок',
+      alarms: [
+        {
+          label: 'Разминка',
+          time: '07:30',
+          repeat: 'days',
+          days: [0, 2, 4],
+          date: null,
+          intervalMinutes: null,
+          windowStart: null,
+          windowEnd: null,
+        },
+        {
+          label: 'Кардио',
+          time: '19:00',
+          repeat: 'days',
+          days: [0, 2, 4],
+          date: null,
+          intervalMinutes: null,
+          windowStart: null,
+          windowEnd: null,
+        },
+      ],
+    });
+
+    const plan = AICompilerService.parseActionJson(modelReply);
+    expect(plan.action).toBe('create_alarms');
+    expect(plan.alarms).toHaveLength(2);
+    expect(plan.alarms?.[0]).toEqual(
+      expect.objectContaining({
+        label: 'Разминка',
+        time: '07:30',
+        repeat: 'days',
+        days: [0, 2, 4],
+      }),
+    );
+    expect(plan.alarms?.[1]).toEqual(
+      expect.objectContaining({
+        label: 'Кардио',
+        time: '19:00',
+        repeat: 'days',
+        days: [0, 2, 4],
+      }),
+    );
+  });
+
+  it('workout text that previously produced build_plan now produces alarms (R03)', () => {
+    // Texts that mention workouts or schedule with times
+    const plan1 = AICompilerService.compileLocalIntent(
+      'расписание тренировок: пн, ср, пт в 07:30 разминка, в 19:00 кардио',
+    );
+    expect(plan1.action).toBe('create_alarms');
+    expect(plan1.alarms).toHaveLength(2);
+    expect(plan1.alarms?.[0].time).toBe('07:30');
+    expect(plan1.alarms?.[0].repeat).toBe('days');
+    expect(plan1.alarms?.[0].days).toEqual([0, 2, 4]);
+
+    const plan2 = AICompilerService.compileLocalIntent(
+      'план тренировок: понедельник 08:00 бег, среда 08:00 силовая, пятница 08:00 растяжка',
+    );
+    expect(plan2.action).toBe('create_alarms');
+    expect(plan2.alarms).toHaveLength(3);
+    expect(plan2.alarms?.[0]).toEqual(
+      expect.objectContaining({ label: 'Бег', time: '08:00', repeat: 'days', days: [0] }),
+    );
+  });
+
+  it('interval repeat parses into interval alarm with minutes and window', () => {
+    const plan = AICompilerService.compileLocalIntent('каждые 2 часа с 09:00 до 18:00 пить воду');
+    expect(plan.action).toBe('create_alarms');
+    expect(plan.alarms).toHaveLength(1);
+    expect(plan.alarms?.[0]).toEqual(
+      expect.objectContaining({
+        repeat: 'interval',
+        intervalMinutes: 120,
+        windowStart: '09:00',
+        windowEnd: '18:00',
+        label: 'Пить воду',
+      }),
+    );
+  });
+
+  it('uses unrecognizedCommand key for unknown input (R12)', () => {
+    const plan = AICompilerService.compileLocalIntent('какая-то случайная белиберда qwerty12345');
+    expect(plan.action).toBe('noop');
+    expect(plan.explanation).toBe('Команда не распознана');
+  });
 });

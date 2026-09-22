@@ -1,7 +1,9 @@
 import { Plus, X, LayoutGrid, Timer as TimerIcon, Bell, ListTodo, NotebookPen } from "lucide-react";
 import { StoreService } from "../services/store";
 import { I18nService } from "../services/i18n";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { onDataChanged } from "../services/appEvents";
+import { listAlarms } from "../services/alarms";
 import { ThemeColors, DynamicUIConfig, AlarmItem, AISettings, TaskItem, NoteItem } from "../types";
 import { Timer } from "./Timer";
 import { Alarms } from "./Alarms";
@@ -44,6 +46,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       ),
     );
   };
+
+  useEffect(() => {
+    const unsub = onDataChanged(async (table) => {
+      if (table === 'alarms') {
+        const latest = await listAlarms();
+        onUpdateAlarms(
+          latest.map((a) => ({
+            id: a.id,
+            title: a.label,
+            label: a.label,
+            time: a.time,
+            repeat: a.repeat as unknown as AlarmItem['repeat'],
+            days: a.days,
+            enabled: a.enabled,
+            sound: a.sound,
+            voicePrompt: a.voicePrompt || undefined,
+            note: a.note || undefined,
+          }))
+        );
+      }
+    });
+    return unsub;
+  }, [onUpdateAlarms]);
 
   const [activeWidgets, setActiveWidgets] = useState<string[]>(() => {
     try {
@@ -235,7 +260,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               >
                 <div className="w-full flex items-center justify-between pb-3 mb-2 border-b border-[var(--border)]">
                   <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-[var(--accent)]">
-                    <Bell size={14} /> Будильники
+                    <Bell size={14} /> {t.tabAlarms}
                   </span>
                   <button
                     onClick={() => toggleWidget('alarms')}

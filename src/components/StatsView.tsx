@@ -146,20 +146,20 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
     return (
       <div
         data-testid="stats-empty-state"
-        className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-black text-white relative h-full w-full select-none"
+        className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[var(--bg)] text-[var(--text)] relative h-full w-full select-none"
       >
         <WinterCanvas className="absolute inset-0" />
-        <div className="w-16 h-16 rounded-2xl bg-[#111114] border border-white/10 flex items-center justify-center mb-4 text-white shadow-xl z-10">
-          <BarChart3 className="w-8 h-8" />
+        <div className="w-16 h-16 rounded-[14px] bg-[var(--elevated)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--text)] shadow-xl z-10">
+          <BarChart3 className="w-8 h-8 text-[var(--text-faint)]" />
         </div>
-        <h2 className="text-lg font-bold text-white mb-1 z-10">
+        <h2 className="text-base font-semibold text-[var(--text)] mb-1 z-10">
           {t.statsEmptyTitle}
         </h2>
-        <p className="text-sm text-white/60 max-w-sm mb-6 leading-relaxed z-10">
+        <p className="text-xs text-[var(--text-muted)] max-w-sm mb-6 leading-relaxed z-10">
           {t.statsEmptyBody}
         </p>
-        <div className="flex items-center gap-2 text-xs text-white/50 px-3 py-1.5 rounded-full bg-[#111114] border border-white/10 z-10">
-          <Sparkles className="w-3.5 h-3.5 text-white" />
+        <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] px-3 py-1.5 rounded-full bg-[var(--elevated)] border border-[var(--border)] z-10">
+          <Sparkles className="w-3.5 h-3.5 text-[var(--accent)]" />
           <span>{t.statsEmptyHint}</span>
         </div>
         <WinterBottomPlayer />
@@ -178,18 +178,18 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
       <div className="w-full max-w-[430px] ml-auto h-full overflow-y-auto p-6 space-y-3.5 relative z-10 select-none no-scrollbar pb-24">
         {/* Header Title */}
         <div className="flex items-center justify-between">
-          <h1 className="text-xs font-semibold text-white/50 tracking-wider">
+          <h1 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
             {t.statsTitle}
           </h1>
 
           {/* Hidden toggle for testing & accessibility */}
-          <div className="inline-flex rounded-lg border border-white/10 bg-[#0c0c0e] p-0.5 text-[11px]">
+          <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5 text-[11px]">
             <button
               type="button"
               data-testid="toggle-period-day"
               onClick={() => setPeriod('day')}
               className={`px-2 py-0.5 rounded transition-colors ${
-                period === 'day' ? 'bg-white text-black font-semibold' : 'text-white/50'
+                period === 'day' ? 'bg-[var(--accent)] text-[var(--bg)] font-semibold' : 'text-[var(--text-muted)]'
               }`}
             >
               {t.statsPeriodDay}
@@ -199,7 +199,7 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
               data-testid="toggle-period-week"
               onClick={() => setPeriod('week')}
               className={`px-2 py-0.5 rounded transition-colors ${
-                period === 'week' ? 'bg-white text-black font-semibold' : 'text-white/50'
+                period === 'week' ? 'bg-[var(--accent)] text-[var(--bg)] font-semibold' : 'text-[var(--text-muted)]'
               }`}
             >
               {t.statsPeriodWeek}
@@ -208,7 +208,7 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
         </div>
 
         {/* Card 1: Focus Activity (Screenshot 3 top card) */}
-        <div className="p-4 rounded-2xl bg-[#0c0c0e]/90 border border-white/10 shadow-2xl backdrop-blur-md space-y-3">
+        <div className="p-4 rounded-[14px] bg-[var(--surface)] border border-[var(--border)] shadow-sm space-y-3">
           <div className="flex items-center justify-between text-xs font-semibold text-white">
             <span>Focus Activity</span>
             {/* 5-step legend squares matching Screenshot 3 */}
@@ -244,7 +244,7 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
         </div>
 
         {/* Card 2: Current Streak (Screenshot 3 middle card) */}
-        <div className="p-4 rounded-2xl bg-[#0c0c0e]/90 border border-white/10 shadow-2xl backdrop-blur-md flex items-center justify-between relative overflow-hidden">
+        <div className="p-4 rounded-[14px] bg-[var(--surface)] border border-[var(--border)] shadow-sm flex items-center justify-between relative overflow-hidden">
           <div className="space-y-1 z-10">
             <div className="text-xs font-semibold text-white">Current Streak</div>
             <div className="flex items-baseline gap-1.5">
@@ -286,7 +286,7 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
         </div>
 
         {/* Card 3: Focused Time (Screenshot 3 bottom card) */}
-        <div className="p-4 rounded-2xl bg-[#0c0c0e]/90 border border-white/10 shadow-2xl backdrop-blur-md space-y-3">
+        <div className="p-4 rounded-[14px] bg-[var(--surface)] border border-[var(--border)] shadow-sm space-y-3">
           <div className="flex items-center justify-between text-xs font-semibold text-white">
             <span>Focused Time</span>
             <span className="text-[10px] font-mono tracking-widest text-white/40 uppercase">

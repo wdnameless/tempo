@@ -370,13 +370,13 @@ export function NotesView(): React.ReactElement {
           }`}
       >
         {/* Header with New Note button */}
-        <div className="flex items-center justify-between border-b border-[var(--border)] p-3">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2.5">
           <div className="flex items-center space-x-2">
             <FileText className="h-4 w-4 text-[var(--accent)]" />
-            <span className="text-sm font-semibold tracking-wide text-[var(--text)]">
+            <span className="text-sm font-semibold tracking-tight text-[var(--text)]">
               {t.titleNotes}
             </span>
-            <span className="rounded-full bg-[var(--border)]/40 px-2 py-0.5 text-xs text-[var(--text-muted)]">
+            <span className="rounded-full bg-[var(--elevated)] border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-muted)]">
               {notes.length}
             </span>
           </div>
@@ -392,7 +392,7 @@ export function NotesView(): React.ReactElement {
           {loading ? (
             <div className="p-4 text-center text-xs text-[var(--text-muted)]">...</div>
           ) : notes.length === 0 ? (
-            <div className="p-6 text-center text-xs text-[var(--text-muted)]">
+            <div className="p-8 text-center text-xs text-[var(--text-muted)]">
               {t.notesEmpty}
             </div>
           ) : (
@@ -408,8 +408,8 @@ export function NotesView(): React.ReactElement {
                   }}
                   className={`group relative flex w-full flex-col p-3 text-left transition-colors ${
                     isSelected
-                      ? 'bg-[var(--accent)]/10 text-[var(--text)]'
-                      : 'hover:bg-[var(--border)]/20 text-[var(--text-muted)]'
+                      ? 'bg-[var(--accent-soft)] text-[var(--text)]'
+                      : 'hover:bg-[var(--surface-hover)] text-[var(--text-muted)]'
                   }`}
                 >
                   <div className="flex w-full items-center justify-between">
@@ -424,7 +424,7 @@ export function NotesView(): React.ReactElement {
                       <Pin className="h-3.5 w-3.5 flex-shrink-0 text-[var(--accent)] ml-1" />
                     )}
                   </div>
-                  <div className="mt-1 flex items-center justify-between text-xs text-[var(--text-muted)]/70">
+                  <div className="mt-1 flex items-center justify-between text-xs text-[var(--text-muted)]">
                     <span className="truncate pr-2">
                       {item.body.split('\n')[0] || ''}
                     </span>
@@ -447,7 +447,7 @@ export function NotesView(): React.ReactElement {
         {currentNote ? (
           <>
             {/* Editor Toolbar */}
-            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2 bg-[var(--surface)]">
+            <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2 bg-[var(--surface)] select-none">
               <div className="flex items-center space-x-2">
                 {/* Back to list on narrow viewport */}
                 <button
@@ -461,13 +461,12 @@ export function NotesView(): React.ReactElement {
 
                 {/* Broken link warning */}
                 {hasBrokenLink && (
-                  <div className="flex items-center space-x-1 text-amber-500 text-xs px-2 py-0.5 rounded bg-amber-500/10">
+                  <div className="flex items-center space-x-1 text-[var(--phase-focus,#F59E0B)] text-xs px-2 py-0.5 rounded-md bg-[var(--phase-focus,#F59E0B)]/10 border border-[var(--phase-focus,#F59E0B)]/20">
                     <AlertTriangle className="h-3.5 w-3.5" />
                     <span>{t.notesBrokenLink}</span>
                   </div>
                 )}
               </div>
-
               <div className="flex items-center space-x-1">
                 {/* Preview toggle */}
                 <IconButton
@@ -503,7 +502,7 @@ export function NotesView(): React.ReactElement {
                 onChange={(e) => setTitle(e.target.value)}
                 onBlur={handleTitleBlur}
                 placeholder={t.titleNotes}
-                className="w-full bg-transparent text-xl font-bold tracking-tight text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none"
+                className="w-full bg-transparent text-lg font-semibold tracking-tight text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none"
               />
 
               {/* Body: Edit or Preview */}
@@ -531,9 +530,9 @@ export function NotesView(): React.ReactElement {
                     {autocomplete && (
                       <div
                         data-testid="notes-autocomplete"
-                        className="absolute left-4 top-16 z-30 w-72 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg overflow-hidden"
+                        className="absolute left-4 top-16 z-30 w-72 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] shadow-lg overflow-hidden"
                       >
-                        <div className="px-3 py-1.5 text-[11px] font-medium text-[var(--text-muted)] border-b border-[var(--border)]/40">
+                        <div className="px-3 py-1.5 text-[11px] font-medium text-[var(--text-muted)] border-b border-[var(--border)]">
                           {t.notesLinkHint}
                         </div>
                         <div className="max-h-48 overflow-y-auto py-1">
@@ -547,8 +546,8 @@ export function NotesView(): React.ReactElement {
                                   onClick={() => void insertLink(suggestion)}
                                   className={`flex w-full items-center px-3 py-1.5 text-left text-xs ${
                                     isSelected
-                                      ? 'bg-[var(--accent)] text-white'
-                                      : 'text-[var(--text)] hover:bg-[var(--border)]/30'
+                                      ? 'bg-[var(--accent)] text-[var(--bg)]'
+                                      : 'text-[var(--text)] hover:bg-[var(--surface-hover)]'
                                   }`}
                                 >
                                   <LinkIcon className="mr-2 h-3.5 w-3.5 opacity-70" />
@@ -562,7 +561,7 @@ export function NotesView(): React.ReactElement {
                               onClick={() =>
                                 void handleCreateTargetAndLink(autocomplete.query)
                               }
-                              className="flex w-full items-center px-3 py-1.5 text-left text-xs bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20"
+                              className="flex w-full items-center px-3 py-1.5 text-left text-xs bg-[var(--accent-soft)] text-[var(--accent)] hover:bg-[var(--accent)]/20"
                             >
                               <Plus className="mr-2 h-3.5 w-3.5" />
                               <span className="truncate">
@@ -582,7 +581,7 @@ export function NotesView(): React.ReactElement {
 
               {/* Backlinks Panel */}
               <div data-testid="notes-backlinks-panel" className="mt-8 border-t border-[var(--border)] pt-4">
-                <div className="flex items-center space-x-2 text-xs font-semibold text-[var(--text-muted)]">
+                <div className="flex items-center space-x-2 text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
                   <LinkIcon className="h-3.5 w-3.5" />
                   <span>{t.notesBacklinks}</span>
                   {backlinks.length > 0 && (
@@ -620,9 +619,9 @@ export function NotesView(): React.ReactElement {
           </>
         ) : (
           /* Empty state when no note is selected or exist */
-          <div className="flex h-full flex-col items-center justify-center p-8 text-center text-[var(--text-muted)]">
-            <FileText className="h-12 w-12 stroke-[1.2] text-[var(--text-muted)]/30 mb-3" />
-            <p className="text-sm font-medium">{t.notesEmpty}</p>
+          <div className="flex h-full flex-col items-center justify-center p-8 text-center">
+            <FileText className="h-10 w-10 text-[var(--text-faint)] mb-3" />
+            <p className="text-sm font-medium text-[var(--text)]">{t.notesEmpty}</p>
             <div className="mt-4">
               <IconButton
                 icon={<Plus size={16} />}

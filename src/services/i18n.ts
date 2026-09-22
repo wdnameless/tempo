@@ -16,6 +16,46 @@ export interface Translations {
   noSpeechDetected: string;
   unrecognizedCommand: string;
   soundPreviewFailed: string;
+  // Alarms MVP
+  alarmsTitle: string;
+  alarmsNew: string;
+  alarmsEmpty: string;
+  alarmsNext: string;
+  alarmsRepeatOnce: string;
+  alarmsRepeatDaily: string;
+  alarmsRepeatDays: string;
+  alarmsRepeatDate: string;
+  alarmsRepeatInterval: string;
+  alarmsDate: string;
+  alarmsTime: string;
+  alarmsLabel: string;
+  alarmsLabelPlaceholder: string;
+  alarmsIntervalEvery: string;
+  alarmsIntervalMinutes: string;
+  alarmsIntervalHours: string;
+  alarmsWindowFrom: string;
+  alarmsWindowTo: string;
+  alarmsEnabled: string;
+  alarmsDisabled: string;
+  alarmsDelete: string;
+  alarmsSave: string;
+  alarmsCancel: string;
+  alarmsToday: string;
+  alarmsTomorrow: string;
+  alarmsNever: string;
+  aiAlarmsPreviewTitle: string;
+  aiAlarmsConfirm: string;
+  aiAlarmsCancel: string;
+  aiAlarmsCreated: string;
+  aiAlarmsNone: string;
+  alarmsNote: string;
+  alarmsNotePlaceholder: string;
+  alarmsSnooze: string;
+  alarmsSound: string;
+  alarmsSectionUpcoming: string;
+  alarmsSectionAll: string;
+  alarmsSkipped: string;
+  alarmsNextAt: string;
 
   // New shell - navigation / sidebar
   navDashboard: string;
@@ -441,6 +481,7 @@ export interface Translations {
   notesLinkHint: string;
 
   navRecordings: string;
+  recLibrary: string;
   recTabAudio: string;
   recTabScreen: string;
   recMic: string;
@@ -574,6 +615,46 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     noSpeechDetected: 'Речь не обнаружена',
     unrecognizedCommand: 'Команда не распознана',
     soundPreviewFailed: 'Не удалось воспроизвести звук',
+    // Alarms MVP
+    alarmsTitle: 'Будильники',
+    alarmsNew: 'Новый будильник',
+    alarmsEmpty: 'Нет будильников',
+    alarmsNext: 'Следующий',
+    alarmsRepeatOnce: 'Один раз',
+    alarmsRepeatDaily: 'Каждый день',
+    alarmsRepeatDays: 'По дням',
+    alarmsRepeatDate: 'На дату',
+    alarmsRepeatInterval: 'Интервал',
+    alarmsDate: 'Дата',
+    alarmsTime: 'Время',
+    alarmsLabel: 'Название',
+    alarmsLabelPlaceholder: 'Например: Тренировка',
+    alarmsIntervalEvery: 'Каждые',
+    alarmsIntervalMinutes: 'мин',
+    alarmsIntervalHours: 'ч',
+    alarmsWindowFrom: 'С',
+    alarmsWindowTo: 'До',
+    alarmsEnabled: 'Включен',
+    alarmsDisabled: 'Выключен',
+    alarmsDelete: 'Удалить',
+    alarmsSave: 'Сохранить',
+    alarmsCancel: 'Отмена',
+    alarmsToday: 'Сегодня',
+    alarmsTomorrow: 'Завтра',
+    alarmsNever: 'Никогда',
+    aiAlarmsPreviewTitle: 'Предпросмотр будильников',
+    aiAlarmsConfirm: 'Создать',
+    aiAlarmsCancel: 'Отмена',
+    aiAlarmsCreated: 'Будильники созданы',
+    aiAlarmsNone: 'Будильников не найдено',
+    alarmsNote: 'Заметка',
+    alarmsNotePlaceholder: 'Что нужно сделать при срабатывании',
+    alarmsSnooze: 'Отложить',
+    alarmsSound: 'Звук',
+    alarmsSectionUpcoming: 'Ближайшие',
+    alarmsSectionAll: 'Все будильники',
+    alarmsSkipped: 'Пропущен',
+    alarmsNextAt: 'Сработает в',
 
     // New shell - navigation / sidebar
     navDashboard: 'Помодоро',
@@ -996,6 +1077,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     notesUnpin: 'Открепить',
     notesLinkHint: '[[ — ссылка на другую заметку',
     navRecordings: 'Записи',
+    recLibrary: 'Библиотека записей',
     recTabAudio: 'Звук',
     recTabScreen: 'Экран',
     recMic: 'Микрофон',
@@ -1384,6 +1466,46 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     noSpeechDetected: 'No speech detected',
     unrecognizedCommand: 'Unrecognized command',
     soundPreviewFailed: 'Failed to play sound preview',
+    // Alarms MVP
+    alarmsTitle: 'Alarms',
+    alarmsNew: 'New Alarm',
+    alarmsEmpty: 'No alarms',
+    alarmsNext: 'Next',
+    alarmsRepeatOnce: 'Once',
+    alarmsRepeatDaily: 'Daily',
+    alarmsRepeatDays: 'Days of week',
+    alarmsRepeatDate: 'Specific date',
+    alarmsRepeatInterval: 'Interval',
+    alarmsDate: 'Date',
+    alarmsTime: 'Time',
+    alarmsLabel: 'Label',
+    alarmsLabelPlaceholder: 'e.g. Workout',
+    alarmsIntervalEvery: 'Every',
+    alarmsIntervalMinutes: 'min',
+    alarmsIntervalHours: 'h',
+    alarmsWindowFrom: 'From',
+    alarmsWindowTo: 'To',
+    alarmsEnabled: 'Enabled',
+    alarmsDisabled: 'Disabled',
+    alarmsDelete: 'Delete',
+    alarmsSave: 'Save',
+    alarmsCancel: 'Cancel',
+    alarmsToday: 'Today',
+    alarmsTomorrow: 'Tomorrow',
+    alarmsNever: 'Never',
+    aiAlarmsPreviewTitle: 'Alarm Preview',
+    aiAlarmsConfirm: 'Create',
+    aiAlarmsCancel: 'Cancel',
+    aiAlarmsCreated: 'Alarms created',
+    aiAlarmsNone: 'No alarms found',
+    alarmsNote: 'Note',
+    alarmsNotePlaceholder: 'What to do when alarm fires',
+    alarmsSnooze: 'Snooze',
+    alarmsSound: 'Sound',
+    alarmsSectionUpcoming: 'Upcoming',
+    alarmsSectionAll: 'All Alarms',
+    alarmsSkipped: 'Missed',
+    alarmsNextAt: 'Fires at',
 
     // New shell - navigation / sidebar
     navDashboard: 'Pomodoro',
@@ -1546,6 +1668,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     notesUnpin: 'Unpin',
     notesLinkHint: '[[ links to another note',
     navRecordings: 'Recordings',
+    recLibrary: 'Recording library',
     recTabAudio: 'Audio',
     recTabScreen: 'Screen',
     recMic: 'Microphone',

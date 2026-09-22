@@ -179,7 +179,7 @@ export function TasksView() {
       <div
         key={task.id}
         data-task-row={task.id}
-        className="group flex flex-col transition-colors rounded-lg"
+        className="group flex flex-col transition-colors rounded-[10px]"
         style={
           revealedId === task.id
             ? { backgroundColor: 'var(--accent-soft)', boxShadow: '0 0 0 1px var(--accent)' }
@@ -194,9 +194,8 @@ export function TasksView() {
                 type="button"
                 onClick={() => setEditingTaskId(isEditing ? null : task.id)}
                 className={`text-left font-medium text-sm hover:underline focus:outline-none truncate max-w-full ${
-                  task.done ? 'line-through text-muted opacity-60' : ''
+                  task.done ? 'line-through text-[var(--text-muted)] opacity-60' : 'text-[var(--text)]'
                 }`}
-                style={{ color: 'var(--text-normal)' }}
               >
                 {task.title}
               </button>
@@ -206,11 +205,7 @@ export function TasksView() {
                 <button
                   type="button"
                   onClick={() => toggleExpand(task.id)}
-                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded transition-colors"
-                  style={{
-                    backgroundColor: 'var(--surface-hover, rgba(255,255,255,0.05))',
-                    color: 'var(--text-muted)',
-                  }}
+                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md transition-colors bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--text)]"
                   title={t.tasksSubtasks}
                 >
                   <span>
@@ -223,11 +218,7 @@ export function TasksView() {
               {/* Metadata tags */}
               {task.dueDate && (
                 <span
-                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded"
-                  style={{
-                    backgroundColor: 'var(--surface-hover, rgba(255,255,255,0.05))',
-                    color: 'var(--text-muted)',
-                  }}
+                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md bg-[var(--elevated)] text-[var(--text-muted)]"
                   title={t.tasksDueDate}
                 >
                   <Calendar size={11} />
@@ -237,11 +228,7 @@ export function TasksView() {
 
               {task.startAt && (
                 <span
-                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded"
-                  style={{
-                    backgroundColor: 'var(--surface-hover, rgba(255,255,255,0.05))',
-                    color: 'var(--text-muted)',
-                  }}
+                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md bg-[var(--elevated)] text-[var(--text-muted)]"
                   title={t.tasksStartAt}
                 >
                   <Clock size={11} />
@@ -251,11 +238,7 @@ export function TasksView() {
 
               {task.plannedMinutes != null && task.plannedMinutes > 0 && (
                 <span
-                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded"
-                  style={{
-                    backgroundColor: 'var(--surface-hover, rgba(255,255,255,0.05))',
-                    color: 'var(--text-muted)',
-                  }}
+                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md bg-[var(--elevated)] text-[var(--text-muted)]"
                   title={t.tasksPlanned}
                 >
                   <Timer size={11} />
@@ -292,23 +275,13 @@ export function TasksView() {
 
         {/* Inline editor when clicked */}
         {isEditing && (
-          <div
-            className="px-4 py-3 mx-2 my-1 rounded flex flex-col gap-2.5 text-xs"
-            style={{
-              backgroundColor: 'var(--surface, rgba(255,255,255,0.03))',
-              border: '1px solid var(--border, rgba(255,255,255,0.08))',
-            }}
-          >
+          <div className="px-4 py-3 mx-2 my-1 rounded-[10px] flex flex-col gap-2.5 text-xs bg-[var(--elevated)] border border-[var(--border)]">
             <div className="flex items-center gap-2">
               <input
                 type="text"
                 value={task.title}
                 onChange={(e) => handleUpdate(task.id, { title: e.target.value })}
-                className="w-full px-2.5 py-1.5 rounded bg-transparent font-medium text-sm focus:outline-none focus:ring-1"
-                style={{
-                  border: '1px solid var(--border, rgba(255,255,255,0.1))',
-                  color: 'var(--text-normal)',
-                }}
+                className="w-full px-2.5 py-1.5 rounded-md bg-[var(--surface)] font-medium text-sm text-[var(--text)] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)]"
               />
             </div>
 
@@ -330,22 +303,18 @@ export function TasksView() {
 
               {/* Due Date */}
               <div className="flex items-center gap-1.5">
-                <span style={{ color: 'var(--text-muted)' }}>{t.tasksDueDate}:</span>
+                <span className="text-[var(--text-muted)]">{t.tasksDueDate}:</span>
                 <input
                   type="date"
                   value={task.dueDate ?? ''}
                   onChange={(e) => handleUpdate(task.id, { dueDate: e.target.value || null })}
-                  className="px-2 py-1 rounded bg-transparent focus:outline-none"
-                  style={{
-                    border: '1px solid var(--border, rgba(255,255,255,0.1))',
-                    color: 'var(--text-normal)',
-                  }}
+                  className="px-2 py-1 rounded-md bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>
 
               {/* Start At */}
               <div className="flex items-center gap-1.5">
-                <span style={{ color: 'var(--text-muted)' }}>{t.tasksStartAt}:</span>
+                <span className="text-[var(--text-muted)]">{t.tasksStartAt}:</span>
                 <input
                   type="time"
                   value={task.startAt ? task.startAt.slice(11, 16) : ''}
@@ -355,17 +324,13 @@ export function TasksView() {
                     const iso = val ? `${datePart}T${val}:00.000Z` : null;
                     void handleUpdate(task.id, { startAt: iso });
                   }}
-                  className="px-2 py-1 rounded bg-transparent focus:outline-none"
-                  style={{
-                    border: '1px solid var(--border, rgba(255,255,255,0.1))',
-                    color: 'var(--text-normal)',
-                  }}
+                  className="px-2 py-1 rounded-md bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>
 
               {/* Planned minutes */}
               <div className="flex items-center gap-1.5">
-                <span style={{ color: 'var(--text-muted)' }}>{t.tasksPlanned}:</span>
+                <span className="text-[var(--text-muted)]">{t.tasksPlanned}:</span>
                 <input
                   type="number"
                   min="0"
@@ -377,11 +342,7 @@ export function TasksView() {
                       plannedMinutes: e.target.value ? Number(e.target.value) : null,
                     })
                   }
-                  className="w-16 px-2 py-1 rounded bg-transparent focus:outline-none"
-                  style={{
-                    border: '1px solid var(--border, rgba(255,255,255,0.1))',
-                    color: 'var(--text-normal)',
-                  }}
+                  className="w-16 px-2 py-1 rounded-md bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>
             </div>
@@ -408,11 +369,7 @@ export function TasksView() {
                     void handleAddSubtask(task.id);
                   }
                 }}
-                className="flex-1 px-2.5 py-1 text-xs rounded bg-transparent focus:outline-none"
-                style={{
-                  border: '1px solid var(--border, rgba(255,255,255,0.1))',
-                  color: 'var(--text-normal)',
-                }}
+                className="flex-1 px-2.5 py-1 text-xs rounded-md bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)]"
               />
               <IconButton
                 icon={<Plus size={14} />}
@@ -429,14 +386,14 @@ export function TasksView() {
   return (
     <div className="flex flex-col h-full overflow-y-auto px-6 py-6 gap-6 max-w-4xl mx-auto w-full">
       {/* Top Header & Sort Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight" style={{ color: 'var(--text-normal)' }}>
+      <header className="flex items-start justify-between gap-4 pb-2 select-none">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <h1 className="text-lg font-semibold tracking-tight truncate text-[var(--text)]">
             {t.titleTasks}
           </h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <Segmented
             options={[
               { value: 'manual', label: t.tasksSortManual },
@@ -447,7 +404,7 @@ export function TasksView() {
             onChange={(val) => handleSortChange(val as TaskSortMode)}
           />
         </div>
-      </div>
+      </header>
 
       {/* New Task Input */}
       <form onSubmit={handleCreateTask} className="relative flex items-center">
@@ -456,35 +413,29 @@ export function TasksView() {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={t.tasksNew}
-          className="w-full px-4 py-3 rounded-lg text-sm bg-transparent focus:outline-none transition-all"
-          style={{
-            backgroundColor: 'var(--surface, rgba(255,255,255,0.03))',
-            border: '1px solid var(--border, rgba(255,255,255,0.1))',
-            color: 'var(--text-normal)',
-          }}
+          className="w-full px-4 py-2.5 rounded-[14px] text-sm bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--border-strong)] transition-all"
         />
         <button
           type="submit"
           disabled={!draft.trim()}
-          className="absolute right-2 px-3 py-1.5 text-xs font-medium rounded transition-opacity disabled:opacity-30"
-          style={{
-            backgroundColor: 'var(--primary, #3B82F6)',
-            color: '#FFFFFF',
-          }}
+          className="absolute right-2 px-3 py-1.5 text-xs font-medium rounded-md transition-opacity disabled:opacity-30 bg-[var(--accent)] text-[var(--bg)]"
         >
           {t.commonAdd}
         </button>
       </form>
 
       {/* Main Task List */}
-      <div className="flex flex-col rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+      <div className="flex flex-col rounded-[14px] overflow-hidden bg-[var(--surface)] border border-[var(--border)]">
         {loading ? (
-          <div className="p-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+          <div className="p-8 text-center text-sm text-[var(--text-muted)]">
             {t.commonLoading}
           </div>
         ) : activeRoots.length === 0 && completedRoots.length === 0 ? (
-          <div className="p-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-            {t.tasksEmpty}
+          <div className="flex flex-col items-center justify-center text-center py-12 px-4">
+            <CheckCircle2 className="w-8 h-8 mb-2 text-[var(--text-faint)]" />
+            <div className="text-sm font-medium text-[var(--text)]">
+              {t.tasksEmpty}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col divide-y divide-[var(--border)]">
@@ -498,8 +449,7 @@ export function TasksView() {
             <button
               type="button"
               onClick={() => setShowCompleted((prev) => !prev)}
-              className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-medium uppercase tracking-wider transition-colors hover:bg-[var(--surface-hover)] focus:outline-none"
-              style={{ color: 'var(--text-muted)' }}
+              className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-medium uppercase tracking-wider transition-colors hover:bg-[var(--surface-hover)] focus:outline-none text-[var(--text-muted)]"
             >
               <div className="flex items-center gap-2">
                 {showCompleted ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -510,7 +460,7 @@ export function TasksView() {
             </button>
 
             {showCompleted && (
-              <div className="flex flex-col divide-y divide-[var(--border)] bg-[var(--surface-subtle,rgba(0,0,0,0.1))]">
+              <div className="flex flex-col divide-y divide-[var(--border)] bg-[var(--surface-hover)]/30">
                 {completedRoots.map((task) => renderTaskRow(task))}
               </div>
             )}

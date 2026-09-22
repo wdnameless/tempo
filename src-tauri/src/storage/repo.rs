@@ -90,11 +90,11 @@ static LINKS_SQL: TableSql = TableSql {
 };
 
 static ALARMS_SQL: TableSql = TableSql {
-    list_active: "SELECT id, label, time, days, repeat, enabled, sound, voice_prompt, note, updated_at, deleted_at FROM alarms WHERE deleted_at IS NULL",
-    list_all: "SELECT id, label, time, days, repeat, enabled, sound, voice_prompt, note, updated_at, deleted_at FROM alarms",
-    get_by_id: "SELECT id, label, time, days, repeat, enabled, sound, voice_prompt, note, updated_at, deleted_at FROM alarms WHERE id = ?1",
+    list_active: "SELECT id, label, time, days, repeat, enabled, sound, voice_prompt, note, date, interval_minutes, window_start, window_end, updated_at, deleted_at FROM alarms WHERE deleted_at IS NULL",
+    list_all: "SELECT id, label, time, days, repeat, enabled, sound, voice_prompt, note, date, interval_minutes, window_start, window_end, updated_at, deleted_at FROM alarms",
+    get_by_id: "SELECT id, label, time, days, repeat, enabled, sound, voice_prompt, note, date, interval_minutes, window_start, window_end, updated_at, deleted_at FROM alarms WHERE id = ?1",
     soft_delete: "UPDATE alarms SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
-    changed_since: "SELECT id, label, time, days, repeat, enabled, sound, voice_prompt, note, updated_at, deleted_at FROM alarms WHERE updated_at > ?1",
+    changed_since: "SELECT id, label, time, days, repeat, enabled, sound, voice_prompt, note, date, interval_minutes, window_start, window_end, updated_at, deleted_at FROM alarms WHERE updated_at > ?1",
 };
 
 static CHAT_MESSAGES_SQL: TableSql = TableSql {

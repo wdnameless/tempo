@@ -33,10 +33,15 @@ pub enum Repeat {
     Daily,
     /// Rings only on the weekdays in `days`.
     Days,
+    /// Rings once at `date` + `time`, then switches itself off.
+    Date,
+    /// Rings repeatedly at interval minutes within a daily window.
+    Interval,
 }
 
 /// One alarm as the scheduler sees it. Mirrors the frontend `AlarmItem`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ScheduledAlarm {
     pub id: String,
     pub label: String,
@@ -47,13 +52,29 @@ pub struct ScheduledAlarm {
     pub days: Vec<u32>,
     #[serde(default)]
     pub repeat: Repeat,
+    #[serde(default)]
+    pub date: Option<String>,
+    #[serde(default, alias = "interval_minutes")]
+    pub interval_minutes: Option<u32>,
+    #[serde(default, alias = "window_start")]
+    pub window_start: Option<String>,
+    #[serde(default, alias = "window_end")]
+    pub window_end: Option<String>,
     pub enabled: bool,
     /// Signal shape to play, matching the frontend alarm profiles.
     #[serde(default = "default_sound")]
     pub sound: String,
     /// Voice line spoken when the alarm rings.
-    #[serde(default)]
+    #[serde(default, alias = "voice_prompt")]
     pub voice_prompt: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AlarmPreview {
+    pub id: String,
+    pub next: Vec<String>,
+    pub disabled: bool,
 }
 
 fn default_sound() -> String {
@@ -97,7 +118,9 @@ struct SchedulerState {
     snoozed: Vec<Snooze>,
     /// `(alarm_id, local date)` already handled today, so nothing rings twice —
     /// including after the user acknowledges it mid-minute.
-    handled: Vec<(String, NaiveDate)>,
+    /// `(alarm_id, local date, minute_of_day)` already handled today, so nothing rings twice —
+    /// including after the user acknowledges it mid-minute.
+    handled: Vec<(String, NaiveDate, i64)>,
     /// Today's skipped alarms, for the "missed" surface.
     missed: Vec<(NaiveDate, MissedAlarm)>,
     /// False until the first sync, which carries restored state rather than a
@@ -125,12 +148,64 @@ fn parse_hhmm(value: &str) -> Option<i64> {
     (hours <= 23 && minutes <= 59).then_some(hours * 60 + minutes)
 }
 
-fn rings_on(alarm: &ScheduledAlarm, weekday: u32) -> bool {
+fn rings_on(alarm: &ScheduledAlarm, date: NaiveDate) -> bool {
+    let weekday = date.weekday().num_days_from_sunday();
     match alarm.repeat {
-        // A one-shot rings at its next moment regardless of weekday: it turns
-        // itself off the instant it has rung, so it cannot repeat.
-        Repeat::Once | Repeat::Daily => true,
+        Repeat::Once | Repeat::Daily | Repeat::Interval => true,
         Repeat::Days => alarm.days.contains(&weekday),
+        Repeat::Date => match &alarm.date {
+            Some(d) => NaiveDate::parse_from_str(d, "%Y-%m-%d").map(|target| target == date).unwrap_or(false),
+            None => false,
+        },
+    }
+}
+
+fn firing_minutes_today(alarm: &ScheduledAlarm, date: NaiveDate) -> Vec<i64> {
+    if !rings_on(alarm, date) {
+        return Vec::new();
+    }
+
+    match alarm.repeat {
+        Repeat::Once | Repeat::Daily | Repeat::Days | Repeat::Date => {
+            parse_hhmm(&alarm.time).map(|m| vec![m]).unwrap_or_default()
+        }
+        Repeat::Interval => {
+            let step = alarm.interval_minutes.unwrap_or(60).max(1) as i64;
+            let start_min = alarm.window_start.as_deref().and_then(parse_hhmm).unwrap_or(0);
+            let end_min = alarm.window_end.as_deref().and_then(parse_hhmm).unwrap_or(23 * 60 + 59);
+
+            let mut minutes = Vec::new();
+            if start_min <= end_min {
+                let mut m = start_min;
+                while m <= end_min {
+                    minutes.push(m);
+                    m += step;
+                }
+            } else {
+                let total_span = (1440 - start_min) + end_min;
+
+                let mut offset = 0;
+                while offset <= total_span {
+                    if offset >= 1440 - start_min {
+                        let m = start_min + offset - 1440;
+                        if m <= end_min {
+                            minutes.push(m);
+                        }
+                    }
+                    offset += step;
+                }
+
+                let mut offset = 0;
+                while offset <= total_span {
+                    if offset < 1440 - start_min {
+                        let m = start_min + offset;
+                        minutes.push(m);
+                    }
+                    offset += step;
+                }
+            }
+            minutes
+        }
     }
 }
 
@@ -145,12 +220,17 @@ pub fn sync(alarms: Vec<ScheduledAlarm>) {
         // that list is restored state, and its alarms keep their catch-up chance.
         if state.synced_once {
             let now = Local::now().naive_local();
+            let today = now.date();
             let minute_of_day = now.hour() as i64 * 60 + now.minute() as i64;
             for alarm in &alarms {
                 let already_known = known.contains(&alarm.id);
-                let passed_today = parse_hhmm(&alarm.time).is_some_and(|at| at < minute_of_day);
-                if !already_known && passed_today {
-                    state.handled.push((alarm.id.clone(), now.date()));
+                if !already_known {
+                    let slots = firing_minutes_today(alarm, today);
+                    for at in slots {
+                        if at < minute_of_day {
+                            state.handled.push((alarm.id.clone(), today, at));
+                        }
+                    }
                 }
             }
         }
@@ -159,7 +239,7 @@ pub fn sync(alarms: Vec<ScheduledAlarm>) {
         state.alarms = alarms;
         let ids: Vec<String> = state.alarms.iter().map(|a| a.id.clone()).collect();
         state.snoozed.retain(|s| ids.contains(&s.id));
-        state.handled.retain(|(id, _)| ids.contains(id));
+        state.handled.retain(|(id, _, _)| ids.contains(id));
         state.missed.retain(|(_, m)| ids.contains(&m.id));
     });
 }
@@ -188,18 +268,6 @@ pub fn dismiss(id: &str) {
     with_state(|state| state.snoozed.retain(|s| s.id != id));
 }
 
-/// Alarms skipped today, oldest first.
-pub fn missed_today() -> Vec<MissedAlarm> {
-    let today = Local::now().naive_local().date();
-    with_state(|state| {
-        state
-            .missed
-            .iter()
-            .filter(|(day, _)| *day == today)
-            .map(|(_, alarm)| alarm.clone())
-            .collect()
-    })
-}
 
 /// Records a ring and returns the event to broadcast.
 ///
@@ -208,10 +276,11 @@ pub fn missed_today() -> Vec<MissedAlarm> {
 fn ring(
     state: &mut SchedulerState,
     alarm: &ScheduledAlarm,
+    time: &str,
     snoozed_for: u32,
     late_by_minutes: u32,
 ) -> AlarmFiredEvent {
-    let consumed = alarm.repeat == Repeat::Once;
+    let consumed = alarm.repeat == Repeat::Once || alarm.repeat == Repeat::Date;
     if consumed {
         if let Some(slot) = state.alarms.iter_mut().find(|a| a.id == alarm.id) {
             slot.enabled = false;
@@ -221,7 +290,7 @@ fn ring(
     AlarmFiredEvent {
         id: alarm.id.clone(),
         label: alarm.label.clone(),
-        time: alarm.time.clone(),
+        time: time.to_string(),
         voice_prompt: alarm.voice_prompt.clone(),
         snoozed_for,
         late_by_minutes,
@@ -240,11 +309,10 @@ fn find_alarm(state: &SchedulerState, id: &str) -> Option<ScheduledAlarm> {
 /// Tauri runtime.
 fn tick(state: &mut SchedulerState, now: NaiveDateTime) -> (Vec<AlarmFiredEvent>, Vec<MissedAlarm>) {
     let today = now.date();
-    let weekday = now.weekday().num_days_from_sunday();
     let minute_of_day = now.hour() as i64 * 60 + now.minute() as i64;
 
     // Yesterday's bookkeeping says nothing about today.
-    state.handled.retain(|(_, day)| *day == today);
+    state.handled.retain(|(_, day, _)| *day == today);
     state.missed.retain(|(day, _)| *day == today);
 
     let mut fired = Vec::new();
@@ -262,40 +330,45 @@ fn tick(state: &mut SchedulerState, now: NaiveDateTime) -> (Vec<AlarmFiredEvent>
         state.snoozed.retain(|s| s.id != entry.id);
         if let Some(alarm) = find_alarm(state, &entry.id) {
             if alarm.enabled {
-                fired.push(ring(state, &alarm, entry.minutes, 0));
+                fired.push(ring(state, &alarm, &alarm.time, entry.minutes, 0));
             }
         }
     }
 
-    // Scheduled matches: enabled, runs today, not snoozed, not already handled.
-    let pending: Vec<ScheduledAlarm> = state
-        .alarms
-        .iter()
-        .filter(|a| a.enabled && rings_on(a, weekday))
-        .filter(|a| !state.snoozed.iter().any(|s| s.id == a.id))
-        .filter(|a| !state.handled.iter().any(|(id, _)| id == &a.id))
-        .cloned()
-        .collect();
+    // Scheduled matches: enabled, not snoozed, has slot today not already handled.
+    let alarms = state.alarms.clone();
 
-    for alarm in pending {
-        let Some(at) = parse_hhmm(&alarm.time) else {
+    for alarm in alarms {
+        if !alarm.enabled {
             continue;
-        };
-        let late_by = minute_of_day - at;
-        if late_by < 0 {
-            continue; // still ahead of us today
+        }
+        if state.snoozed.iter().any(|s| s.id == alarm.id) {
+            continue;
         }
 
-        state.handled.push((alarm.id.clone(), today));
-        if late_by <= CATCH_UP_MINUTES {
-            fired.push(ring(state, &alarm, 0, late_by as u32));
-        } else {
-            missed.push(MissedAlarm {
-                id: alarm.id.clone(),
-                label: alarm.label.clone(),
-                time: alarm.time.clone(),
-                late_by_minutes: late_by as u32,
-            });
+        let slots = firing_minutes_today(&alarm, today);
+        for at in slots {
+            if state.handled.iter().any(|(id, day, m)| id == &alarm.id && *day == today && *m == at) {
+                continue;
+            }
+            let late_by = minute_of_day - at;
+            if late_by < 0 {
+                continue; // still ahead of us today
+            }
+
+            state.handled.push((alarm.id.clone(), today, at));
+            let firing_time = format!("{:02}:{:02}", at / 60, at % 60);
+
+            if late_by <= CATCH_UP_MINUTES {
+                fired.push(ring(state, &alarm, &firing_time, 0, late_by as u32));
+            } else {
+                missed.push(MissedAlarm {
+                    id: alarm.id.clone(),
+                    label: alarm.label.clone(),
+                    time: firing_time,
+                    late_by_minutes: late_by as u32,
+                });
+            }
         }
     }
 
@@ -304,6 +377,53 @@ fn tick(state: &mut SchedulerState, now: NaiveDateTime) -> (Vec<AlarmFiredEvent>
     }
 
     (fired, missed)
+}
+
+pub fn next_occurrences(alarm: &ScheduledAlarm, count: usize, now: NaiveDateTime) -> Vec<String> {
+    if !alarm.enabled || count == 0 {
+        return Vec::new();
+    }
+
+    let max_count = match alarm.repeat {
+        Repeat::Once | Repeat::Date => count.min(1),
+        _ => count,
+    };
+
+    let mut results = Vec::new();
+    let mut day_offset = 0;
+
+    while results.len() < max_count && day_offset < 366 {
+        if let Some(d) = now.date().checked_add_signed(chrono::Duration::days(day_offset)) {
+            let slots = firing_minutes_today(alarm, d);
+            for m in slots {
+                if let Some(dt) = d.and_hms_opt((m / 60) as u32, (m % 60) as u32, 0) {
+                    if dt > now {
+                        results.push(dt.format("%Y-%m-%dT%H:%M:%S").to_string());
+                        if results.len() == max_count {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        day_offset += 1;
+    }
+
+    results
+}
+
+pub fn preview_alarm_at(alarm: &ScheduledAlarm, count: usize, now: NaiveDateTime) -> AlarmPreview {
+    AlarmPreview {
+        id: alarm.id.clone(),
+        next: next_occurrences(alarm, count, now),
+        disabled: !alarm.enabled,
+    }
+}
+
+pub fn alarm_preview(alarms: Vec<ScheduledAlarm>, count: Option<usize>) -> Vec<AlarmPreview> {
+    let count = count.unwrap_or(3);
+    let now = chrono::Local::now().naive_local();
+    alarms.iter().map(|a| preview_alarm_at(a, count, now)).collect()
 }
 
 /// Signal profile configured for `id`, falling back to a global default.
@@ -398,6 +518,10 @@ mod tests {
             time: time.to_string(),
             days,
             repeat: Repeat::Days,
+            date: None,
+            interval_minutes: None,
+            window_start: None,
+            window_end: None,
             enabled: true,
             sound: default_sound(),
             voice_prompt: None,
@@ -494,7 +618,7 @@ mod tests {
     #[test]
     fn snoozed_alarm_is_suppressed_then_rings_at_the_deferred_time() {
         let mut state = state_with(vec![alarm("a", "07:00", vec![3])]);
-        state.handled.push(("a".into(), wednesday(7, 0).date()));
+        state.handled.push(("a".into(), wednesday(7, 0).date(), 420));
         state.snoozed.push(Snooze {
             id: "a".into(),
             due_at: SystemTime::now() - Duration::from_secs(1),
@@ -585,7 +709,7 @@ mod tests {
     #[test]
     fn markers_from_yesterday_do_not_suppress_today() {
         let mut state = state_with(vec![alarm("a", "07:00", vec![3])]);
-        state.handled.push(("a".into(), NaiveDate::from_ymd_opt(2026, 1, 6).unwrap()));
+        state.handled.push(("a".into(), NaiveDate::from_ymd_opt(2026, 1, 6).unwrap(), 420));
 
         assert_eq!(tick(&mut state, wednesday(7, 0)).0.len(), 1);
     }
@@ -601,5 +725,242 @@ mod tests {
         // Thursday, same alarm: yesterday's marker must not silence it.
         let thursday = NaiveDate::from_ymd_opt(2026, 1, 8).unwrap().and_hms_opt(7, 0, 0).unwrap();
         assert_eq!(tick(&mut state, thursday).0.len(), 1);
+    }
+
+    #[test]
+    fn date_alarm_fires_once_at_right_local_datetime_and_is_disabled() {
+        let mut a = alarm("date1", "14:30", Vec::new());
+        a.repeat = Repeat::Date;
+        a.date = Some("2026-05-15".to_string());
+        a.time = "14:30".to_string();
+
+        let mut state = state_with(vec![a]);
+
+        // Wrong date (day before): does not fire
+        let day_before = NaiveDate::from_ymd_opt(2026, 5, 14).unwrap().and_hms_opt(14, 30, 0).unwrap();
+        let (fired, _) = tick(&mut state, day_before);
+        assert!(fired.is_empty(), "must not fire on a different date");
+
+        // Target date and time: fires once, consumed = true, enabled becomes false
+        let target_dt = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap().and_hms_opt(14, 30, 0).unwrap();
+        let (fired, _) = tick(&mut state, target_dt);
+        assert_eq!(fired.len(), 1, "must fire on target date and time");
+        assert_eq!(fired[0].id, "date1");
+        assert!(fired[0].consumed, "date alarm ring must be consumed");
+        assert!(!state.alarms[0].enabled, "date alarm must be disabled after firing");
+
+        // Subsequent tick: does not fire again
+        let (fired2, _) = tick(&mut state, target_dt);
+        assert!(fired2.is_empty(), "disabled date alarm must not fire again");
+
+        // Day after: does not fire
+        let day_after = NaiveDate::from_ymd_opt(2026, 5, 16).unwrap().and_hms_opt(14, 30, 0).unwrap();
+        let (fired3, _) = tick(&mut state, day_after);
+        assert!(fired3.is_empty(), "disabled date alarm must not fire on subsequent days");
+    }
+
+    #[test]
+    fn interval_produces_expected_sequence_inside_window() {
+        let mut a = alarm("int1", "09:00", Vec::new());
+        a.repeat = Repeat::Interval;
+        a.interval_minutes = Some(30);
+        a.window_start = Some("09:00".to_string());
+        a.window_end = Some("11:00".to_string());
+
+        let mut state = state_with(vec![a.clone()]);
+        let d = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+
+        // 08:30: before window, does not fire
+        assert!(tick(&mut state, d.and_hms_opt(8, 30, 0).unwrap()).0.is_empty());
+
+        // 09:00: first slot
+        let fired = tick(&mut state, d.and_hms_opt(9, 0, 0).unwrap()).0;
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].time, "09:00");
+        assert!(!fired[0].consumed);
+        assert!(state.alarms[0].enabled);
+
+        // 09:30: second slot
+        let fired = tick(&mut state, d.and_hms_opt(9, 30, 0).unwrap()).0;
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].time, "09:30");
+
+        // 10:00: third slot
+        let fired = tick(&mut state, d.and_hms_opt(10, 0, 0).unwrap()).0;
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].time, "10:00");
+
+        // 10:30: fourth slot
+        let fired = tick(&mut state, d.and_hms_opt(10, 30, 0).unwrap()).0;
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].time, "10:30");
+
+        // 11:00: fifth slot (window_end)
+        let fired = tick(&mut state, d.and_hms_opt(11, 0, 0).unwrap()).0;
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].time, "11:00");
+
+        // 11:30: after window, does not fire
+        assert!(tick(&mut state, d.and_hms_opt(11, 30, 0).unwrap()).0.is_empty());
+
+        // Preview from 08:00
+        let previews = preview_alarm_at(&a, 5, d.and_hms_opt(8, 0, 0).unwrap());
+        assert_eq!(
+            previews.next,
+            vec![
+                "2026-05-15T09:00:00",
+                "2026-05-15T09:30:00",
+                "2026-05-15T10:00:00",
+                "2026-05-15T10:30:00",
+                "2026-05-15T11:00:00",
+            ]
+        );
+    }
+
+    #[test]
+    fn window_crossing_midnight_works() {
+        let mut a = alarm("mid1", "22:00", Vec::new());
+        a.repeat = Repeat::Interval;
+        a.interval_minutes = Some(60);
+        a.window_start = Some("22:00".to_string());
+        a.window_end = Some("02:00".to_string());
+
+        let mut state = state_with(vec![a.clone()]);
+        let d1 = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+        let d2 = NaiveDate::from_ymd_opt(2026, 5, 16).unwrap();
+
+        // 21:00 on Day 1: does not fire
+        assert!(tick(&mut state, d1.and_hms_opt(21, 0, 0).unwrap()).0.is_empty());
+
+        // 22:00 on Day 1: fires
+        let fired = tick(&mut state, d1.and_hms_opt(22, 0, 0).unwrap()).0;
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].time, "22:00");
+
+        // 23:00 on Day 1: fires
+        let fired = tick(&mut state, d1.and_hms_opt(23, 0, 0).unwrap()).0;
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].time, "23:00");
+
+        // 00:00 on Day 2 (midnight cross): fires
+        let fired = tick(&mut state, d2.and_hms_opt(0, 0, 0).unwrap()).0;
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].time, "00:00");
+
+        // 01:00 on Day 2: fires
+        let fired = tick(&mut state, d2.and_hms_opt(1, 0, 0).unwrap()).0;
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].time, "01:00");
+
+        // 02:00 on Day 2: fires
+        let fired = tick(&mut state, d2.and_hms_opt(2, 0, 0).unwrap()).0;
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].time, "02:00");
+
+        // 03:00 on Day 2: after window end, does not fire
+        assert!(tick(&mut state, d2.and_hms_opt(3, 0, 0).unwrap()).0.is_empty());
+
+        // Preview from 20:00 on Day 1 across midnight
+        let preview = preview_alarm_at(&a, 5, d1.and_hms_opt(20, 0, 0).unwrap());
+        assert_eq!(
+            preview.next,
+            vec![
+                "2026-05-15T22:00:00",
+                "2026-05-15T23:00:00",
+                "2026-05-16T00:00:00",
+                "2026-05-16T01:00:00",
+                "2026-05-16T02:00:00",
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_window_defaults_to_whole_day() {
+        let mut a = alarm("wholeday", "00:00", Vec::new());
+        a.repeat = Repeat::Interval;
+        a.interval_minutes = Some(120);
+        a.window_start = None;
+        a.window_end = None;
+
+        let d = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+        let slots = firing_minutes_today(&a, d);
+        assert_eq!(slots.len(), 12);
+        assert_eq!(slots[0], 0); // 00:00
+        assert_eq!(slots[11], 1320); // 22:00
+
+        let preview = preview_alarm_at(&a, 3, d.and_hms_opt(1, 0, 0).unwrap());
+        assert_eq!(
+            preview.next,
+            vec![
+                "2026-05-15T02:00:00",
+                "2026-05-15T04:00:00",
+                "2026-05-15T06:00:00",
+            ]
+        );
+    }
+
+    #[test]
+    fn legacy_alarm_no_new_fields_computes_same_next_fire_as_before() {
+        let legacy_json = r#"{
+            "id": "leg1",
+            "label": "Morning",
+            "time": "08:00",
+            "repeat": "daily",
+            "enabled": true
+        }"#;
+
+        let a: ScheduledAlarm = serde_json::from_str(legacy_json).expect("deserialize legacy alarm");
+        assert!(a.date.is_none());
+        assert!(a.interval_minutes.is_none());
+        assert!(a.window_start.is_none());
+        assert!(a.window_end.is_none());
+        assert_eq!(a.repeat, Repeat::Daily);
+
+        let d = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+        let preview_before = preview_alarm_at(&a, 3, d.and_hms_opt(7, 0, 0).unwrap());
+        assert_eq!(
+            preview_before.next,
+            vec![
+                "2026-05-15T08:00:00",
+                "2026-05-16T08:00:00",
+                "2026-05-17T08:00:00",
+            ]
+        );
+
+        let preview_after = preview_alarm_at(&a, 3, d.and_hms_opt(9, 0, 0).unwrap());
+        assert_eq!(
+            preview_after.next,
+            vec![
+                "2026-05-16T08:00:00",
+                "2026-05-17T08:00:00",
+                "2026-05-18T08:00:00",
+            ]
+        );
+    }
+
+    #[test]
+    fn alarm_preview_honours_count_and_defaults_to_3() {
+        let mut a = alarm("cnt1", "08:00", Vec::new());
+        a.repeat = Repeat::Daily;
+
+        let previews_default = alarm_preview(vec![a.clone()], None);
+        assert_eq!(previews_default.len(), 1);
+        assert_eq!(previews_default[0].next.len(), 3);
+        assert!(!previews_default[0].disabled);
+
+        let previews_1 = alarm_preview(vec![a.clone()], Some(1));
+        assert_eq!(previews_1[0].next.len(), 1);
+
+        let previews_5 = alarm_preview(vec![a.clone()], Some(5));
+        assert_eq!(previews_5[0].next.len(), 5);
+
+        let previews_0 = alarm_preview(vec![a.clone()], Some(0));
+        assert_eq!(previews_0[0].next.len(), 0);
+
+        let mut dis = a.clone();
+        dis.enabled = false;
+        let previews_dis = alarm_preview(vec![dis], Some(3));
+        assert!(previews_dis[0].disabled);
+        assert!(previews_dis[0].next.is_empty());
     }
 }
