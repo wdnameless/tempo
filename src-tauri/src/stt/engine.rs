@@ -5,18 +5,65 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use transcribe_cpp::{CancelToken, Model, RunOptions, Session};
+use transcribe_cpp::{
+    Backend, CancelToken, Model, ModelOptions, RunExtension, RunOptions, Session, Task,
+    WhisperRunOptions,
+};
 
-pub const IDLE_UNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
+pub const DEFAULT_IDLE_UNLOAD_SECS: u64 = 60;
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TranscribeOptions {
+    pub language: Option<String>,
+    pub translate_to_english: bool,
+    pub custom_words: Vec<String>,
+}
+
+/// Builds transcribe-cpp [`RunOptions`] from high-level speech configuration.
+///
+/// Maps:
+/// - `language`: `None` or `"auto"` -> `None` (autodetect); otherwise `Some(code)`
+/// - `translate_to_english`: sets `task = Task::Translate` and `target_language = Some("en")`
+/// - `custom_words`: formats into `WhisperRunOptions.initial_prompt` decode bias
+pub fn build_run_options(opts: &TranscribeOptions) -> RunOptions {
+    let mut ro = RunOptions::default();
+
+    ro.language = opts.language.as_deref().and_then(|l| {
+        let trimmed = l.trim();
+        if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("auto") {
+            None
+        } else {
+            Some(trimmed.to_lowercase())
+        }
+    });
+
+    if opts.translate_to_english {
+        ro.task = Task::Translate;
+        ro.target_language = Some("en".to_string());
+    }
+
+    if !opts.custom_words.is_empty() {
+        let joined = opts.custom_words.join(", ");
+        if !joined.trim().is_empty() {
+            ro.family = Some(RunExtension::Whisper(WhisperRunOptions {
+                initial_prompt: Some(joined),
+                ..Default::default()
+            }));
+        }
+    }
+
+    ro
+}
 
 pub struct EngineManager {
     inner: Mutex<EngineState>,
 }
 pub type WhisperEngine = EngineManager;
 
-
 struct EngineState {
     loaded_model_path: Option<PathBuf>,
+    accelerator: String,
+    gpu_device: Option<String>,
     model: Option<Arc<Model>>,
     session: Option<Session>,
     last_used: Instant,
@@ -34,11 +81,35 @@ impl EngineManager {
         Self {
             inner: Mutex::new(EngineState {
                 loaded_model_path: None,
+                accelerator: "auto".to_string(),
+                gpu_device: None,
                 model: None,
                 session: None,
                 last_used: Instant::now(),
                 active_cancel: None,
             }),
+        }
+    }
+
+    /// Configures the compute accelerator and GPU device preference.
+    /// If the configuration changed, unloads any previously loaded model so
+    /// the new backend applies to the next transcript.
+    pub async fn configure(&self, accelerator: &str, gpu_device: Option<&str>) {
+        let mut state = self.inner.lock().await;
+        let new_accel = if accelerator.trim().is_empty() {
+            "auto"
+        } else {
+            accelerator.trim()
+        };
+        let new_gpu = gpu_device.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+
+        let changed = state.accelerator != new_accel || state.gpu_device != new_gpu;
+        if changed {
+            state.accelerator = new_accel.to_string();
+            state.gpu_device = new_gpu;
+            state.session = None;
+            state.model = None;
+            state.loaded_model_path = None;
         }
     }
 
@@ -50,12 +121,13 @@ impl EngineManager {
         state.loaded_model_path = None;
     }
 
-    /// Transcribes 16 kHz mono f32 samples using the provided model path.
+    /// Transcribes 16 kHz mono f32 samples using the provided model path and RunOptions.
     /// Reuses existing loaded session if model path matches.
     pub async fn transcribe_samples(
         &self,
         model_path: PathBuf,
         pcm: &[f32],
+        options: &RunOptions,
     ) -> Result<String, String> {
         let (cancel_token, session) = {
             let mut state = self.inner.lock().await;
@@ -74,7 +146,17 @@ impl EngineManager {
                     .to_str()
                     .ok_or_else(|| "Invalid model path characters".to_string())?;
 
-                let model = Model::load(path_str)
+                let (backend, device) = match state.accelerator.to_ascii_lowercase().as_str() {
+                    "cpu" => (Backend::Cpu, None),
+                    "gpu" => {
+                        let dev = crate::stt::accel::resolve_gpu_device(state.gpu_device.as_deref());
+                        (Backend::Auto, dev)
+                    }
+                    _ => (Backend::Auto, None),
+                };
+
+                let model_options = ModelOptions { backend, device };
+                let model = Model::load_with(path_str, &model_options)
                     .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
                 let arc_model = Arc::new(model);
                 let session = arc_model
@@ -97,13 +179,13 @@ impl EngineManager {
 
         let pcm_vec = pcm.to_vec();
         let cancel_clone = cancel_token.clone();
+        let run_options = options.clone();
 
         // Run transcription on blocking thread pool
         let run_res = tokio::task::spawn_blocking(move || {
             let mut sess = session;
             sess.set_cancel_token(&cancel_clone);
-            let options = RunOptions::default();
-            let result = sess.run(&pcm_vec, &options);
+            let result = sess.run(&pcm_vec, &run_options);
             (sess, result)
         })
         .await
@@ -131,6 +213,15 @@ impl EngineManager {
         }
     }
 
+    /// Convenience wrapper using default [`RunOptions`].
+    pub async fn transcribe_samples_default(
+        &self,
+        model_path: PathBuf,
+        pcm: &[f32],
+    ) -> Result<String, String> {
+        self.transcribe_samples(model_path, pcm, &RunOptions::default()).await
+    }
+
     /// Cancels currently running transcription if any.
     pub async fn cancel_current(&self) {
         let state = self.inner.lock().await;
@@ -139,16 +230,81 @@ impl EngineManager {
         }
     }
 
-    /// Background janitor check: if idle for > IDLE_UNLOAD_TIMEOUT, unloads the model (R46).
-    pub async fn check_idle_timeout(&self) {
+    /// Background janitor check: if idle for > unload_secs, unloads the model.
+    /// If unload_secs == 0, model is never unloaded on idle.
+    pub async fn check_idle_timeout(&self, unload_secs: u64) {
+        if unload_secs == 0 {
+            return;
+        }
+        let timeout = Duration::from_secs(unload_secs);
         let mut state = self.inner.lock().await;
         if state.session.is_some()
             && state.active_cancel.is_none()
-            && state.last_used.elapsed() > IDLE_UNLOAD_TIMEOUT
+            && state.last_used.elapsed() > timeout
         {
             state.session = None;
             state.model = None;
             state.loaded_model_path = None;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_run_options_language_mapping() {
+        // None -> autodetect
+        let ro = build_run_options(&TranscribeOptions::default());
+        assert_eq!(ro.language, None);
+        assert_eq!(ro.target_language, None);
+        assert_eq!(ro.task, Task::Transcribe);
+
+        // "auto" -> None
+        let ro_auto = build_run_options(&TranscribeOptions {
+            language: Some("auto".to_string()),
+            translate_to_english: false,
+            custom_words: Vec::new(),
+        });
+        assert_eq!(ro_auto.language, None);
+
+        // "ru" -> Some("ru")
+        let ro_ru = build_run_options(&TranscribeOptions {
+            language: Some("ru".to_string()),
+            translate_to_english: false,
+            custom_words: Vec::new(),
+        });
+        assert_eq!(ro_ru.language, Some("ru".to_string()));
+        assert_eq!(ro_ru.task, Task::Transcribe);
+    }
+
+    #[test]
+    fn test_build_run_options_translate_to_english() {
+        let ro = build_run_options(&TranscribeOptions {
+            language: Some("de".to_string()),
+            translate_to_english: true,
+            custom_words: Vec::new(),
+        });
+        assert_eq!(ro.language, Some("de".to_string()));
+        assert_eq!(ro.task, Task::Translate);
+        assert_eq!(ro.target_language, Some("en".to_string()));
+    }
+
+    #[test]
+    fn test_build_run_options_custom_words_initial_prompt() {
+        let words = vec!["Tempo".to_string(), "Alarmer".to_string(), "Whisper".to_string()];
+        let ro = build_run_options(&TranscribeOptions {
+            language: None,
+            translate_to_english: false,
+            custom_words: words,
+        });
+
+        match ro.family {
+            Some(RunExtension::Whisper(w)) => {
+                assert_eq!(w.initial_prompt, Some("Tempo, Alarmer, Whisper".to_string()));
+            }
+            _ => panic!("Expected WhisperRunOptions extension"),
         }
     }
 }

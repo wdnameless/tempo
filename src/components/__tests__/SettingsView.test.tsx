@@ -35,16 +35,94 @@ vi.mock('../../services/generalSettings', () => ({
   migrateLegacyPreferences: () => mockMigrateLegacyPreferences(),
 }));
 
-const mockLoadSpeechSettings = vi.fn().mockReturnValue({
-  enabled: false,
-  hotkey: 'CommandOrControl+Shift+Space',
-  modelId: 'whisper-tiny',
+const { mockSpeechConfig, mockLoadSpeechSettings, mockSaveSpeechSettings } = vi.hoisted(() => {
+  const cfg = {
+    enabled: false,
+    activation: 'hold_or_toggle',
+    hotkey: 'CommandOrControl+Shift+Space',
+    cancelHotkey: 'Escape',
+    holdThresholdMs: 300,
+    engine: 'local',
+    modelId: 'whisper-tiny',
+    device: null,
+    channel: null,
+    vadBackend: 'earshot',
+    vadEnergyThreshold: 0.015,
+    language: null,
+    translateToEnglish: false,
+    customWords: [],
+    removeFillerWords: false,
+    pasteMethod: 'ctrl_v',
+    clipboardBehavior: 'restore',
+    pasteDelayMs: 60,
+    pasteDelayAfterMs: 60,
+    appendSpace: false,
+    autoSubmit: false,
+    feedbackEnabled: false,
+    feedbackVolume: 0.5,
+    soundTheme: 'default',
+    historyEnabled: true,
+    historyLimit: 100,
+    retentionDays: 30,
+    postprocessEnabled: false,
+    postprocessPrompt: '',
+    overlayEnabled: true,
+    onboarded: true,
+  };
+  return {
+    mockSpeechConfig: cfg,
+    mockLoadSpeechSettings: vi.fn().mockReturnValue({ ...cfg }),
+    mockSaveSpeechSettings: vi.fn().mockResolvedValue(cfg),
+  };
 });
-const mockSaveSpeechSettings = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('../../services/speechSettings', () => ({
+  loadSpeechConfig: () => mockLoadSpeechSettings(),
   loadSpeechSettings: () => mockLoadSpeechSettings(),
+  saveSpeechConfig: (patch: Record<string, unknown>) => mockSaveSpeechSettings(patch),
   saveSpeechSettings: (patch: Record<string, unknown>) => mockSaveSpeechSettings(patch),
+  subscribeSpeechConfig: vi.fn().mockReturnValue(() => {}),
+  subscribeSpeechSettings: vi.fn().mockReturnValue(() => {}),
+  DEFAULT_SPEECH_CONFIG: mockSpeechConfig,
+}));
+
+vi.mock('../../services/stt', () => ({
+  listModels: vi.fn().mockResolvedValue([
+    { id: 'whisper-tiny', name: 'Whisper Tiny', bytes: 75000000, installed: true, wer: 12 },
+  ]),
+  downloadModel: vi.fn().mockResolvedValue(undefined),
+  cancelDownload: vi.fn().mockResolvedValue(undefined),
+  downloadProgress: vi.fn().mockResolvedValue([]),
+  deleteModel: vi.fn().mockResolvedValue(undefined),
+  rescanModels: vi.fn().mockResolvedValue([]),
+  importModel: vi.fn().mockResolvedValue({ id: 'custom', name: 'Custom', bytes: 1000, installed: true }),
+  modelsDir: vi.fn().mockResolvedValue('C:\\models'),
+  openModelsDir: vi.fn().mockResolvedValue(undefined),
+  freeDiskSpace: vi.fn().mockResolvedValue(1000000000),
+  setEngine: vi.fn().mockResolvedValue(undefined),
+  getEngine: vi.fn().mockResolvedValue({ engine: 'local', model_id: 'whisper-tiny', available: true }),
+  sttErrorKey: (code: string) => `sttError${code}`,
+  inputDevices: vi.fn().mockResolvedValue([
+    { name: 'Default Microphone', isDefault: true, channels: 2 },
+  ]),
+  inputChannels: vi.fn().mockResolvedValue(2),
+  outputDevices: vi.fn().mockResolvedValue(['Default Speakers']),
+  playTestSound: vi.fn().mockResolvedValue(undefined),
+  micLevel: vi.fn().mockResolvedValue(0.42),
+  historyList: vi.fn().mockResolvedValue([]),
+  historyDelete: vi.fn().mockResolvedValue(undefined),
+  historySetSaved: vi.fn().mockResolvedValue(undefined),
+  historyRetry: vi.fn().mockResolvedValue({ text: 'test' }),
+  historyClear: vi.fn().mockResolvedValue(undefined),
+  postprocessText: vi.fn().mockResolvedValue('polished text'),
+  validateHotkey: vi.fn().mockResolvedValue(undefined),
+  suspendShortcuts: vi.fn().mockResolvedValue(undefined),
+  resumeShortcuts: vi.fn().mockResolvedValue(undefined),
+  startDictation: vi.fn().mockResolvedValue(undefined),
+  stopDictation: vi.fn().mockResolvedValue({ text: '', duration_ms: 0, engine: 'local' }),
+  cancelDictation: vi.fn().mockResolvedValue(undefined),
+  dictationState: vi.fn().mockResolvedValue({ recording: false, level: 0, since: null }),
+  transcribeFile: vi.fn().mockResolvedValue({ text: '' }),
 }));
 
 const mockGoogleCalendarStatus = vi.fn().mockResolvedValue({
@@ -88,6 +166,11 @@ const mockListShortcuts = vi.fn().mockReturnValue([
 
 vi.mock('../../services/shortcuts', () => ({
   listShortcuts: () => mockListShortcuts(),
+  formatShortcutKeys: (keys?: string[]) => (Array.isArray(keys) ? keys.join(' + ') : ''),
+  updateShortcutKeys: vi.fn(),
+  resetShortcutKeys: vi.fn(),
+  isCustomShortcut: vi.fn(() => false),
+  isMacPlatform: vi.fn(() => false),
 }));
 
 // AssetUsage and AssetPruneResult, exactly as interfaces §9 defines them: a mock
@@ -204,8 +287,8 @@ describe('SettingsView Component', () => {
     // Click Speech to Text tab
     fireEvent.click(speechTab);
     await waitFor(() => {
+      expect(screen.getByTestId('speech-panel')).toBeDefined();
       expect(screen.getByText(t.settingsSpeech)).toBeDefined();
-      expect(screen.getByText(t.settingsWhisperHint)).toBeDefined();
     });
 
     // Click Shortcuts tab. The heading repeats the tab's words on purpose, so it
@@ -254,6 +337,45 @@ describe('SettingsView Component', () => {
       expect(mockSaveSpeechSettings).toHaveBeenCalledWith(
         expect.objectContaining({ enabled: true })
       );
+    });
+  });
+
+  it('renders the SpeechPanel with all sub-tabs and switches panels correctly', async () => {
+    render(<SettingsView />);
+
+    const speechTab = screen.getByRole('tab', { name: t.settingsSpeechToText });
+    fireEvent.click(speechTab);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('speech-panel')).toBeDefined();
+    });
+
+    // Check all 9 sub-tab buttons are present
+    const subTabIds = [
+      'models',
+      'ptt',
+      'audio',
+      'delivery',
+      'feedback',
+      'language',
+      'history',
+      'postprocess',
+      'debug',
+    ];
+    for (const id of subTabIds) {
+      expect(screen.getByTestId(`speech-tab-${id}`)).toBeDefined();
+    }
+
+    // Switch to Audio tab
+    fireEvent.click(screen.getByTestId('speech-tab-audio'));
+    await waitFor(() => {
+      expect(screen.getByTestId('audio-settings')).toBeDefined();
+    });
+
+    // Switch to Feedback tab
+    fireEvent.click(screen.getByTestId('speech-tab-feedback'));
+    await waitFor(() => {
+      expect(screen.getByTestId('feedback-settings')).toBeDefined();
     });
   });
 

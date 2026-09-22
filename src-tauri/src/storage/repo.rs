@@ -1033,9 +1033,9 @@ mod tests {
     fn test_migration_idempotent() {
         let conn = Connection::open_in_memory().expect("open in memory");
         let v1 = migrations::migrate(&conn).expect("first migrate");
-        assert_eq!(v1, 2);
+        assert_eq!(v1, migrations::SCHEMA_VERSION_LATEST);
         let v2 = migrations::migrate(&conn).expect("second migrate");
-        assert_eq!(v2, 2);
+        assert_eq!(v2, migrations::SCHEMA_VERSION_LATEST);
     }
 
     #[test]

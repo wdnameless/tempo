@@ -1,6 +1,6 @@
 [package]
 name = "tempo"
-version = "0.16.0"
+version = "0.17.0"
 description = "Tempo backend: alarm scheduler, countdown timer, alarm audio and AI gateway"
 authors = ["Tempo"]
 edition = "2021"
@@ -13,6 +13,12 @@ edition = "2021"
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "tempo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+# The bin is a thin shell over tempo_lib::run() with no tests; disabling test avoids duplicate MANIFEST collision alongside tauri resource
+[[bin]]
+name = "tempo"
+path = "src/main.rs"
+test = false
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -48,6 +54,14 @@ tauri-plugin-global-shortcut = "2.3.2"
 rodio = { version = "0.19", default-features = false, features = ["symphonia-mp3", "symphonia-wav", "symphonia-flac", "wav", "mp3", "flac"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "socks", "stream", "multipart"] }
 futures-util = { version = "0.3", default-features = false }
+# Model downloads carry a sha256 in the catalog; the downloader refuses to hand
+# a model to the engine unless the bytes hash to it. Mirrors are untrusted
+# bit-pipes, so the hash is the only thing that makes them safe to use at all.
+sha2 = "0.10"
+# Voice activity detection that is not just an energy threshold. Handy ships
+# earshot as its pure-Rust backend; Silero would drag ONNX Runtime into the
+# installer, which is not worth ~100 MB for a gate on a 16 kHz stream.
+earshot = "1.2.2"
 
 [target.'cfg(windows)'.dependencies]
 # System sound is a render device read backwards, and cpal exposes no loopback.
@@ -72,8 +86,8 @@ tempfile = "3"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
-codegen-units = 1
-lto = true
+codegen-units = 16
+lto = false
 opt-level = 3
 panic = "abort"
 strip = true

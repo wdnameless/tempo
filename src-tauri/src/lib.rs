@@ -370,28 +370,6 @@ async fn register_shortcuts(app: tauri::AppHandle) -> Result<(), String> {
         }
     }
 
-    // Global dictation shortcut: Ctrl+Shift+D (toggle dictation)
-    let dictation_shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyD);
-    match app.global_shortcut().on_shortcut(dictation_shortcut, move |app, _shortcut, press| {
-        if press.state() == ShortcutState::Pressed {
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Some(state) = app.try_state::<stt::SttState>() {
-                    let is_active = state.capture_state.is_recording();
-                    if is_active {
-                        if let Ok(res) = stt::stt_stop_dictation(app.clone(), state).await {
-                            let _ = app.emit("stt://dictation_stopped", res);
-                        }
-                    } else if let Ok(()) = stt::stt_start_dictation(state, Some("toggle".to_string())).await {
-                        let _ = app.emit("stt://dictation_started", ());
-                    }
-                }
-            });
-        }
-    }) {
-        Ok(()) => bound += 1,
-        Err(e) => eprintln!("dictation shortcut unavailable: {e}"),
-    }
     if bound == 0 {
         return Err("no global shortcuts could be bound".to_string());
     }
@@ -603,6 +581,29 @@ pub fn run() {
             stt::stt_dictation_state,
             stt::stt_transcribe_file,
             stt::stt_transcribe_cloud,
+            stt::stt_rescan_models,
+            stt::stt_import_model,
+            stt::stt_models_dir,
+            stt::stt_open_models_dir,
+            stt::stt_free_disk_space,
+            stt::stt_speech_settings,
+            stt::stt_apply_speech_settings,
+            stt::stt_validate_hotkey,
+            stt::stt_suspend_shortcuts,
+            stt::stt_resume_shortcuts,
+            stt::stt_input_devices,
+            stt::stt_input_channels,
+            stt::stt_output_devices,
+            stt::stt_play_test_sound,
+            stt::stt_mic_level,
+            stt::stt_history_list,
+            stt::stt_history_delete,
+            stt::stt_history_set_saved,
+            stt::stt_history_retry,
+            stt::stt_history_clear,
+            stt::stt_postprocess,
+            stt::stt_cancel_transcription,
+            stt::stt_accelerators,
             sync::sync_status,
             sync::sync_set_transport,
             sync::sync_set_media,
@@ -695,8 +696,31 @@ pub fn run() {
             });
             let data_dir = stt::resolve_data_dir(app.handle());
             let stt_state = stt::SttState::new(data_dir);
+            stt_state.models.set_app_handle(app.handle().clone());
+
+            let driver = stt::TempoDictationDriver {
+                app: app.handle().clone(),
+                models: std::sync::Arc::clone(&stt_state.models),
+                engine: std::sync::Arc::clone(&stt_state.engine),
+                capture_state: std::sync::Arc::clone(&stt_state.capture_state),
+                current_capture: std::sync::Arc::clone(&stt_state.current_capture),
+                recording_started_at: std::sync::Arc::clone(&stt_state.recording_started_at),
+                level_stop: std::sync::Arc::clone(&stt_state.level_stop),
+            };
+            let coordinator = stt::TranscriptionCoordinator::new(driver);
+            app.manage(coordinator);
             app.manage(stt_state);
 
+            let speech_cfg = stt::load_speech_config(app.handle());
+            if speech_cfg.enabled {
+                let bindings = stt::SpeechBindings {
+                    transcribe: speech_cfg.hotkey,
+                    cancel: speech_cfg.cancel_hotkey,
+                };
+                if let Err(e) = stt::shortcuts::apply_bindings(app.handle(), &bindings) {
+                    eprintln!("[stt] Failed to register speech shortcuts on startup: {e}");
+                }
+            }
 
             Ok(())
         })

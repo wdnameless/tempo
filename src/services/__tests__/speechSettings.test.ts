@@ -14,11 +14,10 @@ describe('speechSettings', () => {
 
   it('loads default speech settings when cache is empty', () => {
     const settings = loadSpeechSettings();
-    expect(settings).toEqual({
-      enabled: false,
-      hotkey: '',
-      modelId: null,
-    });
+    expect(settings).toEqual(DEFAULT_SPEECH_SETTINGS);
+    expect(settings.enabled).toBe(false);
+    expect(settings.hotkey).toBe('');
+    expect(settings.modelId).toBe(null);
     expect(settings).toEqual(DEFAULT_SPEECH_SETTINGS);
   });
 
@@ -56,7 +55,7 @@ describe('speechSettings', () => {
     expect(getPref('tempo_speech_model_id', undefined)).toBe('whisper-large-v3');
 
     const settings = loadSpeechSettings();
-    expect(settings).toEqual({
+    expect(settings).toMatchObject({
       enabled: true,
       hotkey: 'Alt+V',
       modelId: 'whisper-large-v3',

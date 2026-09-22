@@ -13,8 +13,23 @@ import {
   Info,
   ShieldAlert,
   Folder,
+  FolderOpen,
+  Package,
+  Zap,
+  RotateCcw,
   AlertTriangle,
 } from 'lucide-react';
+import {
+  formatShortcutKeys,
+  updateShortcutKeys,
+  resetShortcutKeys,
+  isCustomShortcut,
+  isMacPlatform,
+} from '../services/shortcuts';
+import { invoke } from '@tauri-apps/api/core';
+import { isTauri } from '../services/platform';
+import { openPath } from '@tauri-apps/plugin-opener';
+import { isEnabled as isAutostartEnabled, enable as enableAutostart, disable as disableAutostart } from '@tauri-apps/plugin-autostart';
 import { ThemeColors, AISettings, DynamicUIConfig } from '../types';
 
 /** The assistant's settings with the defaults filled in. */
@@ -24,7 +39,7 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   model: 'google/gemini-2.0-flash-001',
 };
 import { type BlockSettings } from '../types/focus';
-import { ACCENTS, DEFAULT_ACCENT, applyAccent, type AccentId } from '../constants/design';
+import { type AccentId } from '../constants/design';
 import { EdgeTtsService } from '../services/edgeTts';
 import { I18nService, type Translations } from '../services/i18n';
 import { getPref } from '../services/settings';
@@ -37,26 +52,19 @@ import {
   type GeneralSettings,
 } from '../services/generalSettings';
 import {
-  loadSpeechSettings,
-  saveSpeechSettings,
-  type SpeechSettings,
+  loadSpeechConfig,
+  saveSpeechConfig,
+  subscribeSpeechConfig,
+  type SpeechConfig,
 } from '../services/speechSettings';
 import { googleCalendarStatus, type IntegrationStatus } from '../services/integrations';
 import { listShortcuts, type ShortcutDef } from '../services/shortcuts';
 import { assetUsage, assetPrune, DEFAULT_MEDIA_LIMIT_BYTES, type AssetUsage } from '../services/assets';
 import {
   listModels,
-  downloadModel,
-  downloadProgress,
-  cancelDownload,
-  deleteModel,
-  getEngine,
-  setEngine,
-  sttErrorKey,
   type ModelInfo,
-  type DownloadProgress,
-  type SttEngineType,
 } from '../services/stt';
+import { SpeechPanel } from './speech/SpeechPanel';
 // Settings services
 import {
   getSyncStatus,
@@ -99,8 +107,6 @@ const SECTION_DEFS: Array<{ id: SettingsSection; labelKey: keyof Translations; i
 ];
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
-  accentKey = DEFAULT_ACCENT,
-  onSelectAccent,
   aiSettings,
   onUpdateAISettings,
 }) => {
@@ -111,13 +117,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // General Settings state (loaded synchronously from cache)
   const [general, setGeneral] = useState<GeneralSettings>(() => loadGeneralSettings());
   // Speech Settings state
-  const [speech, setSpeech] = useState<SpeechSettings>(() => loadSpeechSettings());
-  // STT / Whisper Engine and Model state
-  const [sttEngineType, setSttEngineType] = useState<SttEngineType>('local');
+  const [speech, setSpeech] = useState<SpeechConfig>(() => loadSpeechConfig());
   const [models, setModels] = useState<ModelInfo[]>([]);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [currentProgress, setCurrentProgress] = useState<DownloadProgress | null>(null);
-  const [sttActionError, setSttActionError] = useState<string | null>(null);
   // Integration status state
   const [calendarStatus, setCalendarStatus] = useState<IntegrationStatus>({
     connected: false,
@@ -146,7 +147,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState<boolean>(false);
   const [isInstallingUpdate, setIsInstallingUpdate] = useState<boolean>(false);
-
+  const [dataDir, setDataDir] = useState<string>('');
+  const [autostartActive, setAutostartActive] = useState<boolean>(false);
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<'idle' | 'checking' | 'latest' | 'available' | 'error'>('idle');
+  const [recordingShortcutId, setRecordingShortcutId] = useState<string | null>(null);
+  const [, setShortcutsTick] = useState<number>(0);
   // Sync status & settings
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [syncFolderInput, setSyncFolderInput] = useState<string>('');
@@ -189,13 +194,88 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         if (status.folder) setSyncFolderInput(status.folder);
       })
       .catch(() => {});
+    if (isTauri()) {
+      void invoke<string>('store_dir').then(setDataDir).catch(() => {});
+      void isAutostartEnabled().then(setAutostartActive).catch(() => {});
+    }
+    void listModels().then(setModels).catch(() => {});
   }, []);
-
   const notifySaved = () => {
     setSaveStatus('saved');
     setSaveErrorMessage(null);
     const timer = setTimeout(() => setSaveStatus('idle'), 2200);
     return () => clearTimeout(timer);
+  };
+  useEffect(() => {
+    if (!recordingShortcutId) return;
+
+    const handleRecordKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.key === 'Escape') {
+        setRecordingShortcutId(null);
+        return;
+      }
+
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+        return;
+      }
+
+      const keys: string[] = [];
+      if (e.ctrlKey || (!isMacPlatform() && e.metaKey)) keys.push('Ctrl');
+      if (e.metaKey && isMacPlatform()) keys.push('⌘');
+      if (e.altKey) keys.push('Alt');
+      if (e.shiftKey) keys.push('Shift');
+
+      let keyName = e.key.toUpperCase();
+      if (e.code === 'Space') keyName = 'Space';
+      if (!keys.includes(keyName)) {
+        keys.push(keyName);
+      }
+
+      updateShortcutKeys(recordingShortcutId, keys);
+      setRecordingShortcutId(null);
+      setShortcutsTick((n) => n + 1);
+      notifySaved();
+    };
+
+    window.addEventListener('keydown', handleRecordKey, true);
+    return () => window.removeEventListener('keydown', handleRecordKey, true);
+  }, [recordingShortcutId]);
+  const getShortcutLabel = (sc: ShortcutDef): string => {
+    if (!sc.description) return sc.id;
+    // SAFETY: sc.description is a key of Translations
+    const dict = t as unknown as Record<string, string | undefined>;
+    return dict[sc.description] ?? sc.description;
+  };
+
+  const handleToggleAutostart = async () => {
+    if (!isTauri()) return;
+    try {
+      if (autostartActive) {
+        await disableAutostart();
+        setAutostartActive(false);
+      } else {
+        await enableAutostart();
+        setAutostartActive(true);
+      }
+      notifySaved();
+    } catch (err) {
+      setSaveStatus('error');
+      setSaveErrorMessage(err instanceof Error ? err.message : 'Autostart toggle failed');
+    }
+  };
+
+  const handleOpenFolder = async (folderPath: string) => {
+    if (!folderPath) return;
+    try {
+      if (isTauri()) {
+        await openPath(folderPath);
+      }
+    } catch {
+      // ignore
+    }
   };
 
   const handleSaveGeneral = async (patch: Partial<GeneralSettings>) => {
@@ -210,141 +290,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  const handleSaveSpeech = async (patch: Partial<SpeechSettings>) => {
+  const handleSaveSpeech = async (patch: Partial<SpeechConfig>) => {
     const next = { ...speech, ...patch };
     setSpeech(next);
     try {
-      await saveSpeechSettings(patch);
+      await saveSpeechConfig(patch);
       notifySaved();
     } catch (err) {
       setSaveStatus('error');
       setSaveErrorMessage(err instanceof Error ? err.message : 'Failed to save speech settings');
     }
   };
-  // Load STT models and engine state when switching to speech tab
+
+  // Sync models list for About tab recognition status
   useEffect(() => {
-    if (activeSection !== 'speech') return;
-    let mounted = true;
-
-    getEngine().then((engineState) => {
-      if (!mounted) return;
-      setSttEngineType(engineState.engine);
-    }).catch(() => {});
-
-    listModels().then((catalog) => {
-      if (!mounted) return;
-      setModels(catalog);
-    }).catch(() => {});
-
-    return () => {
-      mounted = false;
-    };
+    if (activeSection === 'about') {
+      listModels().then(setModels).catch(() => {});
+    }
   }, [activeSection]);
 
-  // Poll download progress while downloading
+  // Subscribe to external speech config updates
   useEffect(() => {
-    if (!downloadingId) return;
-    let mounted = true;
-    let timer: number | null = null;
-
-    const poll = async () => {
-      try {
-        const prog = await downloadProgress();
-        if (!mounted) return;
-        setCurrentProgress(prog);
-        if (prog.done) {
-          setDownloadingId(null);
-          setCurrentProgress(null);
-          // Refresh model list
-          listModels().then((catalog) => {
-            if (mounted) setModels(catalog);
-          }).catch(() => {});
-          return;
-        }
-        if (prog.error) {
-          setDownloadingId(null);
-          setCurrentProgress(null);
-          const key = sttErrorKey(prog.error);
-          setSttActionError(t[key] ?? prog.error);
-          return;
-        }
-      } catch {
-        // Continue polling
-      }
-      if (mounted) {
-        timer = window.setTimeout(poll, 300);
-      }
-    };
-
-    poll();
-
-    return () => {
-      mounted = false;
-      if (timer !== null) window.clearTimeout(timer);
-    };
-  }, [downloadingId, t]);
-
-  const handleSwitchEngine = async (nextEngine: SttEngineType) => {
-    setSttEngineType(nextEngine);
-    setSttActionError(null);
-    try {
-      await setEngine(nextEngine, speech.modelId || null);
-      notifySaved();
-    } catch (err) {
-      const key = sttErrorKey(err);
-      setSttActionError(t[key] ?? String(err));
-    }
-  };
-
-  const handleSelectModel = async (modelId: string) => {
-    handleSaveSpeech({ modelId });
-    setSttActionError(null);
-    try {
-      await setEngine(sttEngineType, modelId);
-    } catch (err) {
-      const key = sttErrorKey(err);
-      setSttActionError(t[key] ?? String(err));
-    }
-  };
-
-  const handleStartDownload = async (modelId: string) => {
-    setSttActionError(null);
-    setDownloadingId(modelId);
-    setCurrentProgress({ model_id: modelId, received: 0, total: 100, done: false });
-    try {
-      await downloadModel(modelId);
-    } catch (err) {
-      setDownloadingId(null);
-      setCurrentProgress(null);
-      const key = sttErrorKey(err);
-      setSttActionError(t[key] ?? String(err));
-    }
-  };
-
-  const handleCancelDownload = async () => {
-    try {
-      await cancelDownload();
-    } catch {
-      // Silently finish
-    } finally {
-      setDownloadingId(null);
-      setCurrentProgress(null);
-    }
-  };
-
-  const handleDeleteModel = async (modelId: string) => {
-    setSttActionError(null);
-    try {
-      await deleteModel(modelId);
-      const updated = await listModels();
-      setModels(updated);
-      notifySaved();
-    } catch (err) {
-      const key = sttErrorKey(err);
-      setSttActionError(t[key] ?? String(err));
-    }
-  };
-
+    return subscribeSpeechConfig((cfg) => {
+      setSpeech(cfg);
+    });
+  }, []);
   const handlePruneMedia = async () => {
     setIsPruning(true);
     try {
@@ -458,13 +428,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handleCheckUpdate = async () => {
     setIsCheckingUpdate(true);
+    setUpdateCheckStatus('checking');
+    const startTime = Date.now();
     try {
       const result = await checkForUpdate();
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 800) {
+        await new Promise((resolve) => setTimeout(resolve, 800 - elapsed));
+      }
       if (result.status === 'update') {
         setUpdateInfo(result.info);
+        setUpdateCheckStatus('available');
+      } else {
+        setUpdateCheckStatus('latest');
       }
     } catch {
-      // Ignored: update check error is handled gracefully
+      setUpdateCheckStatus('error');
     } finally {
       setIsCheckingUpdate(false);
     }
@@ -482,11 +461,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  const handleSelectAccent = (accent: AccentId) => {
-    applyAccent(accent);
-    onSelectAccent?.(accent);
-    void handleSaveGeneral({ accent });
-  };
 
   // Format bytes for media display
   const formatBytes = (bytes: number): string => {
@@ -729,67 +703,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             </div>
 
-            {/* Appearance & Accent Selection */}
-            <div
-              className="p-5 rounded-lg border space-y-4"
-              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
-            >
-              <h2 className="text-sm font-semibold tracking-wide uppercase" style={{ color: 'var(--text-muted)' }}>
-                {t.settingsAppearance}
-              </h2>
-
-              <div>
-                <label className="block text-xs font-medium mb-2" style={{ color: 'var(--text-muted)' }}>
-                  {t.settingsAccent}
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {(Object.entries(ACCENTS) as [AccentId, string][]).map(([id, color]) => {
-                    const isSelected = accentKey === id || general.accent === id;
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        aria-pressed={isSelected}
-                        onClick={() => handleSelectAccent(id)}
-                        className="flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-all"
-                        style={{
-                          backgroundColor: isSelected ? 'var(--elevated)' : 'transparent',
-                          borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
-                        }}
-                      >
-                        <span
-                          className="w-3.5 h-3.5 rounded-full shrink-0 border"
-                          style={{
-                            backgroundColor: color,
-                            borderColor: 'rgba(255, 255, 255, 0.2)',
-                          }}
-                        />
-                        <span className="truncate capitalize">{id}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Dynamic background toggle */}
-              <div className="flex items-center justify-between pt-2">
-                <div>
-                  <div className="text-sm font-medium">{t.settingsDynamicBackground}</div>
-                  <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {t.settingsDynamicBackgroundHint}
-                  </div>
-                </div>
-                <input
-                  aria-label={t.settingsDynamicBackground}
-                  type="checkbox"
-                  checked={general.background !== 'static'}
-                  onChange={(e) =>
-                    handleSaveGeneral({ background: e.target.checked ? 'default' : 'static' })
-                  }
-                  className="w-4 h-4 rounded cursor-pointer"
-                />
-              </div>
-            </div>
 
             {/* Rollover & Timezone (R40) */}
             <div
@@ -1111,258 +1024,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {/* ========================================================================= */}
         {activeSection === 'speech' && (
           <section id="section-speech" role="tabpanel" aria-label={t.settingsSpeechToText} className="space-y-6">
-            <div
-              className="p-5 rounded-lg border space-y-5"
-              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
-            >
-              <div>
-                <h2 className="text-base font-semibold">{t.settingsSpeech}</h2>
-                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                  {t.settingsSpeechHint}
-                </p>
-              </div>
-
-              {/* Failure / Status Notification Banner (R45) */}
-              {sttActionError && (
-                <div
-                  data-testid="stt-action-error"
-                  className="p-3 rounded-md border text-xs flex items-start gap-2 bg-destructive/10 border-destructive/30 text-destructive"
-                >
-                  <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <span className="font-medium">{sttActionError}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSttActionError(null)}
-                    className="text-xs opacity-70 hover:opacity-100"
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
-
-              {/* Enable Toggle */}
-              <div className="flex items-center justify-between pt-1">
-                <div>
-                  <div className="text-sm font-medium">{t.settingsSpeechEnable}</div>
-                  <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {t.settingsSpeechEnableHint}
-                  </div>
-                </div>
-                <input
-                  aria-label={t.settingsSpeechEnable}
-                  type="checkbox"
-                  checked={speech.enabled}
-                  onChange={(e) => handleSaveSpeech({ enabled: e.target.checked })}
-                  className="w-4 h-4 rounded cursor-pointer"
-                />
-              </div>
-
-              {/* Global Hotkey Field */}
-              <div className="pt-1">
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                  {t.settingsSpeechHotkey}
-                </label>
-                <input
-                  aria-label={t.settingsSpeechHotkey}
-                  type="text"
-                  value={speech.hotkey}
-                  onChange={(e) => handleSaveSpeech({ hotkey: e.target.value })}
-                  placeholder={t.settingsSpeechHotkeyPlaceholder}
-                  className="w-full px-3 py-2 rounded-md border text-sm font-mono"
-                  style={{
-                    backgroundColor: 'var(--elevated)',
-                    borderColor: 'var(--border)',
-                    color: 'var(--text)',
-                  }}
-                />
-              </div>
-
-              {/* Engine Toggle: Local vs Cloud */}
-              <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <label className="block text-sm font-medium">{t.sttEngineLocal} / {t.sttEngineCloud}</label>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                      {t.settingsSpeechHint}
-                    </p>
-                  </div>
-                  <div className="inline-flex rounded-lg border p-1 bg-muted/30" style={{ borderColor: 'var(--border)' }}>
-                    <button
-                      type="button"
-                      onClick={() => handleSwitchEngine('local')}
-                      className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${
-                        sttEngineType === 'local'
-                          ? 'bg-surface text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {t.sttEngineLocal}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSwitchEngine('cloud')}
-                      className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${
-                        sttEngineType === 'cloud'
-                          ? 'bg-surface text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {t.sttEngineCloud}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Cloud Mode Explanation */}
-                {sttEngineType === 'cloud' && (
-                  <div className="p-3 rounded-md border text-xs" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--elevated)' }}>
-                    <p style={{ color: 'var(--text-muted)' }}>
-                      {t.settingsSpeechHint}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Local Model List: Size and Quality Side-by-Side (R22) */}
-              {sttEngineType === 'local' && (
-                <div className="pt-2 border-t space-y-3" style={{ borderColor: 'var(--border)' }}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <label className="block text-sm font-medium">{t.settingsWhisperModel}</label>
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {t.settingsWhisperHint}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Active Download Progress Card */}
-                  {downloadingId && (
-                    <div
-                      data-testid="download-progress-card"
-                      className="p-3.5 rounded-lg border space-y-2 bg-muted/20"
-                      style={{ borderColor: 'var(--border)' }}
-                    >
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-medium flex items-center gap-2">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                          {t.sttDownloadModel} ({downloadingId})
-                        </span>
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-muted-foreground">
-                            {currentProgress && currentProgress.total > 0
-                              ? `${Math.round((currentProgress.received / currentProgress.total) * 100)}%`
-                              : '0%'}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={handleCancelDownload}
-                            className="px-2 py-0.5 rounded text-xs border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                            style={{ borderColor: 'var(--border)' }}
-                          >
-                            {t.sttDownloadCancel}
-                          </button>
-                        </div>
-                      </div>
-                      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary transition-all duration-150 rounded-full"
-                          style={{
-                            width: currentProgress && currentProgress.total > 0
-                              ? `${Math.min(100, Math.round((currentProgress.received / currentProgress.total) * 100))}%`
-                              : '0%',
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Models Table / List */}
-                  <div className="border rounded-lg overflow-hidden divide-y" style={{ borderColor: 'var(--border)' }}>
-                    {models.length === 0 ? (
-                      <div className="p-4 text-center text-xs text-muted-foreground">
-                        <Loader2 className="w-4 h-4 animate-spin mx-auto mb-2 opacity-50" />
-                        {t.searchPlaceholder}
-                      </div>
-                    ) : (
-                      models.map((m) => {
-                        const isSelected = (speech.modelId || 'whisper-tiny') === m.id;
-                        const isDownloading = downloadingId === m.id;
-                        const mbSize = (m.bytes / (1024 * 1024)).toFixed(0);
-
-                        return (
-                          <div
-                            key={m.id}
-                            data-testid={`model-row-${m.id}`}
-                            className={`p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
-                              isSelected ? 'bg-primary/5' : 'hover:bg-muted/30'
-                            }`}
-                          >
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium">{m.name}</span>
-                                {isSelected && (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-primary/20 text-primary">
-                                    {t.settingsActive}
-                                  </span>
-                                )}
-                                {m.installed && (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-muted text-muted-foreground">
-                                    {t.sttModelInstalled}
-                                  </span>
-                                )}
-                              </div>
-                              {/* Size and Quality (WER) side-by-side (R22) */}
-                              <div className="flex items-center gap-4 text-xs text-muted-foreground font-mono">
-                                <span>{t.sttSize}: <strong className="text-foreground">{mbSize} MB</strong></span>
-                                <span>•</span>
-                                <span>{t.sttQuality}: <strong className="text-foreground">{m.wer}%</strong></span>
-                              </div>
-                            </div>
-
-                            {/* Actions: Select / Download / Delete */}
-                            <div className="flex items-center gap-2 self-end sm:self-center">
-                              {m.installed ? (
-                                <>
-                                  {!isSelected && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSelectModel(m.id)}
-                                      className="px-3 py-1.5 rounded-md text-xs font-medium border hover:bg-muted transition-colors"
-                                      style={{ borderColor: 'var(--border)' }}
-                                    >
-                                      {t.settingsActive}
-                                    </button>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteModel(m.id)}
-                                    className="px-2.5 py-1.5 rounded-md text-xs text-destructive hover:bg-destructive/10 transition-colors"
-                                    title={t.sttDeleteModel}
-                                  >
-                                    {t.sttDeleteModel}
-                                  </button>
-                                </>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled={isDownloading || Boolean(downloadingId)}
-                                  onClick={() => handleStartDownload(m.id)}
-                                  className="px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5"
-                                >
-                                  {isDownloading && <Loader2 className="w-3 h-3 animate-spin" />}
-                                  {t.sttDownloadModel}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+            <SpeechPanel
+              config={speech}
+              onChange={handleSaveSpeech}
+            />
           </section>
         )}
 
@@ -1418,27 +1083,49 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           <div
                             key={sc.id}
                             data-testid={`shortcut-row-${sc.id}`}
-                            className="flex items-center justify-between p-3 text-sm"
+                            className="flex items-center justify-between p-3 text-sm hover:bg-white/[0.02] transition-colors"
                             style={{ borderColor: 'var(--border)' }}
                           >
                             <div>
                               <div className="font-medium">
-                                {(sc.description ? ((t as unknown as Record<string, string | undefined>)[sc.description] ?? sc.description) : sc.id)}
+                                {getShortcutLabel(sc)}
                               </div>
                               <div className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
                                 {sc.id}
                               </div>
                             </div>
-                            <kbd
-                              className="px-2.5 py-1 rounded text-xs font-mono border"
-                              style={{
-                                backgroundColor: 'var(--surface)',
-                                borderColor: 'var(--border)',
-                                color: 'var(--accent)',
-                              }}
-                            >
-                              {sc.keys}
-                            </kbd>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setRecordingShortcutId(sc.id === recordingShortcutId ? null : sc.id)}
+                                title="Нажмите, чтобы изменить комбинацию клавиш"
+                                className={`px-2.5 py-1 rounded-md text-xs font-mono border transition-all cursor-pointer ${
+                                  recordingShortcutId === sc.id
+                                    ? 'border-white bg-white/20 text-white animate-pulse'
+                                    : 'hover:border-white/30 hover:bg-white/5'
+                                }`}
+                                style={{
+                                  backgroundColor: recordingShortcutId === sc.id ? undefined : 'var(--surface)',
+                                  borderColor: recordingShortcutId === sc.id ? undefined : 'var(--border)',
+                                  color: 'var(--accent)',
+                                }}
+                              >
+                                {recordingShortcutId === sc.id ? 'Нажмите клавиши...' : formatShortcutKeys(sc.keys)}
+                              </button>
+                              {isCustomShortcut(sc.id) && (
+                                <button
+                                  type="button"
+                                  title="Сбросить по умолчанию"
+                                  onClick={() => {
+                                    resetShortcutKeys(sc.id, sc.keys);
+                                    setShortcutsTick((n) => n + 1);
+                                  }}
+                                  className="p-1 rounded hover:bg-white/10 text-white/40 hover:text-white transition-colors"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1467,15 +1154,191 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
 
               {/* Version & Build */}
+            {/* 1. Хранилище и система (Matching User Reference) */}
+            <div className="space-y-3">
+              <div>
+                <h2 className="text-base font-semibold text-white">Хранилище и система</h2>
+                <p className="text-xs text-white/50 mt-0.5">
+                  Расположение моделей, кэша и режим работы приложения
+                </p>
+              </div>
+
+              {/* Портативный режим */}
               <div
-                className="p-4 rounded-lg border space-y-3"
+                className="p-4 rounded-xl border flex items-center justify-between gap-4"
+                style={{ backgroundColor: 'var(--elevated)', borderColor: 'var(--border)' }}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Package className="w-4 h-4 text-white/70" />
+                    <span className="text-sm font-semibold text-white">Портативный режим</span>
+                  </div>
+                  <p className="text-xs text-white/50 leading-relaxed max-w-xl">
+                    Все файлы хранятся в одной папке рядом с приложением. Можно распаковать на флешку и переносить вместе с моделями.
+                  </p>
+                  <div className="text-[11px] font-mono text-white/40 pt-0.5">
+                    {isPortable ? 'портативный • ' : 'обычный • '}
+                    <span>{dataDir || 'C:\\Users\\Administrator\\AppData\\Roaming\\app.tempo.desktop'}</span>
+                  </div>
+                </div>
+
+                <span
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${
+                    isPortable ? 'bg-white/15 text-white' : 'bg-white/5 text-white/50'
+                  }`}
+                >
+                  {isPortable ? 'Включен' : 'Обычный'}
+                </span>
+              </div>
+
+              {/* Каталоги */}
+              <div
+                className="p-4 rounded-xl border space-y-3"
+                style={{ backgroundColor: 'var(--elevated)', borderColor: 'var(--border)' }}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Folder className="w-4 h-4 text-white/70" />
+                  <span className="text-sm font-semibold text-white">Каталоги</span>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  {/* Модели */}
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="w-16 font-medium text-white/60">Модели</span>
+                    <input
+                      type="text"
+                      readOnly
+                      value={dataDir ? `${dataDir}\\models` : 'C:\\...\\models'}
+                      className="flex-1 px-3 py-1.5 rounded-lg border font-mono text-xs bg-[var(--surface)] border-[var(--border)] text-white/80 select-all"
+                    />
+                    <button
+                      type="button"
+                      title="Открыть папку"
+                      onClick={() => handleOpenFolder(dataDir ? `${dataDir}\\models` : '')}
+                      className="p-2 rounded-lg border border-white/10 hover:bg-white/10 text-white/70 transition-colors shrink-0"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Движок */}
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="w-16 font-medium text-white/60">Движок</span>
+                    <input
+                      type="text"
+                      readOnly
+                      value={dataDir ? `${dataDir}\\bin` : 'C:\\...\\bin'}
+                      className="flex-1 px-3 py-1.5 rounded-lg border font-mono text-xs bg-[var(--surface)] border-[var(--border)] text-white/80 select-all"
+                    />
+                    <button
+                      type="button"
+                      title="Открыть папку"
+                      onClick={() => handleOpenFolder(dataDir ? `${dataDir}\\bin` : '')}
+                      className="p-2 rounded-lg border border-white/10 hover:bg-white/10 text-white/70 transition-colors shrink-0"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Логи */}
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="w-16 font-medium text-white/60">Логи</span>
+                    <input
+                      type="text"
+                      readOnly
+                      value={dataDir ? `${dataDir}\\logs` : 'C:\\...\\logs'}
+                      className="flex-1 px-3 py-1.5 rounded-lg border font-mono text-xs bg-[var(--surface)] border-[var(--border)] text-white/80 select-all"
+                    />
+                    <button
+                      type="button"
+                      title="Открыть папку"
+                      onClick={() => handleOpenFolder(dataDir ? `${dataDir}\\logs` : '')}
+                      className="p-2 rounded-lg border border-white/10 hover:bg-white/10 text-white/70 transition-colors shrink-0"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Состояние распознавания */}
+              <div
+                className="p-4 rounded-xl border space-y-1.5"
+                style={{ backgroundColor: 'var(--elevated)', borderColor: 'var(--border)' }}
+              >
+                <div className="text-sm font-semibold text-white">Состояние распознавания</div>
+                {models.some((m) => m.installed) ? (
+                  <div className="flex items-center gap-2 text-xs text-emerald-400">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                    <span>
+                      Модель Whisper установлена:{' '}
+                      {models.find((m) => m.installed)?.name ?? 'Base'}{' '}
+                      ({Math.round((models.find((m) => m.installed)?.bytes ?? 0) / 1048576)} MB)
+                    </span>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-xs text-amber-400">
+                      <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                      <span>Модель распознавания не найдена. Откройте «Настройки → Speech to Text» и скачайте подходящую.</span>
+                    </div>
+                    <div className="text-[11px] text-white/40 pl-4">
+                      Моделей пока нет — скачайте на странице «Speech to Text».
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Запускать свёрнутым в трей */}
+              <div
+                className="p-4 rounded-xl border flex items-center justify-between gap-4"
+                style={{ backgroundColor: 'var(--elevated)', borderColor: 'var(--border)' }}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-white/70" />
+                    <span className="text-sm font-semibold text-white">Запускать свёрнутым в трей</span>
+                  </div>
+                  <p className="text-xs text-white/50">
+                    Окно не появляется при старте — приложение ждёт в трее.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleAutostart}
+                  className={`w-11 h-6 rounded-full transition-colors relative p-0.5 shrink-0 ${
+                    autostartActive ? 'bg-white' : 'bg-white/20'
+                  }`}
+                >
+                  <span
+                    className={`block w-5 h-5 rounded-full transition-transform ${
+                      autostartActive ? 'translate-x-5 bg-black' : 'translate-x-0 bg-white'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
+            {/* 2. Обновления (Matching User Reference) */}
+            <div className="space-y-3">
+              <div>
+                <h2 className="text-base font-semibold text-white">Обновления</h2>
+                <p className="text-xs text-white/50 mt-0.5">
+                  Проверка наличия новых версий приложения Tempo
+                </p>
+              </div>
+
+              <div
+                className="p-4 rounded-xl border space-y-3"
                 style={{ backgroundColor: 'var(--elevated)', borderColor: 'var(--border)' }}
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-medium">{t.settingsVersion}</div>
-                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      {t.settingsVersionHint}
+                    <div className="text-sm font-medium text-white">{t.settingsVersion}</div>
+                    <div className="text-xs text-white/50">
+                      {updateInfo
+                        ? `Update ${updateInfo.version} is ready to install`
+                        : t.settingsUpdateHint}
                     </div>
                   </div>
                   <span
@@ -1491,67 +1354,74 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium">{t.settingsEnvironment}</div>
-                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      {t.settingsEnvironmentHint}
-                    </div>
-                  </div>
-                  <span
-                    className="text-xs font-medium px-2 py-0.5 rounded-full"
-                    style={{
-                      backgroundColor: isPortable ? 'rgba(245, 158, 11, 0.15)' : 'var(--surface)',
-                      color: isPortable ? 'var(--accent)' : 'var(--text-muted)',
-                    }}
-                  >
-                    {isPortable ? t.settingsPortable : t.settingsInstalled}
-                  </span>
-                </div>
-
-                {/* Check for Updates */}
-                <div className="pt-2 flex items-center justify-between border-t" style={{ borderColor: 'var(--border)' }}>
-                  <div>
-                    <div className="text-sm font-medium">{t.settingsUpdate}</div>
-                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      {updateInfo
-                        ? `Update ${updateInfo.version} is ready to install`
-                        : t.settingsUpdateHint}
-                    </div>
+                <div className="pt-3 flex items-center justify-between border-t gap-3" style={{ borderColor: 'var(--border)' }}>
+                  <div className="text-xs">
+                    {updateCheckStatus === 'checking' && (
+                       <span className="inline-flex items-center gap-2 text-white/70">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                        <span>Проверка наличия обновлений...</span>
+                      </span>
+                    )}
+                    {updateCheckStatus === 'latest' && (
+                      <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium">
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>У вас установлена последняя версия ({appVersion})</span>
+                      </span>
+                    )}
+                    {updateCheckStatus === 'error' && (
+                      <span className="inline-flex items-center gap-1.5 text-amber-400 font-medium">
+                        <span>Не удалось проверить обновления</span>
+                      </span>
+                    )}
+                    {updateCheckStatus === 'idle' && (
+                      <span className="text-white/40">
+                        Нажмите кнопку для проверки новых релизов
+                      </span>
+                    )}
                   </div>
 
-                  {updateInfo ? (
-                    <button
-                      type="button"
-                      onClick={handleInstallUpdate}
-                      disabled={isInstallingUpdate}
-                      className="px-3 py-1.5 rounded-md text-xs font-medium"
-                      style={{ backgroundColor: 'var(--accent)', color: 'var(--bg)' }}
-                    >
-                      {isInstallingUpdate ? t.settingsInstalling : t.settingsInstallUpdate}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleCheckUpdate}
-                      disabled={isCheckingUpdate}
-                      className="px-3 py-1.5 rounded-md border text-xs font-medium inline-flex items-center gap-1.5"
-                      style={{
-                        backgroundColor: 'var(--surface)',
-                        borderColor: 'var(--border)',
-                        color: 'var(--text)',
-                      }}
-                    >
-                      {isCheckingUpdate ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-3.5 h-3.5" />
-                      )}
-                      Check for Updates
-                    </button>
-                  )}
+                  <div>
+                    {updateInfo ? (
+                      <button
+                        type="button"
+                        onClick={handleInstallUpdate}
+                        disabled={isInstallingUpdate}
+                        className="px-3 py-1.5 rounded-md text-xs font-medium"
+                        style={{ backgroundColor: 'var(--accent)', color: 'var(--bg)' }}
+                      >
+                        {isInstallingUpdate ? t.settingsInstalling : t.settingsInstallUpdate}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleCheckUpdate}
+                        disabled={isCheckingUpdate}
+                        className={`px-3.5 py-1.5 rounded-lg border text-xs font-medium inline-flex items-center gap-2 transition-all ${
+                          isCheckingUpdate
+                            ? 'opacity-70 cursor-not-allowed bg-white/10 text-white'
+                            : 'text-white/90 hover:text-white hover:bg-white/10 bg-[var(--surface)]'
+                        }`}
+                        style={{
+                          borderColor: 'var(--border)',
+                        }}
+                      >
+                        {isCheckingUpdate ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                            <span>Проверка...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>{updateCheckStatus === 'latest' ? 'Проверить снова' : 'Проверить обновления'}</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
+            </div>
 
               {/* Account / Google state */}
               <div

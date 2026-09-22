@@ -125,6 +125,151 @@ export interface Translations {
   settingsSpeechEnableHint: string;
   settingsSpeechHotkey: string;
   settingsSpeechHotkeyPlaceholder: string;
+  settingsSpeechCancelHotkey: string;
+  settingsSpeechCancelHotkeyPlaceholder: string;
+  settingsSpeechActivationMode: string;
+  settingsSpeechActivationHoldOrToggle: string;
+  settingsSpeechActivationHoldOrToggleDesc: string;
+  settingsSpeechActivationPushToTalk: string;
+  settingsSpeechActivationPushToTalkDesc: string;
+  settingsSpeechActivationToggle: string;
+  settingsSpeechActivationToggleDesc: string;
+  settingsSpeechHoldThreshold: string;
+  settingsSpeechHoldThresholdDesc: string;
+  settingsSpeechTabModels: string;
+  settingsSpeechTabPtt: string;
+  settingsSpeechTabAudio: string;
+  settingsSpeechTabDelivery: string;
+  settingsSpeechTabFeedback: string;
+  settingsSpeechTabLanguage: string;
+  settingsSpeechTabHistory: string;
+  settingsSpeechTabPostprocess: string;
+  settingsSpeechTabAdvanced: string;
+  settingsSpeechTabDebug: string;
+  settingsSpeechModelsSearch: string;
+  settingsSpeechModelsFilterAll: string;
+  settingsSpeechModelsFilterInstalled: string;
+  settingsSpeechModelsFilterRecommended: string;
+  settingsSpeechModelsFilterLanguages: string;
+  settingsSpeechModelsRescan: string;
+  settingsSpeechModelsImport: string;
+  settingsSpeechModelsOpenDir: string;
+  settingsSpeechModelsFreeDisk: string;
+  settingsSpeechModelActive: string;
+  settingsSpeechModelUse: string;
+  settingsSpeechModelDownload: string;
+  settingsSpeechModelDownloading: string;
+  settingsSpeechModelVerifying: string;
+  settingsSpeechModelDelete: string;
+  settingsSpeechModelDeleteConfirm: string;
+  settingsSpeechModelCancelDownload: string;
+  settingsSpeechModelSpeed: string;
+  settingsSpeechModelAccuracy: string;
+  settingsSpeechModelParameters: string;
+  settingsSpeechModelQuant: string;
+  settingsSpeechModelLanguages: string;
+  settingsSpeechModelCustom: string;
+  settingsSpeechInputDevice: string;
+  settingsSpeechInputDeviceDefault: string;
+  settingsSpeechInputChannel: string;
+  settingsSpeechInputChannelDefault: string;
+  settingsSpeechVadBackend: string;
+  settingsSpeechVadEnergy: string;
+  settingsSpeechVadEarshot: string;
+  settingsSpeechVadThreshold: string;
+  settingsSpeechTestMic: string;
+  settingsSpeechTestMicStop: string;
+  settingsSpeechMicLevel: string;
+  settingsSpeechPasteMethod: string;
+  settingsSpeechPasteMethodCtrlV: string;
+  settingsSpeechPasteMethodShiftInsert: string;
+  settingsSpeechPasteMethodDirect: string;
+  settingsSpeechClipboardBehavior: string;
+  settingsSpeechClipboardRestore: string;
+  settingsSpeechClipboardKeep: string;
+  settingsSpeechPasteDelayBefore: string;
+  settingsSpeechPasteDelayAfter: string;
+  settingsSpeechAppendSpace: string;
+  settingsSpeechAutoSubmit: string;
+  settingsSpeechFeedbackEnabled: string;
+  settingsSpeechFeedbackEnabledDesc: string;
+  settingsSpeechFeedbackVolume: string;
+  settingsSpeechSoundTheme: string;
+  settingsSpeechSoundThemeDefault: string;
+  settingsSpeechSoundThemeSoft: string;
+  settingsSpeechSoundThemeMechanical: string;
+  settingsSpeechPlayTestStart: string;
+  settingsSpeechPlayTestStop: string;
+  settingsSpeechLanguage: string;
+  settingsSpeechLanguageAuto: string;
+  settingsSpeechTranslateToEnglish: string;
+  settingsSpeechTranslateToEnglishDesc: string;
+  settingsSpeechCustomWords: string;
+  settingsSpeechCustomWordsPlaceholder: string;
+  settingsSpeechCustomWordsDesc: string;
+  settingsSpeechRemoveFillerWords: string;
+  settingsSpeechRemoveFillerWordsDesc: string;
+  settingsSpeechHistoryEnabled: string;
+  settingsSpeechHistoryLimit: string;
+  settingsSpeechHistoryRetention: string;
+  settingsSpeechHistoryRetentionDays: string;
+  settingsSpeechHistoryRetentionForever: string;
+  settingsSpeechHistoryClear: string;
+  settingsSpeechHistoryClearConfirm: string;
+  settingsSpeechHistoryEmpty: string;
+  settingsSpeechHistorySearch: string;
+  settingsSpeechHistoryCopy: string;
+  settingsSpeechHistoryCopied: string;
+  settingsSpeechHistoryRetry: string;
+  settingsSpeechHistoryDelete: string;
+  settingsSpeechHistorySave: string;
+  settingsSpeechHistoryUnsave: string;
+  settingsSpeechHistoryPlay: string;
+  settingsSpeechHistoryDuration: string;
+  settingsSpeechPostprocessEnabled: string;
+  settingsSpeechPostprocessDesc: string;
+  settingsSpeechPostprocessPrompt: string;
+  settingsSpeechPostprocessPromptPlaceholder: string;
+  settingsSpeechPostprocessTest: string;
+  settingsSpeechPostprocessTestInput: string;
+  settingsSpeechPostprocessTestRun: string;
+  settingsSpeechPostprocessTestResult: string;
+  settingsSpeechOnboardingTitle: string;
+  settingsSpeechOnboardingSubtitle: string;
+  settingsSpeechOnboardingStep1: string;
+  settingsSpeechOnboardingStep2: string;
+  settingsSpeechOnboardingStep3: string;
+  settingsSpeechOnboardingStep4: string;
+  settingsSpeechOnboardingNext: string;
+  settingsSpeechOnboardingBack: string;
+  settingsSpeechOnboardingFinish: string;
+  settingsSpeechOnboardingSkip: string;
+  settingsSpeechOnboardingStartTest: string;
+  settingsSpeechDebugTitle: string;
+  settingsSpeechDebugPaths: string;
+  settingsSpeechDebugModelsDir: string;
+  settingsSpeechDebugState: string;
+  settingsSpeechDebugLastErrors: string;
+  settingsSpeechDebugNoErrors: string;
+  settingsSpeechDebugRerunOnboarding: string;
+  settingsSpeechAdvancedTitle: string;
+  settingsSpeechAccelerator: string;
+  settingsSpeechAcceleratorDesc: string;
+  settingsSpeechAcceleratorAuto: string;
+  settingsSpeechAcceleratorCpu: string;
+  settingsSpeechAcceleratorNoGpu: string;
+  settingsSpeechAcceleratorMissing: string;
+  settingsSpeechModelUnload: string;
+  settingsSpeechModelUnloadDesc: string;
+  settingsSpeechModelUnloadNever: string;
+  settingsSpeechModelUnload2Min: string;
+  settingsSpeechModelUnload5Min: string;
+  settingsSpeechModelUnload10Min: string;
+  settingsSpeechModelUnload15Min: string;
+  dictationIndicatorRecording: string;
+  dictationIndicatorTranscribing: string;
+  dictationIndicatorCancel: string;
+  dictationIndicatorStop: string;
   settingsWhisperModel: string;
   settingsWhisperTiny: string;
   settingsWhisperBase: string;
@@ -136,6 +281,12 @@ export interface Translations {
   sttErrorInjectionFailed: string;
   sttErrorNetwork: string;
   sttErrorDiskSpace: string;
+  sttErrorModelVerifyFailed: string;
+  sttErrorHotkeyInvalid: string;
+  sttErrorHotkeyTaken: string;
+  sttErrorNoDevice: string;
+  sttErrorImportFailed: string;
+  sttErrorPostprocessFailed: string;
   sttCopiedToClipboard: string;
   sttInsertedIntoWindow: string;
   recTranscribe: string;
@@ -532,6 +683,151 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechEnableHint: 'Глобальная клавиша записывает и расшифровывает звук',
     settingsSpeechHotkey: 'Клавиша диктовки',
     settingsSpeechHotkeyPlaceholder: 'напр. CommandOrControl+Shift+Space',
+    settingsSpeechCancelHotkey: 'Клавиша отмены',
+    settingsSpeechCancelHotkeyPlaceholder: 'напр. Escape',
+    settingsSpeechActivationMode: 'Режим активации',
+    settingsSpeechActivationHoldOrToggle: 'Hold or Toggle',
+    settingsSpeechActivationHoldOrToggleDesc: 'Короткое нажатие фиксирует запись, долгое — работает пока держите',
+    settingsSpeechActivationPushToTalk: 'Push to Talk',
+    settingsSpeechActivationPushToTalkDesc: 'Запись идёт только пока клавиша зажата',
+    settingsSpeechActivationToggle: 'Toggle',
+    settingsSpeechActivationToggleDesc: 'Нажмите один раз для старта, второй раз для завершения',
+    settingsSpeechHoldThreshold: 'Порог удержания',
+    settingsSpeechHoldThresholdDesc: 'Время в миллисекундах для различения тапа и зажатия',
+    settingsSpeechTabModels: 'Модели',
+    settingsSpeechTabPtt: 'Активация и клавиши',
+    settingsSpeechTabAudio: 'Аудио и VAD',
+    settingsSpeechTabDelivery: 'Вставка текста',
+    settingsSpeechTabFeedback: 'Звуковой отклик',
+    settingsSpeechTabLanguage: 'Язык и словарь',
+    settingsSpeechTabHistory: 'История',
+    settingsSpeechTabPostprocess: 'Пост-обработка',
+    settingsSpeechTabAdvanced: 'Расширенные',
+    settingsSpeechTabDebug: 'Диагностика',
+    settingsSpeechModelsSearch: 'Поиск моделей...',
+    settingsSpeechModelsFilterAll: 'Все',
+    settingsSpeechModelsFilterInstalled: 'Установленные',
+    settingsSpeechModelsFilterRecommended: 'Рекомендуемые',
+    settingsSpeechModelsFilterLanguages: 'Все языки',
+    settingsSpeechModelsRescan: 'Пересканировать папку',
+    settingsSpeechModelsImport: 'Импорт .gguf',
+    settingsSpeechModelsOpenDir: 'Открыть папку',
+    settingsSpeechModelsFreeDisk: 'Свободно на диске',
+    settingsSpeechModelActive: 'Активная',
+    settingsSpeechModelUse: 'Выбрать',
+    settingsSpeechModelDownload: 'Скачать',
+    settingsSpeechModelDownloading: 'Скачивание...',
+    settingsSpeechModelVerifying: 'Проверка целостности...',
+    settingsSpeechModelDelete: 'Удалить',
+    settingsSpeechModelDeleteConfirm: 'Вы уверены, что хотите удалить эту модель?',
+    settingsSpeechModelCancelDownload: 'Отменить',
+    settingsSpeechModelSpeed: 'Скорость',
+    settingsSpeechModelAccuracy: 'Точность',
+    settingsSpeechModelParameters: 'Параметры',
+    settingsSpeechModelQuant: 'Квантование',
+    settingsSpeechModelLanguages: 'Языки',
+    settingsSpeechModelCustom: 'Своя модель',
+    settingsSpeechInputDevice: 'Микрофон',
+    settingsSpeechInputDeviceDefault: 'По умолчанию',
+    settingsSpeechInputChannel: 'Канал аудио',
+    settingsSpeechInputChannelDefault: 'Все / Моно',
+    settingsSpeechVadBackend: 'Детектор активности (VAD)',
+    settingsSpeechVadEnergy: 'Energy (RMS)',
+    settingsSpeechVadEarshot: 'Earshot (Нейросеть)',
+    settingsSpeechVadThreshold: 'Порог чувствительности VAD',
+    settingsSpeechTestMic: 'Проверить микрофон',
+    settingsSpeechTestMicStop: 'Остановить проверку',
+    settingsSpeechMicLevel: 'Уровень входного сигнала',
+    settingsSpeechPasteMethod: 'Метод вставки',
+    settingsSpeechPasteMethodCtrlV: 'Ctrl+V',
+    settingsSpeechPasteMethodShiftInsert: 'Shift+Insert',
+    settingsSpeechPasteMethodDirect: 'Прямой ввод',
+    settingsSpeechClipboardBehavior: 'Поведение буфера обмена',
+    settingsSpeechClipboardRestore: 'Восстанавливать предыдущее содержимое',
+    settingsSpeechClipboardKeep: 'Оставлять распознанный текст',
+    settingsSpeechPasteDelayBefore: 'Задержка перед вставкой (мс)',
+    settingsSpeechPasteDelayAfter: 'Задержка после вставки (мс)',
+    settingsSpeechAppendSpace: 'Добавлять пробел в конце',
+    settingsSpeechAutoSubmit: 'Авто-отправка (Enter после вставки)',
+    settingsSpeechFeedbackEnabled: 'Звуковой отклик',
+    settingsSpeechFeedbackEnabledDesc: 'Воспроизводить звуки при начале и завершении записи',
+    settingsSpeechFeedbackVolume: 'Громкость звуков',
+    settingsSpeechSoundTheme: 'Звуковая тема',
+    settingsSpeechSoundThemeDefault: 'По умолчанию',
+    settingsSpeechSoundThemeSoft: 'Мягкая (Soft)',
+    settingsSpeechSoundThemeMechanical: 'Механическая (Mechanical)',
+    settingsSpeechPlayTestStart: 'Звук старта',
+    settingsSpeechPlayTestStop: 'Звук остановки',
+    settingsSpeechLanguage: 'Язык распознавания',
+    settingsSpeechLanguageAuto: 'Автоопределение',
+    settingsSpeechTranslateToEnglish: 'Переводить на английский',
+    settingsSpeechTranslateToEnglishDesc: 'Распознанный текст на любом языке будет переведён на английский',
+    settingsSpeechCustomWords: 'Собственный словарь',
+    settingsSpeechCustomWordsPlaceholder: 'Слова и термины через запятую или с новой строки',
+    settingsSpeechCustomWordsDesc: 'Подсказка для модели для редких терминов, имен и акронимов',
+    settingsSpeechRemoveFillerWords: 'Удалять слова-паразиты',
+    settingsSpeechRemoveFillerWordsDesc: 'Автоматически вырезать "эээ", "ну", "типа", "um", "uh" из текста',
+    settingsSpeechHistoryEnabled: 'Сохранять историю диктовки',
+    settingsSpeechHistoryLimit: 'Лимит записей в истории',
+    settingsSpeechHistoryRetention: 'Срок хранения записей',
+    settingsSpeechHistoryRetentionDays: '{count} дн.',
+    settingsSpeechHistoryRetentionForever: 'Бессрочно',
+    settingsSpeechHistoryClear: 'Очистить историю',
+    settingsSpeechHistoryClearConfirm: 'Удалить все записи из истории?',
+    settingsSpeechHistoryEmpty: 'История диктовки пуста',
+    settingsSpeechHistorySearch: 'Поиск по истории...',
+    settingsSpeechHistoryCopy: 'Копировать текст',
+    settingsSpeechHistoryCopied: 'Скопировано!',
+    settingsSpeechHistoryRetry: 'Распознать заново',
+    settingsSpeechHistoryDelete: 'Удалить запись',
+    settingsSpeechHistorySave: 'Сохранить',
+    settingsSpeechHistoryUnsave: 'Убрать из сохранённых',
+    settingsSpeechHistoryPlay: 'Слушать аудио',
+    settingsSpeechHistoryDuration: 'Длительность: {duration}',
+    settingsSpeechPostprocessEnabled: 'Включить ИИ пост-обработку',
+    settingsSpeechPostprocessDesc: 'Автоматически улучшать пунктуацию, стиль и форматирование с помощью модели',
+    settingsSpeechPostprocessPrompt: 'Системный промпт',
+    settingsSpeechPostprocessPromptPlaceholder: 'Инструкции для ИИ...',
+    settingsSpeechPostprocessTest: 'Тестовый прогон',
+    settingsSpeechPostprocessTestInput: 'Текст для теста',
+    settingsSpeechPostprocessTestRun: 'Обработать',
+    settingsSpeechPostprocessTestResult: 'Результат',
+    settingsSpeechOnboardingTitle: 'Настройка распознавания речи',
+    settingsSpeechOnboardingSubtitle: 'Настройте локальную модель и горячую клавишу за 4 простых шага',
+    settingsSpeechOnboardingStep1: '1. Выбор модели',
+    settingsSpeechOnboardingStep2: '2. Загрузка',
+    settingsSpeechOnboardingStep3: '3. Клавиша диктовки',
+    settingsSpeechOnboardingStep4: '4. Проверка работы',
+    settingsSpeechOnboardingNext: 'Далее',
+    settingsSpeechOnboardingBack: 'Назад',
+    settingsSpeechOnboardingFinish: 'Завершить настройку',
+    settingsSpeechOnboardingSkip: 'Пропустить',
+    settingsSpeechOnboardingStartTest: 'Нажмите и говорите для теста',
+    settingsSpeechDebugTitle: 'Диагностика речи',
+    settingsSpeechDebugPaths: 'Системные пути',
+    settingsSpeechDebugModelsDir: 'Папка моделей',
+    settingsSpeechDebugState: 'Текущее состояние',
+    settingsSpeechDebugLastErrors: 'Последние ошибки',
+    settingsSpeechDebugNoErrors: 'Ошибок нет',
+    settingsSpeechDebugRerunOnboarding: 'Пройти мастер настройки заново',
+    settingsSpeechAdvancedTitle: 'Расширенные настройки',
+    settingsSpeechAccelerator: 'Ускоритель вычислений',
+    settingsSpeechAcceleratorDesc: 'Устройство для распознавания речи Whisper (автовыбор, GPU или процессор)',
+    settingsSpeechAcceleratorAuto: 'Автовыбор',
+    settingsSpeechAcceleratorCpu: 'Процессор (CPU)',
+    settingsSpeechAcceleratorNoGpu: 'Подходящие графические ускорители (GPU) не обнаружены',
+    settingsSpeechAcceleratorMissing: 'Выбранное ранее устройство недоступно, используется автовыбор',
+    settingsSpeechModelUnload: 'Выгрузка модели из памяти',
+    settingsSpeechModelUnloadDesc: 'Автоматически освобождать память при отсутствии активности',
+    settingsSpeechModelUnloadNever: 'Не выгружать',
+    settingsSpeechModelUnload2Min: '2 минуты',
+    settingsSpeechModelUnload5Min: '5 минут',
+    settingsSpeechModelUnload10Min: '10 минут',
+    settingsSpeechModelUnload15Min: '15 минут',
+    dictationIndicatorRecording: 'Запись...',
+    dictationIndicatorTranscribing: 'Распознавание...',
+    dictationIndicatorCancel: 'Отмена',
+    dictationIndicatorStop: 'Завершить',
     settingsWhisperModel: 'Модель Whisper',
     settingsWhisperTiny: 'Whisper Tiny (~75 МБ)',
     settingsWhisperBase: 'Whisper Base (~145 МБ)',
@@ -543,6 +839,12 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     sttErrorInjectionFailed: 'Не удалось вставить текст в окно (скопировано в буфер)',
     sttErrorNetwork: 'Сетевая ошибка при загрузке модели или обращении к облаку',
     sttErrorDiskSpace: 'Недостаточно места на диске для загрузки модели',
+    sttErrorModelVerifyFailed: 'Не удалось проверить целостность модели (не совпала контрольная сумма)',
+    sttErrorHotkeyInvalid: 'Недопустимая комбинация клавиш',
+    sttErrorHotkeyTaken: 'Комбинация клавиш уже занята другим приложением',
+    sttErrorNoDevice: 'Устройство аудиовхода не найдено',
+    sttErrorImportFailed: 'Не удалось импортировать модель .gguf',
+    sttErrorPostprocessFailed: 'Ошибка ИИ пост-обработки транскрипта',
     sttCopiedToClipboard: 'Текст скопирован в буфер обмена',
     sttInsertedIntoWindow: 'Текст вставлен в активное окно',
     settingsShortcutsHint: 'Список берётся из реестра горячих клавиш',
@@ -875,6 +1177,151 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechHint: 'Local on-device transcription and voice commands',
     settingsSpeechHotkey: 'Dictation Shortcut',
     settingsSpeechHotkeyPlaceholder: 'e.g. CommandOrControl+Shift+Space',
+    settingsSpeechCancelHotkey: 'Cancel Shortcut',
+    settingsSpeechCancelHotkeyPlaceholder: 'e.g. Escape',
+    settingsSpeechActivationMode: 'Activation Mode',
+    settingsSpeechActivationHoldOrToggle: 'Hold or Toggle',
+    settingsSpeechActivationHoldOrToggleDesc: 'Short tap toggles recording, long press records while held',
+    settingsSpeechActivationPushToTalk: 'Push to Talk',
+    settingsSpeechActivationPushToTalkDesc: 'Records only while key is pressed down',
+    settingsSpeechActivationToggle: 'Toggle',
+    settingsSpeechActivationToggleDesc: 'Press once to start recording, press again to stop',
+    settingsSpeechHoldThreshold: 'Hold Threshold',
+    settingsSpeechHoldThresholdDesc: 'Time in milliseconds to distinguish tap from hold',
+    settingsSpeechTabModels: 'Models',
+    settingsSpeechTabPtt: 'Activation & Hotkeys',
+    settingsSpeechTabAudio: 'Audio & VAD',
+    settingsSpeechTabDelivery: 'Text Delivery',
+    settingsSpeechTabFeedback: 'Sound & Feedback',
+    settingsSpeechTabLanguage: 'Language & Words',
+    settingsSpeechTabHistory: 'History',
+    settingsSpeechTabPostprocess: 'Post-processing',
+    settingsSpeechTabAdvanced: 'Advanced',
+    settingsSpeechTabDebug: 'Diagnostics',
+    settingsSpeechModelsSearch: 'Search models...',
+    settingsSpeechModelsFilterAll: 'All',
+    settingsSpeechModelsFilterInstalled: 'Installed',
+    settingsSpeechModelsFilterRecommended: 'Recommended',
+    settingsSpeechModelsFilterLanguages: 'All languages',
+    settingsSpeechModelsRescan: 'Rescan models folder',
+    settingsSpeechModelsImport: 'Import .gguf',
+    settingsSpeechModelsOpenDir: 'Open models folder',
+    settingsSpeechModelsFreeDisk: 'Free disk space',
+    settingsSpeechModelActive: 'Active',
+    settingsSpeechModelUse: 'Use Model',
+    settingsSpeechModelDownload: 'Download',
+    settingsSpeechModelDownloading: 'Downloading...',
+    settingsSpeechModelVerifying: 'Verifying checksum...',
+    settingsSpeechModelDelete: 'Delete',
+    settingsSpeechModelDeleteConfirm: 'Are you sure you want to delete this model?',
+    settingsSpeechModelCancelDownload: 'Cancel',
+    settingsSpeechModelSpeed: 'Speed',
+    settingsSpeechModelAccuracy: 'Accuracy',
+    settingsSpeechModelParameters: 'Parameters',
+    settingsSpeechModelQuant: 'Quantization',
+    settingsSpeechModelLanguages: 'Languages',
+    settingsSpeechModelCustom: 'Custom Model',
+    settingsSpeechInputDevice: 'Microphone',
+    settingsSpeechInputDeviceDefault: 'Default Device',
+    settingsSpeechInputChannel: 'Audio Channel',
+    settingsSpeechInputChannelDefault: 'All / Mono',
+    settingsSpeechVadBackend: 'Voice Activity Detection (VAD)',
+    settingsSpeechVadEnergy: 'Energy (RMS)',
+    settingsSpeechVadEarshot: 'Earshot (Neural)',
+    settingsSpeechVadThreshold: 'VAD Sensitivity Threshold',
+    settingsSpeechTestMic: 'Test Microphone',
+    settingsSpeechTestMicStop: 'Stop Test',
+    settingsSpeechMicLevel: 'Input Level',
+    settingsSpeechPasteMethod: 'Paste Method',
+    settingsSpeechPasteMethodCtrlV: 'Ctrl+V',
+    settingsSpeechPasteMethodShiftInsert: 'Shift+Insert',
+    settingsSpeechPasteMethodDirect: 'Direct Typing',
+    settingsSpeechClipboardBehavior: 'Clipboard Behavior',
+    settingsSpeechClipboardRestore: 'Restore previous clipboard',
+    settingsSpeechClipboardKeep: 'Keep recognized text in clipboard',
+    settingsSpeechPasteDelayBefore: 'Delay before paste (ms)',
+    settingsSpeechPasteDelayAfter: 'Delay after paste (ms)',
+    settingsSpeechAppendSpace: 'Append trailing space',
+    settingsSpeechAutoSubmit: 'Auto-submit (Enter after paste)',
+    settingsSpeechFeedbackEnabled: 'Sound Feedback',
+    settingsSpeechFeedbackEnabledDesc: 'Play sounds when recording starts and stops',
+    settingsSpeechFeedbackVolume: 'Sound Volume',
+    settingsSpeechSoundTheme: 'Sound Theme',
+    settingsSpeechSoundThemeDefault: 'Default',
+    settingsSpeechSoundThemeSoft: 'Soft',
+    settingsSpeechSoundThemeMechanical: 'Mechanical',
+    settingsSpeechPlayTestStart: 'Test Start Sound',
+    settingsSpeechPlayTestStop: 'Test Stop Sound',
+    settingsSpeechLanguage: 'Recognition Language',
+    settingsSpeechLanguageAuto: 'Auto Detect',
+    settingsSpeechTranslateToEnglish: 'Translate to English',
+    settingsSpeechTranslateToEnglishDesc: 'Speech in any language will be translated into English',
+    settingsSpeechCustomWords: 'Custom Vocabulary',
+    settingsSpeechCustomWordsPlaceholder: 'Words or phrases, separated by commas or newlines',
+    settingsSpeechCustomWordsDesc: 'Prompt hints for model on rare terms, names, and acronyms',
+    settingsSpeechRemoveFillerWords: 'Remove Filler Words',
+    settingsSpeechRemoveFillerWordsDesc: 'Automatically filter out hesitation words (um, uh, эээ, ну)',
+    settingsSpeechHistoryEnabled: 'Save Dictation History',
+    settingsSpeechHistoryLimit: 'History Limit',
+    settingsSpeechHistoryRetention: 'Retention Period',
+    settingsSpeechHistoryRetentionDays: '{count} days',
+    settingsSpeechHistoryRetentionForever: 'Keep forever',
+    settingsSpeechHistoryClear: 'Clear History',
+    settingsSpeechHistoryClearConfirm: 'Delete all history entries?',
+    settingsSpeechHistoryEmpty: 'No dictation history yet',
+    settingsSpeechHistorySearch: 'Search history...',
+    settingsSpeechHistoryCopy: 'Copy text',
+    settingsSpeechHistoryCopied: 'Copied!',
+    settingsSpeechHistoryRetry: 'Transcribe again',
+    settingsSpeechHistoryDelete: 'Delete entry',
+    settingsSpeechHistorySave: 'Save',
+    settingsSpeechHistoryUnsave: 'Unsave',
+    settingsSpeechHistoryPlay: 'Play audio',
+    settingsSpeechHistoryDuration: 'Duration: {duration}',
+    settingsSpeechPostprocessEnabled: 'Enable AI Post-processing',
+    settingsSpeechPostprocessDesc: 'Automatically polish punctuation, style, and formatting using AI',
+    settingsSpeechPostprocessPrompt: 'System Prompt',
+    settingsSpeechPostprocessPromptPlaceholder: 'Instructions for AI...',
+    settingsSpeechPostprocessTest: 'Test Run',
+    settingsSpeechPostprocessTestInput: 'Sample text to test',
+    settingsSpeechPostprocessTestRun: 'Process',
+    settingsSpeechPostprocessTestResult: 'Result',
+    settingsSpeechOnboardingTitle: 'Speech to Text Setup',
+    settingsSpeechOnboardingSubtitle: 'Set up local model and dictation shortcut in 4 easy steps',
+    settingsSpeechOnboardingStep1: '1. Choose Model',
+    settingsSpeechOnboardingStep2: '2. Download',
+    settingsSpeechOnboardingStep3: '3. Dictation Shortcut',
+    settingsSpeechOnboardingStep4: '4. Test',
+    settingsSpeechOnboardingNext: 'Next',
+    settingsSpeechOnboardingBack: 'Back',
+    settingsSpeechOnboardingFinish: 'Finish Setup',
+    settingsSpeechOnboardingSkip: 'Skip',
+    settingsSpeechOnboardingStartTest: 'Press and speak to test',
+    settingsSpeechDebugTitle: 'Speech Diagnostics',
+    settingsSpeechDebugPaths: 'System Paths',
+    settingsSpeechDebugModelsDir: 'Models Directory',
+    settingsSpeechDebugState: 'Current State',
+    settingsSpeechDebugLastErrors: 'Recent Errors',
+    settingsSpeechDebugNoErrors: 'No errors recorded',
+    settingsSpeechDebugRerunOnboarding: 'Rerun Setup Wizard',
+    settingsSpeechAdvancedTitle: 'Advanced Settings',
+    settingsSpeechAccelerator: 'Compute Device',
+    settingsSpeechAcceleratorDesc: 'Device used for Whisper speech transcription (Auto, GPU, or CPU)',
+    settingsSpeechAcceleratorAuto: 'Auto',
+    settingsSpeechAcceleratorCpu: 'CPU',
+    settingsSpeechAcceleratorNoGpu: 'No compatible GPU detected',
+    settingsSpeechAcceleratorMissing: 'Previously selected device is missing, falling back to auto',
+    settingsSpeechModelUnload: 'Model Unload Timeout',
+    settingsSpeechModelUnloadDesc: 'Automatically free memory after a period of inactivity',
+    settingsSpeechModelUnloadNever: 'Never',
+    settingsSpeechModelUnload2Min: '2 minutes',
+    settingsSpeechModelUnload5Min: '5 minutes',
+    settingsSpeechModelUnload10Min: '10 minutes',
+    settingsSpeechModelUnload15Min: '15 minutes',
+    dictationIndicatorRecording: 'Recording...',
+    dictationIndicatorTranscribing: 'Transcribing...',
+    dictationIndicatorCancel: 'Cancel',
+    dictationIndicatorStop: 'Stop',
     settingsSubtitle: 'Configure Tempo behavior, shortcuts, and integrations',
     settingsTestVoice: 'Test Voice',
     settingsTimeZone: 'Time Zone',
@@ -916,6 +1363,12 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     sttErrorInjectionFailed: 'Could not inject text into active window (copied to clipboard)',
     sttErrorNetwork: 'Network error downloading model or contacting cloud',
     sttErrorDiskSpace: 'Not enough disk space to download model',
+    sttErrorModelVerifyFailed: 'Model verification failed (checksum mismatch)',
+    sttErrorHotkeyInvalid: 'Invalid keyboard shortcut',
+    sttErrorHotkeyTaken: 'Keyboard shortcut is already in use',
+    sttErrorNoDevice: 'Audio input device not found',
+    sttErrorImportFailed: 'Failed to import .gguf model',
+    sttErrorPostprocessFailed: 'AI post-processing failed',
     sttCopiedToClipboard: 'Text copied to clipboard',
     sttInsertedIntoWindow: 'Text inserted into active window',
     // Existing keys

@@ -14,6 +14,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Mic,
+  Power,
 } from 'lucide-react';
 
 import { TitleBar } from './components/TitleBar';
@@ -438,6 +439,17 @@ function MainShell() {
             }`}
           >
             <div className="flex flex-col p-2 gap-1">
+              {!sidebarCollapsed && (
+                <div className="flex items-center gap-2.5 px-3 py-2.5 border-b border-white/10 mb-1 select-none">
+                  <div className="w-7 h-7 rounded-lg bg-white/10 border border-white/15 flex items-center justify-center text-white shrink-0 shadow-xs">
+                    <Clock className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <div className="flex flex-col leading-none min-w-0">
+                    <span className="text-xs font-bold text-white tracking-wide">Tempo</span>
+                    <span className="text-[10px] font-mono text-white/40 tracking-wider mt-0.5">v0.16.0</span>
+                  </div>
+                </div>
+              )}
               {navItems.map((item) => {
                 const isActive = activeTab === item.id;
                 return (
@@ -495,6 +507,20 @@ function MainShell() {
                     <span className="truncate">Свернуть</span>
                   </>
                 )}
+              </button>
+              <button
+                onClick={async () => {
+                  soundService.playUiClick();
+                  await windowService.close();
+                }}
+                title={sidebarCollapsed ? 'Выход из Tempo' : undefined}
+                aria-label="Выход из Tempo"
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/40 hover:text-red-400 hover:bg-white/5 transition-colors ${
+                  sidebarCollapsed ? 'justify-center px-0' : ''
+                }`}
+              >
+                <Power size={18} className="shrink-0" />
+                {!sidebarCollapsed && <span className="truncate">Выход из Tempo</span>}
               </button>
             </div>
           </aside>
@@ -648,7 +674,14 @@ function MainShell() {
 export default function App() {
   return (
     <ErrorBoundary>
-      {isMiniOverlayWindow() ? <MiniOverlay /> : <MainShell />}
+      {isMiniOverlayWindow() ? (
+        <div className="relative w-full h-full">
+          <MiniOverlay />
+          <DictationIndicator variant="overlay" />
+        </div>
+      ) : (
+        <MainShell />
+      )}
     </ErrorBoundary>
   );
 }

@@ -3,7 +3,7 @@
 
 use rusqlite::{params, Connection};
 
-pub const SCHEMA_VERSION_LATEST: u32 = 1;
+pub const SCHEMA_VERSION_LATEST: u32 = 3;
 
 pub fn migrate(conn: &Connection) -> Result<u32, String> {
     // 1. Ensure schema_version table exists
@@ -27,6 +27,9 @@ pub fn migrate(conn: &Connection) -> Result<u32, String> {
     }
     if current_version < 2 {
         apply_migration_0002(conn)?;
+    }
+    if current_version < 3 {
+        apply_migration_0003(conn)?;
     }
     // Return the latest applied version
     let latest_version: u32 = conn
@@ -289,6 +292,44 @@ DROP TRIGGER IF EXISTS trg_chat_messages_update;
     Ok(())
 }
 
+fn apply_migration_0003(conn: &Connection) -> Result<(), String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Failed to start transaction for migration 0003: {e}"))?;
+
+    tx.execute_batch(
+        "
+CREATE TABLE IF NOT EXISTS stt_history (
+  id TEXT PRIMARY KEY,
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT,
+  duration_ms INTEGER,
+  model_id TEXT,
+  language TEXT,
+  audio_path TEXT,
+  saved INTEGER NOT NULL DEFAULT 0,
+  app_name TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_stt_history_created_at ON stt_history(created_at DESC);
+        ",
+    )
+    .map_err(|e| format!("Migration 0003 DDL failed: {e}"))?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    tx.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (?1, ?2);",
+        params![3, now],
+    )
+    .map_err(|e| format!("Failed to record schema version 3: {e}"))?;
+
+    tx.commit()
+        .map_err(|e| format!("Failed to commit migration 0003: {e}"))?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,5 +346,29 @@ mod tests {
             .map(|r| r.unwrap())
             .collect();
         assert!(cols.contains(&"device_id".to_string()), "sync_outbox must contain device_id column");
+    }
+
+    #[test]
+    fn test_migration_0003_creates_stt_history_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        let version = migrate(&conn).unwrap();
+        assert_eq!(version, 3);
+        let mut stmt = conn.prepare("PRAGMA table_info(stt_history);").unwrap();
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get(1))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert!(cols.contains(&"id".to_string()));
+        assert!(cols.contains(&"text".to_string()));
+        assert!(cols.contains(&"created_at".to_string()));
+        assert!(cols.contains(&"updated_at".to_string()));
+        assert!(cols.contains(&"deleted_at".to_string()));
+        assert!(cols.contains(&"duration_ms".to_string()));
+        assert!(cols.contains(&"model_id".to_string()));
+        assert!(cols.contains(&"language".to_string()));
+        assert!(cols.contains(&"audio_path".to_string()));
+        assert!(cols.contains(&"saved".to_string()));
+        assert!(cols.contains(&"app_name".to_string()));
     }
 }

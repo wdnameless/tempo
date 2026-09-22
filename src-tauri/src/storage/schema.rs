@@ -151,6 +151,20 @@ static SYNC_OUTBOX_COLS: &[(&str, ColType)] = &[
     ("device_id", ColType::Text),
 ];
 
+static STT_HISTORY_COLS: &[(&str, ColType)] = &[
+    ("id", ColType::Text),
+    ("text", ColType::Text),
+    ("created_at", ColType::Text),
+    ("updated_at", ColType::Text),
+    ("deleted_at", ColType::Text),
+    ("duration_ms", ColType::Integer),
+    ("model_id", ColType::Text),
+    ("language", ColType::Text),
+    ("audio_path", ColType::Text),
+    ("saved", ColType::Integer),
+    ("app_name", ColType::Text),
+];
+
 pub static SCHEMAS: &[TableSchema] = &[
     TableSchema {
         name: "tasks",
@@ -215,6 +229,11 @@ pub static SCHEMAS: &[TableSchema] = &[
     TableSchema {
         name: "sync_outbox",
         columns: SYNC_OUTBOX_COLS,
+        soft_delete: false,
+    },
+    TableSchema {
+        name: "stt_history",
+        columns: STT_HISTORY_COLS,
         soft_delete: false,
     },
 ];
