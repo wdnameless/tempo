@@ -11,6 +11,7 @@ import {
   IconButton,
 } from '../index';
 import { applyAccent, ACCENTS } from '../../../constants/design';
+import { isMacPlatform } from '../../../services/shortcuts';
 
 describe('UI Kit components and design constants', () => {
   describe('applyAccent', () => {
@@ -187,7 +188,7 @@ describe('UI Kit components and design constants', () => {
     it('renders one box per key', () => {
       render(<Kbd keys={['⌘', 'Shift', 'P']} />);
 
-      expect(screen.getByText('⌘')).toBeDefined();
+      expect(screen.getByText(isMacPlatform() ? '⌘' : 'Ctrl')).toBeDefined();
       expect(screen.getByText('Shift')).toBeDefined();
       expect(screen.getByText('P')).toBeDefined();
 

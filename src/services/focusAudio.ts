@@ -64,7 +64,22 @@ let audioCtx: AudioContext | null = null;
 let currentPlayingId: FocusSoundId = 'none';
 let activeSourceNodes: AudioNode[] = [];
 let gainNode: GainNode | null = null;
+let currentVolume = 0.15;
 
+export function setFocusAudioVolume(volume: number): void {
+  currentVolume = Math.max(0, Math.min(1, volume));
+  if (gainNode && audioCtx && audioCtx.state !== 'closed') {
+    try {
+      gainNode.gain.setValueAtTime(currentVolume, audioCtx.currentTime);
+    } catch {
+      // Ignore audio context errors
+    }
+  }
+}
+
+export function getFocusAudioVolume(): number {
+  return currentVolume;
+}
 export function _setAudioContextForTesting(ctx: AudioContext | null): void {
   stopFocusAudio();
   audioCtx = ctx;
@@ -79,12 +94,14 @@ function getAudioContext(): AudioContext | null {
     return audioCtx;
   }
   if (typeof window === 'undefined') return null;
+  // SAFETY: Window WebAudio vendor prefixes vary by browser environment
   const AudioCtx =
     (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext ||
     (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioCtx) return null;
 
   try {
+    // SAFETY: AudioCtx constructor is checked non-null above
     audioCtx = new (AudioCtx as unknown as { new (): AudioContext })();
     if (audioCtx.state === 'suspended') {
       void audioCtx.resume().catch(() => {});
@@ -178,7 +195,7 @@ export function startFocusAudio(id: FocusSoundId): void {
   }
   {
     const masterGain = ctx.createGain();
-    masterGain.gain.setValueAtTime(0.15, ctx.currentTime);
+    masterGain.gain.setValueAtTime(currentVolume, ctx.currentTime);
     masterGain.connect(ctx.destination);
     gainNode = masterGain;
 

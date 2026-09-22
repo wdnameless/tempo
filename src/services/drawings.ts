@@ -28,6 +28,7 @@ export interface CreateDrawingInput {
 export interface UpdateDrawingInput {
   title?: string;
   scene?: Scene;
+  scene_json?: string;
   preview_path?: string | null;
 }
 
@@ -76,6 +77,10 @@ export async function loadScene(id: string): Promise<Scene> {
   return parseScene(row.scene_json);
 }
 
+export async function getDrawingRaw(id: string): Promise<DrawingMeta | null> {
+  return drawingsRepo.byId(id);
+}
+
 /**
  * Create a new drawing and store it in the database.
  */
@@ -108,7 +113,9 @@ export async function updateDrawing(id: string, patch: UpdateDrawingInput): Prom
   if (patch.title !== undefined) {
     updateData.title = patch.title.trim() || 'Untitled Drawing';
   }
-  if (patch.scene !== undefined) {
+  if (patch.scene_json !== undefined) {
+    updateData.scene_json = patch.scene_json;
+  } else if (patch.scene !== undefined) {
     updateData.scene_json = serializeScene(patch.scene);
   }
   if (patch.preview_path !== undefined) {

@@ -11,6 +11,9 @@ import { vi } from 'vitest';
 
 // canvas-confetti draws to a 2D context jsdom does not provide.
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
+vi.mock('@excalidraw/excalidraw', () => ({
+  Excalidraw: vi.fn(),
+}));
 
 if (!HTMLCanvasElement.prototype.getContext) {
   HTMLCanvasElement.prototype.getContext = (() => null) as never;

@@ -360,7 +360,8 @@ export function RecordingsView(): React.ReactElement {
       await refreshLibrary();
     } catch (err) {
       const errKey = sttErrorKey(err);
-      const message = (t[errKey] as string | undefined) || t.recTranscriptFailed;
+      // SAFETY: sttErrorKey returns translation keys defined in Translations
+      const message = ((t as unknown as Record<string, string>)[errKey]) || t.recTranscriptFailed;
       setRowErrors((prev) => ({ ...prev, [rec.id]: message }));
     } finally {
       setTranscribingId(null);
@@ -413,11 +414,11 @@ export function RecordingsView(): React.ReactElement {
               setActiveTab('audio');
               setErrorMessage(null);
             }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            className={
               activeTab === 'audio'
-                ? 'bg-white text-black shadow-sm'
-                : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]'
-            } ${isRecording ? 'opacity-50 cursor-not-allowed' : ''}`}
+                ? 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors bg-white text-black shadow-sm'
+                : 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]'
+            }
           >
             <Mic size={16} />
             {t.recTabAudio}
@@ -429,17 +430,16 @@ export function RecordingsView(): React.ReactElement {
               setActiveTab('screen');
               setErrorMessage(null);
             }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            className={
               activeTab === 'screen'
-                ? 'bg-white text-black shadow-sm'
-                : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]'
-            } ${isRecording ? 'opacity-50 cursor-not-allowed' : ''}`}
+                ? 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors bg-white text-black shadow-sm'
+                : 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]'
+            }
           >
             <Monitor size={16} />
             {t.recTabScreen}
           </button>
         </div>
-
         {/* Tab Content: Audio Configuration */}
         {activeTab === 'audio' && (
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">

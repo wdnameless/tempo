@@ -32,7 +32,81 @@ const MODIFIER_KEYS: Record<string, true> = {
 
 let isInstalled = false;
 let globalListener: ((event: KeyboardEvent) => void) | null = null;
+const CUSTOM_STORAGE_KEY = 'tempo_custom_shortcuts';
 
+export const isMacPlatform = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  return /mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent);
+};
+
+export function formatKeyToken(token: string): string {
+  if (!isMacPlatform()) {
+    const lower = token.toLowerCase();
+    if (token === '⌘' || lower === 'cmd' || lower === 'command' || lower === 'meta') {
+      return 'Ctrl';
+    }
+    if (token === '⌥' || lower === 'opt' || lower === 'option' || lower === 'alt') {
+      return 'Alt';
+    }
+    if (token === '⇧' || lower === 'shift') {
+      return 'Shift';
+    }
+  }
+  return token;
+}
+
+export function formatShortcutKeys(keys?: string[]): string {
+  if (!keys || !Array.isArray(keys)) return '';
+  if (!isMacPlatform()) {
+    return keys.map(formatKeyToken).join(' + ');
+  }
+  return keys.join('');
+}
+export function loadCustomBindings(): Record<string, string[]> {
+  if (typeof window === 'undefined' || !window.localStorage) return {};
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, string[]>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveCustomBindings(bindings: Record<string, string[]>): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(CUSTOM_STORAGE_KEY, JSON.stringify(bindings));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function isCustomShortcut(id: string): boolean {
+  const custom = loadCustomBindings();
+  return Boolean(custom[id]);
+}
+
+export function updateShortcutKeys(id: string, newKeys: string[]): void {
+  const custom = loadCustomBindings();
+  custom[id] = newKeys;
+  saveCustomBindings(custom);
+  const def = registry.get(id);
+  if (def) {
+    def.keys = newKeys;
+  }
+  notifyShortcutsChanged();
+}
+
+export function resetShortcutKeys(id: string, defaultKeys: string[]): void {
+  const custom = loadCustomBindings();
+  delete custom[id];
+  saveCustomBindings(custom);
+  const def = registry.get(id);
+  if (def) {
+    def.keys = defaultKeys;
+  }
+  notifyShortcutsChanged();
+}
 /**
  * Normalizes a key token to a canonical representation.
  */
@@ -181,6 +255,10 @@ function isEditableElement(target: EventTarget | null): boolean {
  * Returns an unregister function to remove this shortcut.
  */
 export function registerShortcut(def: ShortcutDef): () => void {
+  const custom = loadCustomBindings();
+  if (custom[def.id]) {
+    def.keys = custom[def.id];
+  }
   registry.set(def.id, def);
   notifyShortcutsChanged();
   return () => {

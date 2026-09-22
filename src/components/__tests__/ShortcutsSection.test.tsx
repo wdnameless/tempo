@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ShortcutsSection } from '../ShortcutsSection';
-import { clearShortcuts, registerDefaultShortcuts, registerShortcut } from '../../services/shortcuts';
+import { clearShortcuts, registerDefaultShortcuts, registerShortcut, isMacPlatform } from '../../services/shortcuts';
 
 describe('ShortcutsSection component', () => {
   beforeEach(() => {
@@ -25,7 +25,7 @@ describe('ShortcutsSection component', () => {
 
     render(<ShortcutsSection />);
     expect(screen.getByText('Test Custom Spotlight')).toBeTruthy();
-    expect(screen.getByText('⌘')).toBeTruthy();
+    expect(screen.getByText(isMacPlatform() ? '⌘' : 'Ctrl')).toBeTruthy();
     expect(screen.getByText('K')).toBeTruthy();
   });
 
@@ -33,7 +33,7 @@ describe('ShortcutsSection component', () => {
     registerDefaultShortcuts();
 
     render(<ShortcutsSection />);
-    const cmdKeys = screen.getAllByText('⌘');
+    const cmdKeys = screen.getAllByText(isMacPlatform() ? '⌘' : 'Ctrl');
     expect(cmdKeys.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('K')).toBeTruthy();
     expect(screen.getByText('Быстрый поиск (Spotlight)')).toBeTruthy();

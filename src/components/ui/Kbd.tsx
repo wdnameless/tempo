@@ -1,3 +1,4 @@
+import { formatKeyToken } from '../../services/shortcuts';
 
 export interface KbdProps {
   keys: string[];
@@ -16,7 +17,7 @@ export function Kbd({ keys }: KbdProps) {
             border: '1px solid var(--border)',
           }}
         >
-          {keyStr}
+          {formatKeyToken(keyStr)}
         </kbd>
       ))}
     </div>
