@@ -237,7 +237,7 @@ pub fn has_staged_update() -> bool {
 ///
 /// Kept here as well so the portable path verifies with the same key the
 /// installed path does — one signing identity, checked in two places.
-const PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ3NzBCNDFGRDUyMjE3NjEKUldSaEZ5TFZIN1J3UnpZV2pWWmhTeXdiWmVZMlpZdFJnbnVGSFEyS1lBb1lxa0FIRVVHY3ZBak8K";
+const PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENEQzNDREZEQTZGNzU0QUIKUldTclZQZW0vYzNEemNvRlMzRnduSml1b3AvTjNqalZjenJZeWNhTDZLZlk3WXc0cTl1Zk93YlcK";
 
 /// Where the release manifest lives. Same file the installed build reads, and
 /// the same repository the product ships from — the older `wdnameless/Alarmer`
@@ -504,7 +504,7 @@ mod tests {
     /// A real signature over real bytes, produced by `tauri signer sign` with
     /// this project's key. Pins the whole verification path against the actual
     /// signing tool rather than against a fixture this code also generated.
-    const REAL_SIGNATURE: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSaEZ5TFZIN1J3UnlxS2hRSFFsemYxeDR5dmxyOUpnMG9FMmZzRGxNOEFLaU9pVmNQNXFFNStBL1FXMmhydE1VZjJlbEVBaGpSRFIyUjlEeE1GdUNVdmpELzY5eWlvMncwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NjMzNzQ5CWZpbGU6YXJ0LnR4dAo1eEV6R01ocGdXbGIzdFNJYTRXa0wzNHlNZWpWVC9PemlIVW1pOGF3MVdWaEJLS2tLdzFHYkQ0b0VTMU9hZTZTTzByR0tJQjlqWW11MkY0bGFubUdEUT09Cg==";
+    const REAL_SIGNATURE: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTclZQZW0vYzNEemR1VzViOURRWEp0Witsclkzb1ZqQnVUWUZNYldaWHJUaHY1cEdXMytVZFI3ODlPQ2pWZlpGazVxbU4vSmZ5RnV5WWVXUmRXZDU2L0hWZ2hYQmpla2dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMDY2MTE5CWZpbGU6YXJ0LnR4dApQRDkyS1dPQ2lGZkV3SGFabjJ6TlJGTStWaTdhWUZYTnp1VFQwZ0JQc0xuSDdpZkQyV1RqNXlOWVo2YzAraERnZm5MQ2p5eTVoZ2JWcnJTZGh4dS9DQT09Cg==";
 
     #[test]
     fn a_genuine_signature_is_accepted() {

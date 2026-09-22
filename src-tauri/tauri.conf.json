@@ -43,7 +43,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ3NzBCNDFGRDUyMjE3NjEKUldSaEZ5TFZIN1J3UnpZV2pWWmhTeXdiWmVZMlpZdFJnbnVGSFEyS1lBb1lxa0FIRVVHY3ZBak8K",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENEQzNDREZEQTZGNzU0QUIKUldTclZQZW0vYzNEemNvRlMzRnduSml1b3AvTjNqalZjenJZeWNhTDZLZlk3WXc0cTl1Zk93YlcK",
       "endpoints": [
         "https://github.com/wdnameless/tempo/releases/latest/download/latest.json"
       ],
