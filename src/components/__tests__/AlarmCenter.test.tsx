@@ -33,8 +33,6 @@ vi.mock('../services/sound', () => ({
   },
 }));
 
-// The Rust scheduler only exists inside the Tauri shell.
-Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
 
 import { AlarmCenter } from '../AlarmCenter';
 

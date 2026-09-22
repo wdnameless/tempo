@@ -233,23 +233,46 @@ impl EngineManager {
         }
     }
 
+    /// Returns true if a model is currently loaded in memory.
+    pub async fn is_loaded(&self) -> bool {
+        let state = self.inner.lock().await;
+        state.loaded_model_path.is_some() || state.session.is_some() || state.model.is_some()
+    }
+
     /// Background janitor check: if idle for > unload_secs, unloads the model.
     /// If unload_secs == 0, model is never unloaded on idle.
     pub async fn check_idle_timeout(&self, unload_secs: u64) {
-        if unload_secs == 0 {
-            return;
-        }
-        let timeout = Duration::from_secs(unload_secs);
         let mut state = self.inner.lock().await;
-        if state.session.is_some()
-            && state.active_cancel.is_none()
-            && state.last_used.elapsed() > timeout
-        {
+        let is_loaded = state.loaded_model_path.is_some()
+            || state.session.is_some()
+            || state.model.is_some();
+        let is_active = state.active_cancel.is_some();
+        if should_unload_on_idle(
+            is_loaded,
+            is_active,
+            state.last_used,
+            Instant::now(),
+            unload_secs,
+        ) {
             state.session = None;
             state.model = None;
             state.loaded_model_path = None;
         }
     }
+}
+
+/// Returns true if the engine should unload the model given its idle state and timeout setting.
+pub fn should_unload_on_idle(
+    is_loaded: bool,
+    is_active: bool,
+    last_used: Instant,
+    now: Instant,
+    unload_secs: u64,
+) -> bool {
+    if unload_secs == 0 || !is_loaded || is_active {
+        return false;
+    }
+    now.saturating_duration_since(last_used) > Duration::from_secs(unload_secs)
 }
 
 #[cfg(test)]
@@ -309,5 +332,96 @@ mod tests {
             }
             _ => panic!("Expected WhisperRunOptions extension"),
         }
+    }
+
+    impl EngineManager {
+        async fn set_test_idle_state(&self, loaded: bool, active: bool, last_used: Instant) {
+            let mut state = self.inner.lock().await;
+            state.loaded_model_path = if loaded {
+                Some(PathBuf::from("dummy.bin"))
+            } else {
+                None
+            };
+            state.active_cancel = if active {
+                Some(CancelToken::new())
+            } else {
+                None
+            };
+            state.last_used = last_used;
+        }
+    }
+
+    #[test]
+    fn test_should_unload_on_idle_decision() {
+        let now = Instant::now();
+        let t_recent = now - Duration::from_secs(10);
+        let t_old = now - Duration::from_secs(100);
+
+        // 1. Not loaded -> false
+        assert!(!should_unload_on_idle(false, false, t_old, now, 60));
+
+        // 2. Active cancel -> false
+        assert!(!should_unload_on_idle(true, true, t_old, now, 60));
+
+        // 3. unload_secs == 0 -> false
+        assert!(!should_unload_on_idle(true, false, t_old, now, 0));
+
+        // 4. Elapsed < unload_secs -> false
+        assert!(!should_unload_on_idle(true, false, t_recent, now, 60));
+
+        // 5. Elapsed == unload_secs -> false
+        let t_exact = now - Duration::from_secs(60);
+        assert!(!should_unload_on_idle(true, false, t_exact, now, 60));
+
+        // 6. Elapsed > unload_secs -> true
+        assert!(should_unload_on_idle(true, false, t_old, now, 60));
+    }
+
+    #[tokio::test]
+    async fn test_check_idle_timeout_unloads_when_expired() {
+        let engine = EngineManager::new();
+        let t0 = Instant::now() - Duration::from_secs(100);
+        engine.set_test_idle_state(true, false, t0).await;
+        assert!(engine.is_loaded().await);
+
+        // unload_secs = 60; elapsed = 100s -> should unload
+        engine.check_idle_timeout(60).await;
+        assert!(!engine.is_loaded().await);
+    }
+
+    #[tokio::test]
+    async fn test_check_idle_timeout_retains_when_not_expired() {
+        let engine = EngineManager::new();
+        let t0 = Instant::now() - Duration::from_secs(30);
+        engine.set_test_idle_state(true, false, t0).await;
+        assert!(engine.is_loaded().await);
+
+        // unload_secs = 60; elapsed = 30s -> should NOT unload
+        engine.check_idle_timeout(60).await;
+        assert!(engine.is_loaded().await);
+    }
+
+    #[tokio::test]
+    async fn test_check_idle_timeout_retains_when_zero_secs() {
+        let engine = EngineManager::new();
+        let t0 = Instant::now() - Duration::from_secs(1000);
+        engine.set_test_idle_state(true, false, t0).await;
+        assert!(engine.is_loaded().await);
+
+        // unload_secs = 0 (never unload) -> should NOT unload
+        engine.check_idle_timeout(0).await;
+        assert!(engine.is_loaded().await);
+    }
+
+    #[tokio::test]
+    async fn test_check_idle_timeout_retains_when_active() {
+        let engine = EngineManager::new();
+        let t0 = Instant::now() - Duration::from_secs(100);
+        engine.set_test_idle_state(true, true, t0).await;
+        assert!(engine.is_loaded().await);
+
+        // active transcription in flight -> should NOT unload
+        engine.check_idle_timeout(60).await;
+        assert!(engine.is_loaded().await);
     }
 }

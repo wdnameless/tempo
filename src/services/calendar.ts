@@ -230,7 +230,7 @@ export function isEventOnDay(event: CalendarEvent, targetDate: Date): boolean {
   const dayStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0, 0);
   const dayEnd = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999);
 
-  return start <= dayEnd && end >= dayStart;
+  return start <= dayEnd && end > dayStart;
 }
 
 /**
@@ -303,7 +303,8 @@ export function tasksToCalendarEvents(tasks: TaskItem[]): CalendarEvent[] {
   const result: CalendarEvent[] = [];
 
   for (const task of tasks) {
-    if (!task.dueDate) continue;
+    const taskDate = task.dueDate || (task.startAt ? task.startAt.slice(0, 10) : null);
+    if (!taskDate) continue;
 
     const isAllDay = !task.startAt;
     let startAt: string;
@@ -323,11 +324,11 @@ export function tasksToCalendarEvents(tasks: TaskItem[]): CalendarEvent[] {
           endAt = `${endDate.getFullYear()}-${pad(endDate.getMonth() + 1)}-${pad(endDate.getDate())}T${pad(endDate.getHours())}:${pad(endDate.getMinutes())}:${pad(endDate.getSeconds())}`;
         }
       } else {
-        endAt = `${task.dueDate}T09:30:00`;
+        endAt = `${taskDate}T09:30:00`;
       }
     } else {
-      startAt = `${task.dueDate}T00:00:00`;
-      endAt = `${task.dueDate}T23:59:59`;
+      startAt = `${taskDate}T00:00:00`;
+      endAt = `${taskDate}T23:59:59`;
     }
 
     result.push({

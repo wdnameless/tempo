@@ -48,6 +48,7 @@ export interface ScheduledAlarmPayload {
   enabled: boolean;
   sound: string;
   voice_prompt: string | null;
+  note: string | null;
 }
 
 const alarmsRepo = repo<AlarmRow>('alarms');
@@ -96,6 +97,7 @@ export function alarmToScheduledAlarm(a: Alarm): ScheduledAlarmPayload {
     enabled: a.enabled,
     sound: a.sound || 'gentle',
     voice_prompt: a.voicePrompt ?? null,
+    note: a.note ?? null,
   };
 }
 
@@ -351,8 +353,8 @@ export function computeLocalAlarmPreview(alarm: Alarm, count = 3, now = new Date
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), targetHour, targetMin, 0);
     let iterations = 0;
     while (results.length < count && iterations < 365) {
-      // 0 = Monday .. 6 = Sunday
-      const weekday = (d.getDay() + 6) % 7;
+      // 0 = Sunday .. 6 = Saturday (matching scheduler.rs and WEEKDAY_LABELS)
+      const weekday = d.getDay();
       if (validDays.includes(weekday) && d.getTime() > now.getTime()) {
         results.push(formatIsoLocal(new Date(d)));
       }
@@ -374,7 +376,9 @@ export function computeLocalAlarmPreview(alarm: Alarm, count = 3, now = new Date
     while (results.length < count && daysChecked < 30) {
       const windowStartTime = new Date(checkDay.getFullYear(), checkDay.getMonth(), checkDay.getDate(), wStartH, wStartM, 0);
       const windowEndTime = new Date(checkDay.getFullYear(), checkDay.getMonth(), checkDay.getDate(), wEndH, wEndM, 0);
-
+      if (windowEndTime.getTime() < windowStartTime.getTime()) {
+        windowEndTime.setDate(windowEndTime.getDate() + 1);
+      }
       let cur = new Date(windowStartTime);
       while (cur.getTime() <= windowEndTime.getTime() && results.length < count) {
         if (cur.getTime() > now.getTime()) {

@@ -13,6 +13,7 @@ import type { AISettings } from '../../types';
 vi.mock('../aiGateway', () => ({
   AIGateway: {
     generateCompletion: vi.fn(),
+    hasKey: vi.fn().mockResolvedValue(false),
   },
 }));
 

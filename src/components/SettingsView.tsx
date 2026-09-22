@@ -39,7 +39,8 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   model: 'google/gemini-2.0-flash-001',
 };
 import { type BlockSettings } from '../types/focus';
-import { type AccentId } from '../constants/design';
+import { ACCENTS, type AccentId } from '../constants/design';
+import { rolloverSettings, setRolloverSettings } from '../services/rollover';
 import { EdgeTtsService } from '../services/edgeTts';
 import { I18nService, type Translations } from '../services/i18n';
 import { getPref } from '../services/settings';
@@ -107,8 +108,13 @@ const SECTION_DEFS: Array<{ id: SettingsSection; labelKey: keyof Translations; i
 ];
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
+  accentKey,
+  onSelectAccent,
   aiSettings,
   onUpdateAISettings,
+  alarmVolume,
+  alarmEnabled,
+  onAlarmAudioChange,
 }) => {
   const t = I18nService.t();
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
@@ -133,6 +139,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [mediaStats, setMediaStats] = useState<AssetUsage | null>(null);
   const [isPruning, setIsPruning] = useState<boolean>(false);
 
+
+  // Rollover enabled state
+  const [rolloverEnabled, setRolloverEnabled] = useState<boolean>(() => {
+    const s = rolloverSettings();
+    return Boolean((s as { enabled?: boolean }).enabled);
+  });
+
+  const handleToggleRollover = async (enabled: boolean) => {
+    setRolloverEnabled(enabled);
+    try {
+      await setRolloverSettings({ enabled });
+      notifySaved();
+    } catch {
+      setSaveStatus('error');
+    }
+  };
   // Assistant key status
   const [keyStored, setKeyStored] = useState<boolean>(false);
   const [apiKeyInput, setApiKeyInput] = useState<string>('');
@@ -705,14 +727,131 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
 
             {/* Rollover & Timezone (R40) */}
+            {/* Appearance & Accent */}
             <div
               className="p-5 rounded-lg border space-y-4"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
             >
               <h2 className="text-sm font-semibold tracking-wide uppercase" style={{ color: 'var(--text-muted)' }}>
-                {t.settingsRollover}
+                {"Accent & Appearance"}
               </h2>
+              <div className="space-y-2">
+                <label className="block text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                  Accent Color
+                </label>
+                <div className="flex flex-wrap items-center gap-2 pt-1" data-testid="accent-picker">
+                  {(Object.keys(ACCENTS) as AccentId[]).map((key) => {
+                    const color = ACCENTS[key];
+                    const isSelected = (accentKey ?? general.accent) === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        data-testid={`accent-${key}`}
+                        aria-label={`Accent ${key}`}
+                        onClick={() => {
+                          onSelectAccent?.(key);
+                          void handleSaveGeneral({ accent: key });
+                        }}
+                        className={`w-7 h-7 rounded-full transition-all flex items-center justify-center cursor-pointer ${
+                          isSelected ? 'ring-2 ring-offset-2 ring-white scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'
+                        }`}
+                        style={{
+                          backgroundColor: color,
+                        }}
+                      >
+                        {isSelected && <Check size={14} className="text-black/80" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
 
+            {/* Alarm Audio */}
+            <div
+              className="p-5 rounded-lg border space-y-4"
+              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold tracking-wide uppercase" style={{ color: 'var(--text-muted)' }}>
+                    Alarm Audio
+                  </h2>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Enable or disable alarm sound and adjust volume
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="toggle-alarm-enabled"
+                    aria-label="Alarm Enabled"
+                    checked={alarmEnabled ?? general.alarmEnabled}
+                    onChange={(e) => {
+                      const en = e.target.checked;
+                      onAlarmAudioChange?.(alarmVolume ?? general.alarmVolume, en);
+                      void handleSaveGeneral({ alarmEnabled: en });
+                    }}
+                    className="w-4 h-4 rounded cursor-pointer"
+                  />
+                  <span className="text-xs font-medium" style={{ color: 'var(--text)' }}>
+                    {(alarmEnabled ?? general.alarmEnabled) ? 'Enabled' : 'Disabled'}
+                  </span>
+                </label>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
+                  <span>Alarm Volume</span>
+                  <span>{Math.round((alarmVolume ?? general.alarmVolume) * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  data-testid="slider-alarm-volume"
+                  aria-label="Alarm Volume"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={alarmVolume ?? general.alarmVolume}
+                  onChange={(e) => {
+                    const vol = parseFloat(e.target.value);
+                    onAlarmAudioChange?.(vol, alarmEnabled ?? general.alarmEnabled);
+                    void handleSaveGeneral({ alarmVolume: vol });
+                  }}
+                  className="w-full accent-[var(--accent)] cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Rollover & Timezone (R40) */}
+            <div
+              className="p-5 rounded-lg border space-y-4"
+              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold tracking-wide uppercase" style={{ color: 'var(--text-muted)' }}>
+                    {t.settingsRollover}
+                  </h2>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    {t.settingsRolloverHint || "The hour at which today's tasks roll over to yesterday"}
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="toggle-rollover-enabled"
+                    aria-label={t.settingsRollover}
+                    checked={rolloverEnabled}
+                    onChange={(e) => void handleToggleRollover(e.target.checked)}
+                    className="w-4 h-4 rounded cursor-pointer"
+                  />
+                  <span className="text-xs font-medium" style={{ color: 'var(--text)' }}>
+                    {rolloverEnabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </label>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>

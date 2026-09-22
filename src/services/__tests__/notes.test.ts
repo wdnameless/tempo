@@ -6,11 +6,16 @@ import {
   deleteNote,
   togglePin,
   noteByTitle,
+  reindexVault,
+  renameNotePath,
 } from '../notes';
 
 const mockInvoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
+}));
+vi.mock('../platform', () => ({
+  isTauri: () => true,
 }));
 
 describe('Notes domain service (notes.ts)', () => {
@@ -98,6 +103,22 @@ describe('Notes domain service (notes.ts)', () => {
       const matchEmpty = await noteByTitle('   ');
       expect(matchEmpty).toBeNull();
     });
+
+    it('matches first line of body when note title is empty', async () => {
+      mockInvoke.mockResolvedValue([
+        {
+          id: 'n1',
+          title: '',
+          body_md: 'Meeting with Alex\nSome details here',
+          pinned: 0,
+          updated_at: '2026-09-20T10:00:00.000Z',
+          deleted_at: null,
+        },
+      ]);
+
+      const found = await noteByTitle('Meeting with Alex');
+      expect(found?.id).toBe('n1');
+    });
   });
 
   describe('createNote', () => {
@@ -152,6 +173,39 @@ describe('Notes domain service (notes.ts)', () => {
 
       // Verify reindex called for 'note'
       expect(mockInvoke).toHaveBeenCalledWith('db_reindex', { kind: 'note' });
+    });
+
+    it('auto-increments filename to Untitled 1.md when Untitled.md already exists', async () => {
+      mockInvoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+        if (cmd === 'db_get' && args.id === 'file:Untitled.md') {
+          return {
+            id: 'file:Untitled.md',
+            title: '',
+            body_md: 'Previous Untitled note',
+            pinned: 0,
+            path: 'Untitled.md',
+            updated_at: '2026-09-20T10:00:00.000Z',
+            deleted_at: null,
+          };
+        }
+        if (cmd === 'db_insert') {
+          const row = args.row as Record<string, unknown>;
+          return {
+            ...row,
+            created_at: '2026-09-20T10:00:00.000Z',
+            updated_at: '2026-09-20T10:00:00.000Z',
+            deleted_at: null,
+          };
+        }
+        if (cmd === 'links_set' || cmd === 'db_reindex') return 1;
+        if (cmd === 'db_list') return [];
+        return null;
+      });
+
+      const note = await createNote();
+      expect(note.path).toBe('Untitled 1.md');
+      expect(note.id).toBe('file:Untitled 1.md');
+      expect(mockInvoke).not.toHaveBeenCalledWith('db_update', expect.objectContaining({ id: 'file:Untitled.md' }));
     });
   });
 
@@ -354,6 +408,171 @@ describe('Notes domain service (notes.ts)', () => {
 
       // 4. Reindex called
       expect(mockInvoke).toHaveBeenCalledWith('db_reindex', { kind: 'note' });
+    });
+  });
+
+  describe('updateNote heading and file sync', () => {
+    it('updates markdown heading in body when title changes', async () => {
+      const noteA = {
+        id: 'file:test.md',
+        title: 'Old Title',
+        body_md: '# Old Title\n\nSome body text',
+        pinned: 0,
+        path: 'test.md',
+        updated_at: '2026-09-20T10:00:00.000Z',
+        deleted_at: null,
+      };
+
+      mockInvoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+        if (cmd === 'db_get' && args.id === 'file:test.md') return noteA;
+        if (cmd === 'links_backlinks') return [];
+        if (cmd === 'db_update') {
+          return { ...noteA, ...(args.patch as Record<string, unknown>) };
+        }
+        if (cmd === 'db_list') return [noteA];
+        if (cmd === 'links_set' || cmd === 'db_reindex') return 1;
+        return null;
+      });
+
+      const updated = await updateNote('file:test.md', { title: 'New Title' });
+      expect(updated.title).toBe('New Title');
+      expect(mockInvoke).toHaveBeenCalledWith('db_update', {
+        table: 'notes',
+        id: 'file:test.md',
+        patch: expect.objectContaining({
+          title: 'New Title',
+          body_md: '# New Title\n\nSome body text',
+        }),
+      });
+    });
+  });
+
+  describe('reindexVault soft-deleted restore', () => {
+    it('un-deletes existing soft-deleted note with deleted_at = null', async () => {
+      const softDeletedNote = {
+        id: 'file:existing.md',
+        title: 'Existing',
+        body_md: 'Old content',
+        pinned: 0,
+        path: 'existing.md',
+        updated_at: '2026-09-20T10:00:00.000Z',
+        deleted_at: '2026-09-21T10:00:00.000Z',
+      };
+
+      mockInvoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+        if (cmd === 'db_list' && args.table === 'notes') {
+          if (args.includeDeleted) {
+            return [softDeletedNote];
+          }
+          return [];
+        }
+        if (cmd === 'vault_list') {
+          return [
+            { path: 'existing.md', name: 'existing.md', isDir: false, children: [] },
+          ];
+        }
+        if (cmd === 'vault_read') {
+          return '# Existing\n\nNew disk content';
+        }
+        if (cmd === 'db_update') {
+          return {
+            ...softDeletedNote,
+            ...(args.patch as Record<string, unknown>),
+            deleted_at: null,
+          };
+        }
+        if (cmd === 'links_set' || cmd === 'db_reindex') return 1;
+        return null;
+      });
+
+      await reindexVault();
+
+      expect(mockInvoke).toHaveBeenCalledWith('db_update', {
+        table: 'notes',
+        id: 'file:existing.md',
+        patch: expect.objectContaining({
+          deleted_at: null,
+          body_md: '# Existing\n\nNew disk content',
+        }),
+      });
+      // Must NOT create a fallback UUID row
+      expect(mockInvoke).not.toHaveBeenCalledWith('db_insert', expect.anything());
+    });
+  });
+
+  describe('renameNotePath', () => {
+    it('migrates DB row from old path to new path and rewrites backlinks', async () => {
+      const oldNote = {
+        id: 'file:OldName.md',
+        title: 'OldName',
+        body_md: '# OldName\nContent',
+        pinned: 0,
+        path: 'OldName.md',
+        updated_at: '2026-09-20T10:00:00.000Z',
+        deleted_at: null,
+      };
+
+      const referringNote = {
+        id: 'file:Referrer.md',
+        title: 'Referrer',
+        body_md: 'Check [[OldName]] here.',
+        pinned: 0,
+        path: 'Referrer.md',
+        updated_at: '2026-09-20T10:00:00.000Z',
+        deleted_at: null,
+      };
+
+      mockInvoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+        if (cmd === 'db_get') {
+          if (args.id === 'file:OldName.md') return oldNote;
+          if (args.id === 'file:Referrer.md') return referringNote;
+          return null;
+        }
+        if (cmd === 'links_backlinks') {
+          return [{ kind: 'note', id: 'file:Referrer.md', title: 'Referrer' }];
+        }
+        if (cmd === 'db_insert') {
+          return {
+            ...(args.row as Record<string, unknown>),
+            created_at: '2026-09-20T11:00:00.000Z',
+            updated_at: '2026-09-20T11:00:00.000Z',
+            deleted_at: null,
+          };
+        }
+        if (cmd === 'db_delete') return null;
+        if (cmd === 'db_update') {
+          return { ...referringNote, ...(args.patch as Record<string, unknown>) };
+        }
+        if (cmd === 'db_list') return [referringNote];
+        if (cmd === 'links_set' || cmd === 'db_reindex') return 1;
+        return null;
+      });
+
+      await renameNotePath('OldName.md', 'NewName.md');
+
+      // Old row removed
+      expect(mockInvoke).toHaveBeenCalledWith('db_delete', {
+        table: 'notes',
+        id: 'file:OldName.md',
+      });
+
+      // New row inserted with new path
+      expect(mockInvoke).toHaveBeenCalledWith('db_insert', {
+        table: 'notes',
+        row: expect.objectContaining({
+          id: 'file:NewName.md',
+          path: 'NewName.md',
+        }),
+      });
+
+      // Referrer note body rewritten
+      expect(mockInvoke).toHaveBeenCalledWith('db_update', {
+        table: 'notes',
+        id: 'file:Referrer.md',
+        patch: expect.objectContaining({
+          body_md: 'Check [[NewName]] here.',
+        }),
+      });
     });
   });
 });

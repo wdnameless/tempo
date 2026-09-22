@@ -268,6 +268,17 @@ impl CoordinatorState {
     /// Process an input edge and return any side-effect to execute.
     pub fn on_input(&mut self, input: InputEvent) -> Option<Effect> {
         let now = input.now;
+        // External stop trigger (UI Stop button / CLI / tray) must immediately stop
+        // recording regardless of activation mode or hold lock state.
+        if input.external && !input.is_pressed {
+            self.pending_release = None;
+            self.pending_press = None;
+            if self.stage == Stage::Recording {
+                return Some(self.begin_processing());
+            }
+            return None;
+        }
+
         let has_pending_release = self.pending_release.is_some();
         let is_held = match self.stage {
             Stage::Recording => true,
@@ -548,6 +559,11 @@ impl TranscriptionCoordinator {
             now: Instant::now(),
         }));
     }
+    /// Explicitly stop recording from an external trigger (UI / CLI / tray).
+    pub fn stop(&self) {
+        self.send_external(false);
+    }
+
 
     /// Signal user cancellation (e.g. Esc pressed).
     pub fn notify_cancel(&self) {
@@ -1038,5 +1054,109 @@ mod tests {
         // Held 400ms since initial key-down (1000ms..1400ms) -> stops, does not lock
         assert_eq!(state.on_grace_expired(), Some(Effect::Stop));
         assert_eq!(state.stage(), Stage::Processing);
+    }
+
+    #[test]
+    fn external_start_and_stop_drives_driver() {
+        use std::sync::atomic::AtomicBool;
+        use std::sync::mpsc::channel;
+
+        struct TestDriver {
+            started: Arc<AtomicBool>,
+            stopped: Arc<AtomicBool>,
+            stop_tx: mpsc::Sender<bool>,
+        }
+
+        impl DictationDriver for TestDriver {
+            fn start(&self) -> bool {
+                self.started.store(true, Ordering::SeqCst);
+                true
+            }
+            fn stop(&self, cancel: bool) {
+                self.stopped.store(true, Ordering::SeqCst);
+                let _ = self.stop_tx.send(cancel);
+            }
+        }
+
+        let started = Arc::new(AtomicBool::new(false));
+        let stopped = Arc::new(AtomicBool::new(false));
+        let (stop_tx, stop_rx) = channel();
+
+        let driver = TestDriver {
+            started: Arc::clone(&started),
+            stopped: Arc::clone(&stopped),
+            stop_tx,
+        };
+
+        let coordinator = TranscriptionCoordinator::new(driver);
+
+        // Start via the external path (equivalent to stt_start_dictation)
+        coordinator.send_external(true);
+
+        let t0 = Instant::now();
+        while !coordinator.is_recording() && t0.elapsed() < Duration::from_secs(1) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            coordinator.is_recording(),
+            "coordinator should be recording after external start"
+        );
+        assert!(
+            started.load(Ordering::SeqCst),
+            "driver should have received start"
+        );
+
+        // Stop via the external path (equivalent to stt_stop_dictation)
+        coordinator.send_external(false);
+
+        let cancel = stop_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("driver must receive stop");
+        assert!(!cancel, "stop must not be a cancel");
+        assert!(
+            stopped.load(Ordering::SeqCst),
+            "driver should have received stop"
+        );
+
+        let t1 = Instant::now();
+        while coordinator.is_recording() && t1.elapsed() < Duration::from_secs(1) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            !coordinator.is_recording(),
+            "coordinator should not be recording after external stop"
+        );
+    }
+
+    #[test]
+    fn external_stop_stops_all_activation_modes() {
+        for mode in [
+            ShortcutActivation::PushToTalk,
+            ShortcutActivation::HoldOrToggle,
+            ShortcutActivation::Toggle,
+        ] {
+            let mut state = CoordinatorState::new();
+            let t0 = Instant::now();
+            let start_effect = state.on_input(input(mode, true, t0));
+            assert_eq!(start_effect, Some(Effect::Start), "mode {mode:?} should start");
+            assert!(state.is_recording());
+
+            // External stop via send_external(false)
+            let stop_input = InputEvent {
+                is_pressed: false,
+                mode: ShortcutActivation::Toggle,
+                hold_threshold: Duration::ZERO,
+                external: true,
+                now: t0 + Duration::from_millis(200),
+            };
+            let stop_effect = state.on_input(stop_input);
+            assert_eq!(
+                stop_effect,
+                Some(Effect::Stop),
+                "mode {mode:?} must stop on external stop"
+            );
+            assert_eq!(state.stage(), Stage::Processing);
+            assert!(!state.is_recording());
+        }
     }
 }

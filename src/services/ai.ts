@@ -27,6 +27,9 @@ export class AIService {
         }));
         return { alarms, error: null };
       }
+      if (plan.action === 'create_alarms') {
+        return { alarms: [], error: plan.explanation || 'Будильники не созданы: список пуст.' };
+      }
       if (plan.action === 'noop' && plan.explanation) {
         return { alarms: [], error: plan.explanation };
       }

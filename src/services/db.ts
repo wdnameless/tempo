@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { isTauri } from './platform';
 
 export const SCHEMA_VERSION = 1;
 
@@ -67,32 +68,57 @@ export function repo<T extends EntityMeta>(table: Table): Repo<T> {
     // older than the frontend. Treat that as "no rows" rather than letting a
     // missing backend take the whole hydrate path down with a TypeError.
     async all(): Promise<T[]> {
+      if (!isTauri()) return [];
       const rows = await invoke<T[] | undefined>('db_list', { table, includeDeleted: false });
       return rows ?? [];
     },
 
     async byId(id: string): Promise<T | null> {
+      if (!isTauri()) return null;
       const row = await invoke<T | null | undefined>('db_get', { table, id });
       return row ?? null;
     },
 
     async insert(data: Omit<T, keyof EntityMeta>): Promise<T> {
+      if (!isTauri()) {
+        const now = new Date().toISOString();
+        const customId = 'id' in data && typeof data.id === 'string' ? data.id : `mock_${Date.now()}`;
+        // SAFETY: In-memory fallback satisfies T by augmenting data with EntityMeta fields
+        return {
+          ...data,
+          id: customId,
+          updated_at: now,
+          deleted_at: null,
+        } as unknown as T;
+      }
       const row = await invoke<T | undefined>('db_insert', { table, row: data });
       if (!row) throw new Error(`db_insert returned no row for ${table}`);
       return row;
     },
 
     async update(id: string, patch: Partial<Omit<T, keyof EntityMeta>>): Promise<T> {
+      if (!isTauri()) {
+        const now = new Date().toISOString();
+        // SAFETY: In-memory fallback satisfies T by augmenting patch with EntityMeta fields
+        return {
+          id,
+          ...patch,
+          updated_at: now,
+          deleted_at: null,
+        } as unknown as T;
+      }
       const row = await invoke<T | undefined>('db_update', { table, id, patch });
       if (!row) throw new Error(`db_update returned no row for ${table}`);
       return row;
     },
 
     async remove(id: string): Promise<void> {
+      if (!isTauri()) return;
       await invoke<void>('db_delete', { table, id });
     },
 
     async changedSince(iso: string): Promise<T[]> {
+      if (!isTauri()) return [];
       const rows = await invoke<T[] | undefined>('db_changed_since', { table, iso });
       return rows ?? [];
     },
@@ -105,7 +131,9 @@ export async function dbReady(): Promise<number> {
   if (!readyPromise) {
     readyPromise = (async () => {
       // Invoke db_ready command in rust backend
-      await invoke<boolean>('db_ready');
+      if (isTauri()) {
+        await invoke<boolean>('db_ready');
+      }
       // Run JSON migration once if DB is empty
       const { runLegacyMigration } = await import('./store');
       await runLegacyMigration();
@@ -130,12 +158,14 @@ export async function dbReady(): Promise<number> {
 }
 
 export async function dbPath(): Promise<string> {
+  if (!isTauri()) return ':memory:';
   return await invoke<string>('db_path');
 }
 
 export async function search(query: string, limit?: number): Promise<SearchHit[]> {
   // Same reason as `repo().all()`: an unregistered command resolves to
   // `undefined`, and a search that returns "nothing" is the right answer then.
+  if (!isTauri()) return [];
   const hits = await invoke<SearchHit[] | undefined>('db_search', { query, limit });
   return hits ?? [];
 }

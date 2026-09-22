@@ -2,6 +2,8 @@ import { repo, type EntityMeta } from './db';
 import { taskFromRow, taskToRow, type TaskRow } from './store';
 import { reindex } from './search';
 import { dayKey } from './stats';
+import { upsertLinks, backlinksOf, linksOf, type LinkRef } from './linking';
+import { emitDataChanged } from './appEvents';
 import type { TaskItem, ListItem } from '../types';
 
 export type TaskSortMode = 'manual' | 'due' | 'priority';
@@ -110,7 +112,9 @@ export async function createTask(input: CreateTaskInput): Promise<TaskItem> {
 
   const inserted = await taskRepo.insert(rowData);
   await reindex('task');
-  return taskFromRow(inserted);
+  const created = taskFromRow(inserted);
+  emitDataChanged('tasks', [created.id]);
+  return created;
 }
 
 /**
@@ -144,7 +148,9 @@ export async function updateTask(id: string, patch: UpdateTaskPatch): Promise<Ta
   // one behind would show the same task on two days at once — the ghost the day
   // view cannot explain. An explicit `startAt` in the same patch always wins.
   if (patch.dueDate !== undefined && patch.startAt === undefined && currentItem.startAt) {
-    const startDay = dayKey(new Date(currentItem.startAt));
+    const startDay = currentItem.startAt.includes('T')
+      ? currentItem.startAt.slice(0, 10)
+      : dayKey(new Date(currentItem.startAt));
     if (startDay !== patch.dueDate) {
       updatedItem.startAt = null;
     }
@@ -157,6 +163,7 @@ export async function updateTask(id: string, patch: UpdateTaskPatch): Promise<Ta
 
   const updated = await taskRepo.update(id, patchRow);
   await reindex('task');
+  emitDataChanged('tasks', [id]);
   return taskFromRow(updated);
 }
 
@@ -186,6 +193,33 @@ export async function deleteTask(id: string): Promise<void> {
   }
   await taskRepo.remove(id);
   await reindex('task');
+
+  const idsToDelete = [id, ...subtasks.map((s) => s.id)];
+
+  for (const tid of idsToDelete) {
+    try {
+      await upsertLinks({ kind: 'task', id: tid }, []);
+    } catch {
+      // ignore
+    }
+  }
+
+  for (const tid of idsToDelete) {
+    try {
+      const backlinks = await backlinksOf('task', tid);
+      if (Array.isArray(backlinks)) {
+        for (const bl of backlinks) {
+          const outgoing = await linksOf(bl.kind, bl.id);
+          const remaining = outgoing.filter((l) => !(l.kind === 'task' && idsToDelete.includes(l.id)));
+          await upsertLinks({ kind: bl.kind as LinkRef['kind'], id: bl.id }, remaining);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  emitDataChanged('tasks', idsToDelete);
 }
 
 /**
@@ -269,7 +303,9 @@ export async function createList(name: string, color?: string | null): Promise<L
 
   const inserted = await listRepo.insert(rowData);
   await reindex('list');
-  return listFromRow(inserted);
+  const list = listFromRow(inserted);
+  emitDataChanged('lists', [list.id]);
+  return list;
 }
 
 /**
@@ -278,6 +314,7 @@ export async function createList(name: string, color?: string | null): Promise<L
 export async function renameList(id: string, name: string): Promise<ListItem> {
   const updated = await listRepo.update(id, { name });
   await reindex('list');
+  emitDataChanged('lists', [id]);
   return listFromRow(updated);
 }
 
@@ -297,6 +334,8 @@ export async function deleteList(id: string): Promise<void> {
   await listRepo.remove(id);
   await reindex('list');
   await reindex('task');
+  emitDataChanged('lists', [id]);
+  emitDataChanged('tasks', itemsInList.map((i) => i.id));
 }
 
 /**
@@ -307,8 +346,10 @@ export async function moveListItemToTask(
   itemId: string,
   patch?: MoveListItemToTaskPatch,
 ): Promise<TaskItem> {
-  return updateTask(itemId, {
+  const updated = await updateTask(itemId, {
     ...(patch ?? {}),
     listId: null,
   });
+  emitDataChanged('lists');
+  return updated;
 }

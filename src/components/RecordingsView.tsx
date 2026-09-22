@@ -41,6 +41,7 @@ import {
   recordingBytes,
   type RecordingItem,
 } from '../services/recordings';
+import { assetDelete } from '../services/assets';
 import {
   transcribeRecording,
   transcribePending,
@@ -198,9 +199,15 @@ export function RecordingsView(): React.ReactElement {
 
     const sourceId = selectedSourceId;
     let cancelled = false;
+    let previewPath: string | null = null;
     void previewSource(sourceId)
       .then((url) => {
-        if (!cancelled) setPreview({ sourceId, url });
+        if (!cancelled) {
+          previewPath = url;
+          setPreview({ sourceId, url });
+        } else if (url && !url.startsWith('data:')) {
+          void assetDelete(url).catch(() => {});
+        }
       })
       .catch(() => {
         if (!cancelled) setPreview({ sourceId, url: null });
@@ -208,6 +215,9 @@ export function RecordingsView(): React.ReactElement {
 
     return () => {
       cancelled = true;
+      if (previewPath && !previewPath.startsWith('data:')) {
+        void assetDelete(previewPath).catch(() => {});
+      }
     };
   }, [activeTab, selectedSourceId]);
 
@@ -381,6 +391,12 @@ export function RecordingsView(): React.ReactElement {
     }
   };
   const handleDelete = async (id: string) => {
+    const rec = recordings.find((r) => r.id === id);
+    const name = rec?.title || rec?.id || 'recording';
+    const msg = t.vaultConfirmDelete ? t.vaultConfirmDelete.replace('{name}', name) : `Delete "${name}"?`;
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function' && !window.confirm(msg)) {
+      return;
+    }
     try {
       await deleteRecording(id);
       if (playingId === id) setPlayingId(null);

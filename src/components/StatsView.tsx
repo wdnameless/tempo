@@ -119,24 +119,6 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
     return buckets;
   }, [weekMap]);
 
-  // Last 7 days pills for focused time card
-  const last7Days = useMemo(() => {
-    const res: Array<{ key: string; weekday: string; dayNum: number; seconds: number; isToday: boolean }> = [];
-    const now = new Date();
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - i);
-      const key = dayKey(d);
-      res.push({
-        key,
-        weekday: d.toLocaleDateString('en-US', { weekday: 'short' }),
-        dayNum: d.getDate(),
-        seconds: dayMap[key] || 0,
-        isToday: i === 0,
-      });
-    }
-    return res;
-  }, [dayMap]);
 
   const currentBuckets = period === 'day' ? dayBuckets : weekBuckets;
   const totalPeriodSeconds = currentBuckets.reduce((acc, b) => acc + b.seconds, 0);
@@ -176,7 +158,25 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
     );
   }
 
-  const max7DaySec = Math.max(1, ...last7Days.map((d) => d.seconds));
+  const maxBucketSec = Math.max(1, ...currentBuckets.map((b) => b.seconds));
+  const todayKey = dayKey(new Date());
+  const chartItems = currentBuckets.map((b) => {
+    const parts = b.date.split('-').map(Number);
+    const d = new Date(parts[0], parts[1] - 1, parts[2]);
+    const isCurrent = period === 'day' ? b.date === todayKey : false;
+    const label =
+      period === 'day'
+        ? d.toLocaleDateString('en-US', { weekday: 'narrow' })
+        : `${parts[1]}/${parts[2]}`;
+    const subLabel = period === 'day' ? String(d.getDate()) : '';
+    return {
+      key: b.date,
+      label,
+      subLabel,
+      seconds: b.seconds,
+      isCurrent,
+    };
+  });
 
   return (
     <div className="relative flex-1 h-full w-full overflow-hidden bg-[var(--bg)] text-[var(--text)] select-none">
@@ -313,20 +313,20 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
         <Card variant="surface" padding="md" className="space-y-3">
           <div className="flex items-center justify-between text-xs font-semibold text-[var(--text)]">
             <span>Focused Time</span>
-            <span className="text-[10px] font-mono tracking-widest text-[var(--text-faint)] uppercase">
-              LAST 7 DAYS
+            <span className="text-[10px] font-mono tracking-widest text-[var(--text-faint)] uppercase" data-testid="chart-period-subtitle">
+              {period === 'day' ? 'LAST 14 DAYS' : 'LAST 12 WEEKS'}
             </span>
           </div>
 
-          {/* 7 Vertical bar heights */}
-          <div className="h-24 flex items-end justify-between gap-2 px-1 pt-2">
-            {last7Days.map((d) => {
-              const heightPct = d.seconds > 0 ? Math.max(8, (d.seconds / max7DaySec) * 100) : 4;
+          {/* Vertical bar heights */}
+          <div className="h-24 flex items-end justify-between gap-1 px-1 pt-2" data-testid="chart-bars">
+            {chartItems.map((d) => {
+              const heightPct = d.seconds > 0 ? Math.max(8, (d.seconds / maxBucketSec) * 100) : 4;
               return (
                 <div key={d.key} className="flex-1 flex flex-col items-center h-full justify-end group">
                   <div
                     className={`w-full rounded-t-sm transition-all duration-300 ${
-                      d.isToday
+                      d.isCurrent
                         ? 'bg-[var(--accent)]'
                         : d.seconds > 0
                         ? 'bg-[var(--accent)] opacity-60 hover:opacity-90'
@@ -340,18 +340,25 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
             })}
           </div>
 
-          {/* 7 Day pill buttons with active underline bar */}
-          <div className="grid grid-cols-7 gap-1 pt-2 border-t border-[var(--border)] text-center">
-            {last7Days.map((d) => (
-               <div key={d.key} className="flex flex-col items-center py-1">
-                <span className="text-[10px] text-[var(--text-faint)] font-medium">{d.weekday}</span>
-                <span className={`text-xs font-bold mt-0.5 ${d.isToday ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}>
-                  {d.dayNum}
-                </span>
-                {d.isToday ? (
-                  <div className="w-4 h-[2px] bg-[var(--accent)] rounded-full mt-1.5" />
+          {/* Day / Week pill labels with active underline bar */}
+          <div
+            className="grid gap-1 pt-2 border-t border-[var(--border)] text-center"
+            style={{
+              gridTemplateColumns: `repeat(${chartItems.length}, minmax(0, 1fr))`,
+            }}
+          >
+            {chartItems.map((d) => (
+              <div key={d.key} className="flex flex-col items-center py-1">
+                <span className="text-[9px] text-[var(--text-faint)] font-medium truncate">{d.label}</span>
+                {d.subLabel ? (
+                  <span className={`text-[10px] font-bold mt-0.5 ${d.isCurrent ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}>
+                    {d.subLabel}
+                  </span>
+                ) : null}
+                {d.isCurrent ? (
+                  <div className="w-3 h-[2px] bg-[var(--accent)] rounded-full mt-1" />
                 ) : (
-                  <div className="w-4 h-[2px] mt-1.5" />
+                  <div className="w-3 h-[2px] mt-1" />
                 )}
               </div>
             ))}

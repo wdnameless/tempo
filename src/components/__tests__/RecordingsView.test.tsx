@@ -52,6 +52,10 @@ vi.mock('../../services/transcribe', () => ({
 vi.mock('../../services/stt', () => ({
   sttErrorKey: vi.fn(() => 'recTranscriptFailed'),
 }));
+vi.mock('../../services/assets', () => ({
+  assetDelete: vi.fn().mockResolvedValue(undefined),
+}));
+import * as assetsService from '../../services/assets';
 import * as transcribeService from '../../services/transcribe';
 
 describe('RecordingsView', () => {
@@ -452,5 +456,93 @@ describe('RecordingsView', () => {
     await waitFor(() => {
       expect(screen.getAllByText(t.recTranscriptFailed).length).toBeGreaterThan(0);
     });
+  });
+
+  it('asks for confirmation before deleting a recording and deletes on confirm', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(recordingsService.listRecordings).mockResolvedValue([
+      {
+        id: 'rec-del-1',
+        title: 'Delete Me',
+        kind: 'audio',
+        file_path: 'audio/delete.wav',
+        duration_sec: 10,
+        transcript: null,
+        transcript_status: 'none',
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+    vi.mocked(recordingsService.deleteRecording).mockResolvedValue();
+
+    render(<RecordingsView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Delete Me')).toBeDefined();
+    });
+
+    const delBtn = screen.getByRole('button', { name: t.recDelete });
+    fireEvent.click(delBtn);
+
+    await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalled();
+      expect(recordingsService.deleteRecording).toHaveBeenCalledWith('rec-del-1');
+    });
+    confirmSpy.mockRestore();
+  });
+
+  it('cancelling delete does not call deleteRecording', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    vi.mocked(recordingsService.listRecordings).mockResolvedValue([
+      {
+        id: 'rec-del-2',
+        title: 'Keep Me',
+        kind: 'audio',
+        file_path: 'audio/keep.wav',
+        duration_sec: 10,
+        transcript: null,
+        transcript_status: 'none',
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+
+    render(<RecordingsView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Keep Me')).toBeDefined();
+    });
+
+    const delBtn = screen.getByRole('button', { name: t.recDelete });
+    fireEvent.click(delBtn);
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(recordingsService.deleteRecording).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('cleans up preview file on component unmount', async () => {
+    vi.mocked(recorderService.listSources).mockResolvedValue([
+      {
+        id: 'screen:1',
+        name: 'Display 1',
+        kind: 'monitor',
+        width: 1920,
+        height: 1080,
+        is_primary: true,
+      },
+    ]);
+    vi.mocked(recorderService.previewSource).mockResolvedValue('C:/assets/screen/preview.png');
+
+    const { unmount } = render(<RecordingsView />);
+
+    const screenTab = screen.getByRole('button', { name: /Экран|Screen/i });
+    fireEvent.click(screenTab);
+
+    await waitFor(() => {
+      expect(recorderService.previewSource).toHaveBeenCalledWith('screen:1');
+    });
+
+    unmount();
+
+    expect(assetsService.assetDelete).toHaveBeenCalledWith('C:/assets/screen/preview.png');
   });
 });

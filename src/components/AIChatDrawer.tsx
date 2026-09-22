@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { AIGateway } from '../services/aiGateway';
 import {
   ThemeColors,
   DynamicUIConfig,
@@ -17,7 +18,7 @@ function createMessageId(prefix: string): string {
   return `${prefix}-${Date.now()}-${messageSeq}`;
 }
 
-const WEEKDAY_NAMES_RU = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const WEEKDAY_NAMES_RU = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 
 function formatAlarmWhen(alarm: AlarmDraft): string {
   if (alarm.repeat === 'interval') {
@@ -82,7 +83,20 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
   const [isCompiling, setIsCompiling] = useState(false);
   const [pendingAlarms, setPendingAlarms] = useState<AlarmDraft[] | null>(null);
   const [isApplyingAlarms, setIsApplyingAlarms] = useState(false);
+  const [hasRemoteKey, setHasRemoteKey] = useState<boolean>(Boolean(aiSettings.apiKey));
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    void AIGateway.hasKey().then((has) => {
+      if (active) {
+        setHasRemoteKey(Boolean(aiSettings.apiKey && aiSettings.apiKey.trim().length > 0) || has);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [aiSettings.apiKey]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -121,6 +135,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
       emitDataChanged('alarms', created.map((a) => a.id));
 
       if (onApplyAlarms) {
+        // SAFETY: Alarm with title mapping satisfies AlarmItem interface
         onApplyAlarms(created.map((a) => ({ ...a, title: a.label } as unknown as AlarmItem)));
       }
 
@@ -179,10 +194,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
     setIsCompiling(true);
 
     try {
-      // 1. Compile user intent (either via LLM or deterministic keyword mapper)
-      const actionPlan = await AICompilerService.compileIntent(textToSend, aiSettings);
-
-      // 2. Check for timer intent if user asked (R13)
+      // 1. Check for timer intent if user asked (R13)
       const lower = textToSend.toLowerCase();
       const timerMatch = lower.match(/(?:таймер|помодоро)\s+(?:на\s+)?(\d+)\s*(?:мин|минут)/);
       if (timerMatch && onSetTimerMinutes) {
@@ -190,8 +202,21 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
         if (mins > 0) {
           onSetTimerMinutes(mins);
           if (onNavigateToModule) onNavigateToModule('timer');
+          const replyText = `Таймер на ${mins} мин запущен.`;
+          const assistantMsg: ChatMessage = {
+            id: createMessageId('asst'),
+            sender: 'assistant',
+            text: replyText,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          };
+          onSendMessage(assistantMsg);
+          soundService.speak(replyText);
+          return;
         }
       }
+
+      // 2. Compile user intent (either via LLM or deterministic keyword mapper)
+      const actionPlan = await AICompilerService.compileIntent(textToSend, aiSettings);
 
       // 3. Alarms intent: proposal renders as preview card, nothing written before confirm (R04)
       if (actionPlan.action === 'create_alarms' && actionPlan.alarms && actionPlan.alarms.length > 0) {
@@ -388,7 +413,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
         </div>
         <div className="flex justify-between items-center px-1 mt-2 text-[10px] text-[var(--text-muted)]">
           <span>Поддерживает: задачи, расписания, будильники, заметки</span>
-          <span>{aiSettings.apiKey ? 'Online LLM' : 'Offline Mode'}</span>
+          <span>{hasRemoteKey ? 'Online LLM' : 'Offline Mode'}</span>
         </div>
       </form>
     </div>

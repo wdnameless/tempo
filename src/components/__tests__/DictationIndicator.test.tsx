@@ -209,4 +209,21 @@ describe('DictationIndicator', () => {
 
     expect(container.firstChild).toBeNull();
   });
+
+  it('returns null for pill variant when overlayEnabled is false', async () => {
+    vi.mocked(speechSettings.loadSpeechConfig).mockReturnValue({
+      ...speechSettings.DEFAULT_SPEECH_CONFIG,
+      overlayEnabled: false,
+    });
+
+    vi.mocked(stt.dictationState).mockResolvedValue({
+      recording: true,
+      level: 0.5,
+      since: Date.now(),
+    });
+
+    const { container } = render(<DictationIndicator variant="pill" pollIntervalMs={100} />);
+
+    expect(container.firstChild).toBeNull();
+  });
 });

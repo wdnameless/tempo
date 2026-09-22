@@ -36,8 +36,9 @@ export interface CreateNoteInput {
 const noteRepo = repo<NoteRow>('notes');
 interface NoteRepoWithId {
   insert(data: Omit<NoteRow, 'updated_at' | 'deleted_at'>): Promise<NoteRow>;
+  update(id: string, patch: Partial<Omit<NoteRow, 'updated_at'>> & { deleted_at?: string | null }): Promise<NoteRow>;
 }
-// SAFETY: Backend db_insert accepts and preserves custom id on row object
+// SAFETY: Backend db_insert and db_update accept custom id and deleted_at to un-delete rows
 const noteRepoWithId = noteRepo as unknown as NoteRepoWithId;
 function getNoteFilePath(row: NoteRow): string | null {
   if (row.path) return row.path;
@@ -109,7 +110,17 @@ export async function noteByTitle(title: string): Promise<NoteItem | null> {
   if (!target) return null;
 
   const notes = await listNotes();
-  return notes.find((n) => n.title.trim().toLowerCase() === target) ?? null;
+  return (
+    notes.find((n) => {
+      const matchTitle = n.title.trim().toLowerCase();
+      if (matchTitle === target) return true;
+      if (!matchTitle) {
+        const firstLine = (n.body.split('\n')[0] || '').trim().toLowerCase();
+        return firstLine === target;
+      }
+      return false;
+    }) ?? null
+  );
 }
 
 /**
@@ -171,16 +182,42 @@ export async function createNote(input: CreateNoteInput = {}): Promise<NoteItem>
   let filePath = input.path;
   if (!filePath) {
     const sanitized = title.trim().replace(/[<>:"/\\|?*]/g, '_');
-    filePath = sanitized ? `${sanitized}.md` : 'Untitled.md';
-  }
-
-  try {
-    await createNoteFile(filePath, body);
-  } catch {
+    const base = sanitized || 'Untitled';
+    filePath = `${base}.md`;
+    let counter = 1;
+    while (true) {
+      const id = `file:${filePath}`;
+      const existingInDb = await noteRepo.byId(id);
+      if (!existingInDb) {
+        try {
+          await createNoteFile(filePath, body);
+          break;
+        } catch (err) {
+          const msg = String(err);
+          if (msg.includes('already exists') || msg.includes('File already exists')) {
+            filePath = `${base} ${counter}.md`;
+            counter++;
+            continue;
+          }
+          break;
+        }
+      } else {
+        filePath = `${base} ${counter}.md`;
+        counter++;
+      }
+    }
+  } else {
     try {
-      await writeNoteFile(filePath, body);
-    } catch {
-      // Vault file creation optional in mock/browser env
+      await createNoteFile(filePath, body);
+    } catch (err) {
+      const msg = String(err);
+      if (!msg.includes('already exists')) {
+        try {
+          await writeNoteFile(filePath, body);
+        } catch {
+          // Vault file creation optional in mock/browser env
+        }
+      }
     }
   }
 
@@ -189,11 +226,12 @@ export async function createNote(input: CreateNoteInput = {}): Promise<NoteItem>
 
   const existing = await noteRepo.byId(id);
   if (existing) {
-    row = await noteRepo.update(id, {
+    row = await noteRepoWithId.update(id, {
       title,
       body_md: body,
       pinned: pinned ? 1 : 0,
       path: filePath,
+      deleted_at: null,
     });
   } else {
     try {
@@ -223,6 +261,19 @@ export async function createNote(input: CreateNoteInput = {}): Promise<NoteItem>
   return note;
 }
 
+async function updateNoteBodyAndFile(row: NoteRow, newBody: string): Promise<void> {
+  await noteRepo.update(row.id, { body_md: newBody });
+  await syncOutgoingLinks(row.id, newBody);
+  const srcPath = getNoteFilePath(row);
+  if (srcPath) {
+    try {
+      await writeNoteFile(srcPath, newBody);
+    } catch {
+      // ignore
+    }
+  }
+}
+
 /**
  * Updates a note. If title changes, rewrites [[old title]] in all notes that linked to it.
  * Only replaces the exact old title; a link typed with different casing or spacing is normalized by noteByTitle instead.
@@ -239,10 +290,18 @@ export async function updateNote(
 
   const oldTitle = current.title;
   const newTitle = patch.title !== undefined ? patch.title : current.title;
-  const newBody = patch.body !== undefined ? patch.body : current.body_md;
+  let newBody = patch.body !== undefined ? patch.body : current.body_md;
   const newPinned = patch.pinned !== undefined ? (patch.pinned ? 1 : 0) : current.pinned;
 
   const titleChanged = patch.title !== undefined && patch.title !== oldTitle;
+
+  if (titleChanged) {
+    if (/^#\s+/m.test(newBody)) {
+      newBody = newBody.replace(/^#\s+.*$/m, `# ${newTitle}`);
+    } else if (newTitle.trim()) {
+      newBody = newBody ? `# ${newTitle}\n\n${newBody}` : `# ${newTitle}\n`;
+    }
+  }
 
   // If title changed and had a non-empty old title, rewrite references in referring notes
   if (titleChanged && oldTitle.trim().length > 0) {
@@ -256,16 +315,7 @@ export async function updateNote(
         if (sourceRow && sourceRow.body_md) {
           const updatedBody = sourceRow.body_md.replace(linkRegex, `[[${newTitle}]]`);
           if (updatedBody !== sourceRow.body_md) {
-            await noteRepo.update(bl.id, { body_md: updatedBody });
-            await syncOutgoingLinks(bl.id, updatedBody);
-            const srcPath = getNoteFilePath(sourceRow);
-            if (srcPath) {
-              try {
-                await writeNoteFile(srcPath, updatedBody);
-              } catch {
-                // ignore
-              }
-            }
+            await updateNoteBodyAndFile(sourceRow, updatedBody);
           }
         }
       }
@@ -273,7 +323,7 @@ export async function updateNote(
   }
 
   const filePath = getNoteFilePath(current);
-  if (filePath && patch.body !== undefined) {
+  if (filePath && (patch.body !== undefined || titleChanged)) {
     try {
       await writeNoteFile(filePath, newBody);
     } catch {
@@ -283,7 +333,7 @@ export async function updateNote(
 
   const updatedRow = await noteRepo.update(id, {
     ...(patch.title !== undefined ? { title: newTitle } : {}),
-    ...(patch.body !== undefined ? { body_md: newBody } : {}),
+    ...(titleChanged || patch.body !== undefined ? { body_md: newBody } : {}),
     ...(patch.pinned !== undefined ? { pinned: newPinned } : {}),
   });
 
@@ -353,6 +403,83 @@ export async function deleteNote(id: string): Promise<void> {
 }
 
 /**
+ * Renames a note file or folder path in SQLite:
+ * Migrates DB row ID from file:oldPath to file:newPath,
+ * rewrites [[wiki links]] in referring notes and on disk,
+ * updates link graph and reindexes.
+ */
+export async function renameNotePath(oldPath: string, newPath: string): Promise<void> {
+  const normOld = oldPath.replace(/\\/g, '/');
+  const normNew = newPath.replace(/\\/g, '/');
+  const oldId = `file:${normOld}`;
+  const newId = `file:${normNew}`;
+
+  const current = (await noteRepo.byId(oldId)) || (await noteRepo.all()).find((r) => r.path === normOld);
+  let content = current?.body_md ?? '';
+  try {
+    content = await readNoteFile(normNew);
+  } catch {
+    // ignore
+  }
+
+  const oldTitleFromName = normOld.split('/').pop()?.replace(/\.md$/i, '') || '';
+  const newTitleFromName = normNew.split('/').pop()?.replace(/\.md$/i, '') || '';
+  const oldTitle = current?.title || oldTitleFromName;
+  const newTitle = (!current?.title || current.title === oldTitleFromName) ? newTitleFromName : current.title;
+
+  try {
+    await noteRepoWithId.insert({
+      id: newId,
+      title: newTitle,
+      body_md: content,
+      pinned: current?.pinned ?? 0,
+      path: normNew,
+    });
+  } catch {
+    await noteRepoWithId.update(newId, {
+      title: newTitle,
+      body_md: content,
+      pinned: current?.pinned ?? 0,
+      path: normNew,
+      deleted_at: null,
+    });
+  }
+
+  if (current && current.id !== newId) {
+    await noteRepo.remove(current.id);
+  }
+
+  // Rewrite wiki links in referring notes
+  const targetLookupId = current ? current.id : oldId;
+  const backlinks = await backlinksOf('note', targetLookupId);
+  const titlesToRewrite: string[] = [];
+  if (oldTitle.trim()) titlesToRewrite.push(oldTitle.trim());
+  if (oldTitleFromName.trim() && oldTitleFromName.trim() !== oldTitle.trim()) {
+    titlesToRewrite.push(oldTitleFromName.trim());
+  }
+
+  for (const bl of backlinks) {
+    if (bl.kind === 'note') {
+      const sourceRow = await noteRepo.byId(bl.id);
+      if (sourceRow && sourceRow.body_md) {
+        let updatedBody = sourceRow.body_md;
+        for (const t of titlesToRewrite) {
+          const re = new RegExp(`\\[\\[${escapeRegExp(t)}\\]\\]`, 'g');
+          updatedBody = updatedBody.replace(re, `[[${newTitle}]]`);
+        }
+        if (updatedBody !== sourceRow.body_md) {
+          await updateNoteBodyAndFile(sourceRow, updatedBody);
+        }
+      }
+    }
+  }
+
+  await upsertLinks({ kind: 'note', id: targetLookupId }, []);
+  await syncOutgoingLinks(newId, content);
+  await reindex('note');
+}
+
+/**
  * Reindexes the vault: walks all .md files in the vault, updates notes table, syncs links, and reindexes FTS.
  */
 async function repairEmptyFileFromLegacyRow(row: NoteRow): Promise<void> {
@@ -406,7 +533,13 @@ export async function reindexVault(): Promise<{ files: number; notes: number }> 
   collect(entries);
 
   const activePaths = new Set<string>();
-  const allRowsBefore = await noteRepo.all();
+  let allRowsBefore: NoteRow[];
+  try {
+    const raw = await invoke<NoteRow[] | undefined>('db_list', { table: 'notes', includeDeleted: true });
+    allRowsBefore = raw ?? (await noteRepo.all());
+  } catch {
+    allRowsBefore = await noteRepo.all();
+  }
 
   for (const file of fileEntries) {
     activePaths.add(file.path);
@@ -444,17 +577,20 @@ export async function reindexVault(): Promise<{ files: number; notes: number }> 
           });
           await noteRepo.remove(primary.id);
         } catch {
-          await noteRepo.update(primary.id, {
+          await noteRepoWithId.update(canonicalId, {
             title,
             body_md: content,
             path: file.path,
+            deleted_at: null,
           });
+          await noteRepo.remove(primary.id);
         }
       } else {
-        await noteRepo.update(primary.id, {
+        await noteRepoWithId.update(primary.id, {
           title,
           body_md: content,
           path: file.path,
+          deleted_at: null,
         });
       }
 
@@ -474,12 +610,22 @@ export async function reindexVault(): Promise<{ files: number; notes: number }> 
           path: file.path,
         });
       } catch {
-        await noteRepo.insert({
-          title,
-          body_md: content,
-          pinned: 0,
-          path: file.path,
-        });
+        try {
+          await noteRepoWithId.update(canonicalId, {
+            title,
+            body_md: content,
+            pinned: 0,
+            path: file.path,
+            deleted_at: null,
+          });
+        } catch {
+          await noteRepo.insert({
+            title,
+            body_md: content,
+            pinned: 0,
+            path: file.path,
+          });
+        }
       }
     }
   }

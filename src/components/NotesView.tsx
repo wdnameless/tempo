@@ -58,6 +58,11 @@ export function NotesView(): React.ReactElement {
 
   const [loadedNoteId, setLoadedNoteId] = useState<string | null>(null);
   const loadedNoteIdRef = useRef<string | null>(null);
+  const selectedNoteIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    selectedNoteIdRef.current = selectedNoteId;
+  }, [selectedNoteId]);
   /**
    * The note+body combination whose links were found to be broken.
    */
@@ -81,20 +86,11 @@ export function NotesView(): React.ReactElement {
     try {
       const items = await listNotes();
       setNotes(items);
-      let nextId: string | null = null;
-      setSelectedNoteId((prev) => {
-        const targetId = preserveSelectedId !== undefined ? preserveSelectedId : prev;
-        if (targetId && items.some((n) => n.id === targetId)) {
-          nextId = targetId;
-          return targetId;
-        }
-        nextId = items.length > 0 ? items[0].id : null;
-        return nextId;
-      });
-
-      const active = items.find(
-        (n) => n.id === (preserveSelectedId !== undefined ? preserveSelectedId : items[0]?.id)
-      ) ?? null;
+      const targetId = preserveSelectedId !== undefined ? preserveSelectedId : selectedNoteIdRef.current;
+      const active = (targetId ? items.find((n) => n.id === targetId) : null) ?? items[0] ?? null;
+      const nextId = active?.id ?? null;
+      setSelectedNoteId(nextId);
+      selectedNoteIdRef.current = nextId;
 
       if (active) {
         setTitle(active.title || '');
@@ -117,6 +113,14 @@ export function NotesView(): React.ReactElement {
         void backlinksOf('note', active.id).then((bl) => {
           setBacklinks(bl || []);
         });
+      } else {
+        setTitle('');
+        setSelectedPath(null);
+        setBody('');
+        setLastSavedBody('');
+        loadedNoteIdRef.current = null;
+        setLoadedNoteId(null);
+        setBacklinks([]);
       }
     } finally {
       setLoading(false);
@@ -173,21 +177,13 @@ export function NotesView(): React.ReactElement {
       const custom = e as CustomEvent<{ id?: string; kind?: string; row_id?: string }>;
       const targetId = custom.detail?.id || custom.detail?.row_id;
       if (targetId) {
-        setSelectedNoteId(targetId);
         setMobileShowList(false);
-        const match = notes.find((n) => n.id === targetId);
-        if (match) {
-          const filePath = match.path || (match.id.startsWith('file:') ? match.id.slice(5) : null);
-          if (filePath) {
-            setSelectedPath(filePath);
-          }
-        }
+        void reloadNotes(targetId);
       }
     };
     window.addEventListener('tempo:reveal', handleReveal);
     return () => window.removeEventListener('tempo:reveal', handleReveal);
-  }, [notes]);
-
+  }, [reloadNotes]);
   // Sync outgoing links
   const syncLinks = useCallback(
     async (noteId: string, markdownText: string) => {
@@ -317,6 +313,24 @@ export function NotesView(): React.ReactElement {
       await saveCurrentNote(body);
     }
 
+    if (!path) {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+      setSelectedNoteId(null);
+      selectedNoteIdRef.current = null;
+      setSelectedPath(null);
+      loadedNoteIdRef.current = null;
+      setLoadedNoteId(null);
+      setTitle('');
+      setBody('');
+      setLastSavedBody('');
+      setBacklinks([]);
+      setExternalConflict(null);
+      return;
+    }
+
     loadedNoteIdRef.current = null;
     setLoadedNoteId(null);
     setSelectedPath(path);
@@ -330,6 +344,7 @@ export function NotesView(): React.ReactElement {
 
     if (note) {
       setSelectedNoteId(note.id);
+      selectedNoteIdRef.current = note.id;
       setTitle(note.title || '');
       try {
         const diskContent = await readNoteFile(path);
@@ -383,12 +398,14 @@ export function NotesView(): React.ReactElement {
       return;
     }
 
+    let hasConflict = false;
     try {
       const diskContent = await readNoteFile(filePath);
       if (diskContent !== body) {
         if (body !== lastSavedBody) {
           // Unsaved editor changes conflict with external disk modification
           setExternalConflict({ diskContent });
+          hasConflict = true;
         } else {
           // Clean reload from disk
           setBody(diskContent);
@@ -404,7 +421,9 @@ export function NotesView(): React.ReactElement {
       console.error('Failed to read note file on refresh:', err);
     }
 
-    await reloadNotes(selectedNoteId);
+    if (!hasConflict) {
+      await reloadNotes(selectedNoteId);
+    }
   };
 
   // Resolve conflict by accepting disk content
@@ -452,7 +471,7 @@ export function NotesView(): React.ReactElement {
   // Title save on blur
   const handleTitleBlur = async () => {
     if (!currentNote || title === currentNote.title) return;
-    await updateNote(currentNote.id, { title });
+    await updateNote(currentNote.id, { title, body });
     emitDataChanged('notes', [currentNote.id]);
     await reloadNotes(currentNote.id);
   };
@@ -836,7 +855,12 @@ export function NotesView(): React.ReactElement {
                             type="button"
                             onClick={() => {
                               if (bl.kind === 'note') {
-                                setSelectedNoteId(bl.id);
+                                const match = notes.find((n) => n.id === bl.id);
+                                if (match) {
+                                  void handleSelectNoteItem(match);
+                                } else {
+                                  void reloadNotes(bl.id);
+                                }
                               }
                             }}
                             className="flex items-center space-x-1.5 rounded-[8px] border border-[var(--border)] bg-[var(--elevated)] px-2.5 py-1 text-xs text-[var(--text)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors cursor-pointer"

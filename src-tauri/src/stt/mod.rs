@@ -16,7 +16,7 @@ pub mod vad;
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -73,7 +73,7 @@ pub struct TranscribeFileResult {
     pub language: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SpeechConfig {
     pub enabled: bool,
@@ -158,18 +158,68 @@ pub struct SttState {
     pub current_capture: Arc<Mutex<Option<AudioCaptureHandle>>>,
     pub recording_started_at: Arc<Mutex<Option<Instant>>>,
     pub level_stop: Arc<AtomicBool>,
+    pub model_unload_secs: Arc<AtomicU64>,
+    pub janitor_started: Arc<AtomicBool>,
 }
 
 impl SttState {
     pub fn new(data_dir: PathBuf) -> Self {
         let models_dir = data_dir.join("models");
-        Self {
+        let engine = Arc::new(EngineManager::new());
+        let capture_state = Arc::new(AudioCaptureState::new());
+        let current_capture = Arc::new(Mutex::new(None));
+        let recording_started_at = Arc::new(Mutex::new(None));
+        let level_stop = Arc::new(AtomicBool::new(false));
+
+        let initial_unload_secs = {
+            let db_path = crate::storage::db_path_in(&data_dir);
+            if let Ok(conn) = rusqlite::Connection::open_with_flags(
+                &db_path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                    | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            ) {
+                pref_read(&conn, "tempo_speech_model_unload_secs", None, 60u64)
+            } else {
+                60u64
+            }
+        };
+        let model_unload_secs = Arc::new(AtomicU64::new(initial_unload_secs));
+        let janitor_started = Arc::new(AtomicBool::new(false));
+
+        let state = Self {
             models: Arc::new(ModelManager::new(models_dir)),
-            engine: Arc::new(EngineManager::new()),
-            capture_state: Arc::new(AudioCaptureState::new()),
-            current_capture: Arc::new(Mutex::new(None)),
-            recording_started_at: Arc::new(Mutex::new(None)),
-            level_stop: Arc::new(AtomicBool::new(false)),
+            engine,
+            capture_state,
+            current_capture,
+            recording_started_at,
+            level_stop,
+            model_unload_secs,
+            janitor_started,
+        };
+
+        state.spawn_idle_janitor();
+        state
+    }
+
+    /// Spawns the background model idle timeout janitor if an async runtime is active.
+    pub fn spawn_idle_janitor(&self) {
+        if self.janitor_started.load(Ordering::SeqCst) {
+            return;
+        }
+        if tokio::runtime::Handle::try_current().is_ok() {
+            if self.janitor_started.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            let engine = Arc::clone(&self.engine);
+            let unload_secs = Arc::clone(&self.model_unload_secs);
+            tauri::async_runtime::spawn(async move {
+                let mut ticker = tokio::time::interval(Duration::from_secs(5));
+                loop {
+                    ticker.tick().await;
+                    let secs = unload_secs.load(Ordering::Relaxed);
+                    engine.check_idle_timeout(secs).await;
+                }
+            });
         }
     }
 }
@@ -1099,13 +1149,22 @@ pub async fn stt_apply_speech_settings(
 
     let updated = load_speech_config(&app);
 
-    // Apply hotkey bindings
-    let bindings = SpeechBindings {
-        transcribe: updated.hotkey.clone(),
-        cancel: updated.cancel_hotkey.clone(),
-    };
-    let _ = shortcuts::apply_bindings(&app, &bindings);
+    // Apply hotkey bindings: unregister all when disabled
+    if updated.enabled {
+        let bindings = SpeechBindings {
+            transcribe: updated.hotkey.clone(),
+            cancel: updated.cancel_hotkey.clone(),
+        };
+        let _ = shortcuts::apply_bindings(&app, &bindings);
+    } else {
+        shortcuts::unregister_all(&app);
+    }
 
+    // Update model unload seconds for background janitor
+    state
+        .model_unload_secs
+        .store(updated.model_unload_secs, Ordering::Relaxed);
+    state.spawn_idle_janitor();
     // Apply engine accelerator change & unload if changed
     if patch.accelerator.is_some() || patch.gpu_device.is_some() {
         state
@@ -1164,9 +1223,25 @@ pub async fn stt_play_test_sound(app: AppHandle, kind: String) -> Result<(), Str
     Ok(())
 }
 
+pub fn resolve_mic_level(
+    is_recording: bool,
+    recording_level: f32,
+    probe_fn: impl FnOnce() -> Result<f32, String>,
+) -> Result<f32, String> {
+    if is_recording {
+        Ok(recording_level)
+    } else {
+        probe_fn()
+    }
+}
+
 #[tauri::command]
 pub async fn stt_mic_level(state: State<'_, SttState>) -> Result<f32, String> {
-    Ok(state.capture_state.level())
+    resolve_mic_level(
+        state.capture_state.is_recording(),
+        state.capture_state.level(),
+        capture::mic_level,
+    )
 }
 
 #[tauri::command]
@@ -1202,13 +1277,18 @@ pub async fn stt_history_retry(
 
     let audio_path = entry
         .audio_path
+        .clone()
         .ok_or_else(|| "no_speech: No audio file attached to this history entry".to_string())?;
 
-    let file_res = stt_transcribe_file(app, state, audio_path).await?;
+    let file_res = stt_transcribe_file(app.clone(), state, audio_path).await?;
+
+    let mut updated_entry = entry;
+    updated_entry.text = file_res.text.clone();
+    history::insert(&app, &updated_entry)?;
 
     Ok(TranscriptionResult {
         text: file_res.text,
-        duration_ms: entry.duration_ms,
+        duration_ms: updated_entry.duration_ms,
         engine: "local".to_string(),
         outcome: Some("retried".to_string()),
         inserted: Some(false),
@@ -1246,4 +1326,79 @@ pub async fn stt_cancel_transcription(
 #[tauri::command]
 pub async fn stt_accelerators() -> Result<Vec<AcceleratorInfo>, String> {
     Ok(accelerators())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_history_retry_persistence_updates_db_row() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::storage::migrations::migrate(&conn).expect("migration must succeed");
+
+        let initial = history::HistoryEntry {
+            id: "retry-db-test-1".to_string(),
+            text: "Initial failed transcription".to_string(),
+            created_at: "2026-09-22T10:00:00Z".to_string(),
+            duration_ms: 2000,
+            model_id: Some("whisper-tiny".to_string()),
+            language: Some("en".to_string()),
+            audio_path: Some("/tmp/test.wav".to_string()),
+            saved: false,
+            app_name: Some("Tempo".to_string()),
+        };
+        history::insert_conn(&conn, &initial).unwrap();
+
+        // Verify initial entry
+        let fetched = history::get_conn(&conn, "retry-db-test-1")
+            .unwrap()
+            .expect("must exist");
+        assert_eq!(fetched.text, "Initial failed transcription");
+
+        // Emulate stt_history_retry: update text and re-insert
+        let mut retried = fetched;
+        retried.text = "Retried and corrected transcription text".to_string();
+        history::insert_conn(&conn, &retried).unwrap();
+
+        // Verify entry is updated in DB
+        let updated = history::get_conn(&conn, "retry-db-test-1")
+            .unwrap()
+            .expect("must exist");
+        assert_eq!(
+            updated.text,
+            "Retried and corrected transcription text"
+        );
+        assert_eq!(updated.audio_path, Some("/tmp/test.wav".to_string()));
+    }
+
+    #[test]
+    fn test_stt_state_janitor_spawn_and_unload_secs() {
+        let state = SttState::new(PathBuf::from("."));
+        assert_eq!(state.model_unload_secs.load(Ordering::Relaxed), 60);
+
+        state.model_unload_secs.store(120, Ordering::Relaxed);
+        assert_eq!(state.model_unload_secs.load(Ordering::Relaxed), 120);
+
+        // Multiple calls to spawn_idle_janitor are idempotent and safe
+        state.spawn_idle_janitor();
+        state.spawn_idle_janitor();
+    }
+
+    #[test]
+    fn test_resolve_mic_level_routing() {
+        // Inside dictation: returns recording_level from capture_state
+        let rec_level = resolve_mic_level(true, 0.75, || Ok(0.12)).unwrap();
+        assert_eq!(rec_level, 0.75);
+
+        // Outside dictation: calls probe_fn instead of capture_state
+        let probe_called = std::sync::atomic::AtomicBool::new(false);
+        let probe_res = resolve_mic_level(false, 0.0, || {
+            probe_called.store(true, Ordering::SeqCst);
+            Ok(0.42)
+        })
+        .unwrap();
+        assert!(probe_called.load(Ordering::SeqCst));
+        assert_eq!(probe_res, 0.42);
+    }
 }

@@ -7,10 +7,21 @@ pub const DEFAULT_SIZE: u32 = 32;
 pub const TRAY_ID: &str = "main-tray";
 
 static IS_ANIMATING: AtomicBool = AtomicBool::new(false);
+static SHOULD_ANIMATE: AtomicBool = AtomicBool::new(false);
 
 /// Returns true if the tray animation loop is currently running.
 pub fn is_animator_running() -> bool {
     IS_ANIMATING.load(Ordering::SeqCst)
+}
+
+/// Returns true if tray animation has been requested and not yet stopped.
+pub fn should_animate() -> bool {
+    SHOULD_ANIMATE.load(Ordering::SeqCst)
+}
+
+/// Signals the animation loop to stop.
+pub fn stop() {
+    SHOULD_ANIMATE.store(false, Ordering::SeqCst);
 }
 
 #[derive(Clone, Copy)]
@@ -196,6 +207,7 @@ pub fn frame_image(angle_rad: f32) -> Result<tauri::image::Image<'static>, Strin
 /// The animation runs while an alarm is ringing, rotating the hourglass 180° over ~1.2s.
 /// When the alarm stops, resets the icon to 0° and exits.
 pub fn start_animation(app: &AppHandle) {
+    SHOULD_ANIMATE.store(true, Ordering::SeqCst);
     if IS_ANIMATING
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
@@ -216,7 +228,7 @@ pub fn start_animation(app: &AppHandle) {
         let start_time = Instant::now();
         let flip_duration = Duration::from_millis(1200);
 
-        while crate::alarm_sound::ringing_id().is_some() {
+        while SHOULD_ANIMATE.load(Ordering::SeqCst) {
             let elapsed = start_time.elapsed();
             let progress = (elapsed.as_millis() % flip_duration.as_millis()) as f32
                 / flip_duration.as_millis() as f32;
@@ -240,8 +252,14 @@ pub fn start_animation(app: &AppHandle) {
     });
 }
 
-/// Immediately resets the tray icon to 0° and signals the animator to stop.
+/// Immediately resets the tray icon to 0° and signals the animator to stop,
+/// unless an alarm is still actively ringing (e.g. stop_alarm_sound called by webview
+/// to transfer audio playback to WebAudio).
 pub fn stop_animation(app: &AppHandle) {
+    if crate::scheduler::is_any_alarm_ringing() {
+        return;
+    }
+    stop();
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         if let Ok(icon) = frame_image(0.0) {
             let _ = tray.set_icon(Some(icon));
@@ -326,5 +344,21 @@ mod tests {
         let png = tauri::image::Image::from_bytes(png_bytes).expect("32x32.png must parse");
         assert_eq!(png.width(), 32);
         assert_eq!(png.height(), 32);
+    }
+
+    #[test]
+    fn animation_flag_is_decoupled_from_audio_stream() {
+        stop();
+        assert!(!should_animate());
+
+        SHOULD_ANIMATE.store(true, Ordering::SeqCst);
+        assert!(should_animate());
+        stop();
+        assert!(!should_animate());
+
+        assert!(crate::alarm_sound::ringing_id().is_none());
+        SHOULD_ANIMATE.store(true, Ordering::SeqCst);
+        assert!(should_animate(), "tray animation flag must be independent of audio ringing_id");
+        stop();
     }
 }

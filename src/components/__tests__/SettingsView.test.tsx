@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SettingsView } from '../SettingsView';
 import { I18nService } from '../../services/i18n';
+import * as rolloverModule from '../../services/rollover';
 
 const mockLoadGeneralSettings = vi.fn().mockReturnValue({
   timerMode: 'pomodoro',
@@ -543,5 +544,46 @@ describe('SettingsView Component', () => {
     await waitFor(() => {
       expect(mockSetSyncMedia).toHaveBeenCalledWith(true);
     });
+  });
+
+  it('toggles task rollover enabled status', async () => {
+    render(<SettingsView />);
+
+    const toggle = screen.getByTestId('toggle-rollover-enabled');
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(rolloverModule.setRolloverSettings).toHaveBeenCalledWith({ enabled: true });
+    });
+  });
+
+  it('wires accent and alarm audio props', async () => {
+    const onSelectAccent = vi.fn();
+    const onAlarmAudioChange = vi.fn();
+
+    render(
+      <SettingsView
+        accentKey="violet"
+        onSelectAccent={onSelectAccent}
+        alarmVolume={0.5}
+        alarmEnabled={true}
+        onAlarmAudioChange={onAlarmAudioChange}
+      />
+    );
+
+    // Accent picker
+    const accentBtn = screen.getByTestId('accent-blue');
+    fireEvent.click(accentBtn);
+    expect(onSelectAccent).toHaveBeenCalledWith('blue');
+
+    // Alarm volume slider
+    const volumeSlider = screen.getByTestId('slider-alarm-volume');
+    fireEvent.change(volumeSlider, { target: { value: '0.9' } });
+    expect(onAlarmAudioChange).toHaveBeenCalledWith(0.9, true);
+
+    // Alarm enabled toggle
+    const alarmToggle = screen.getByTestId('toggle-alarm-enabled');
+    fireEvent.click(alarmToggle);
+    expect(onAlarmAudioChange).toHaveBeenCalledWith(0.5, false);
   });
 });

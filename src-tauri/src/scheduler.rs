@@ -28,15 +28,16 @@ const TICK_INTERVAL: Duration = Duration::from_millis(500);
 pub enum Repeat {
     /// Rings at its next matching moment, then switches itself off.
     Once,
-    /// Rings every day. Weekdays are ignored.
-    #[default]
-    Daily,
     /// Rings only on the weekdays in `days`.
     Days,
     /// Rings once at `date` + `time`, then switches itself off.
     Date,
     /// Rings repeatedly at interval minutes within a daily window.
     Interval,
+    /// Rings every day. Weekdays are ignored.
+    #[default]
+    #[serde(other)]
+    Daily,
 }
 
 /// One alarm as the scheduler sees it. Mirrors the frontend `AlarmItem`.
@@ -67,6 +68,8 @@ pub struct ScheduledAlarm {
     /// Voice line spoken when the alarm rings.
     #[serde(default, alias = "voice_prompt")]
     pub voice_prompt: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -81,13 +84,13 @@ fn default_sound() -> String {
     "gentle".to_string()
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AlarmFiredEvent {
     pub id: String,
     pub label: String,
     pub time: String,
     pub voice_prompt: Option<String>,
-    /// Minutes the alarm was deferred by snooze, 0 for a scheduled ring.
+    pub note: Option<String>,
     pub snoozed_for: u32,
     /// Minutes past its own time when it eventually rang; 0 when on time.
     pub late_by_minutes: u32,
@@ -239,8 +242,9 @@ pub fn sync(alarms: Vec<ScheduledAlarm>) {
         state.alarms = alarms;
         let ids: Vec<String> = state.alarms.iter().map(|a| a.id.clone()).collect();
         state.snoozed.retain(|s| ids.contains(&s.id));
-        state.handled.retain(|(id, _, _)| ids.contains(id));
         state.missed.retain(|(_, m)| ids.contains(&m.id));
+        let mut ringing = ACTIVE_RINGING.lock().unwrap_or_else(|e| e.into_inner());
+        ringing.retain(|id| ids.contains(id));
     });
 }
 
@@ -249,8 +253,11 @@ pub fn sync(alarms: Vec<ScheduledAlarm>) {
 /// The "handled today" marker is left alone: the alarm already had its moment,
 /// and snoozing must not re-arm that slot as well as the deferred one.
 pub fn snooze(id: &str, minutes: u32) {
+    unmark_alarm_ringing(id);
+    if !is_any_alarm_ringing() {
+        crate::hourglass::stop();
+    }
     with_state(|state| {
-        state.snoozed.retain(|s| s.id != id);
         state.snoozed.push(Snooze {
             id: id.to_string(),
             due_at: SystemTime::now() + Duration::from_secs(minutes as u64 * 60),
@@ -265,9 +272,12 @@ pub fn snooze(id: &str, minutes: u32) {
 /// half a second later, still inside the same minute — match the alarm again and
 /// ring it straight back at the person who just silenced it.
 pub fn dismiss(id: &str) {
+    unmark_alarm_ringing(id);
+    if !is_any_alarm_ringing() {
+        crate::hourglass::stop();
+    }
     with_state(|state| state.snoozed.retain(|s| s.id != id));
 }
-
 
 /// Records a ring and returns the event to broadcast.
 ///
@@ -292,6 +302,7 @@ fn ring(
         label: alarm.label.clone(),
         time: time.to_string(),
         voice_prompt: alarm.voice_prompt.clone(),
+        note: alarm.note.clone(),
         snoozed_for,
         late_by_minutes,
         consumed,
@@ -329,8 +340,19 @@ fn tick(state: &mut SchedulerState, now: NaiveDateTime) -> (Vec<AlarmFiredEvent>
     for entry in due {
         state.snoozed.retain(|s| s.id != entry.id);
         if let Some(alarm) = find_alarm(state, &entry.id) {
-            if alarm.enabled {
+            let is_consumed = alarm.repeat == Repeat::Once || alarm.repeat == Repeat::Date;
+            if alarm.enabled || is_consumed {
                 fired.push(ring(state, &alarm, &alarm.time, entry.minutes, 0));
+                if alarm.repeat == Repeat::Interval {
+                    let slots = firing_minutes_today(&alarm, today);
+                    for at in slots {
+                        if at <= minute_of_day
+                            && !state.handled.iter().any(|(id, day, m)| id == &alarm.id && *day == today && *m == at)
+                        {
+                            state.handled.push((alarm.id.clone(), today, at));
+                        }
+                    }
+                }
             }
         }
     }
@@ -451,7 +473,24 @@ pub fn set_audio_prefs(volume: f32, enabled: bool) {
 }
 
 static AUDIO_PREFS: Mutex<Option<(f32, bool)>> = Mutex::new(None);
+static ACTIVE_RINGING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+pub fn is_any_alarm_ringing() -> bool {
+    let guard = ACTIVE_RINGING.lock().unwrap_or_else(|e| e.into_inner());
+    !guard.is_empty()
+}
+
+pub fn mark_alarm_ringing(id: &str) {
+    let mut guard = ACTIVE_RINGING.lock().unwrap_or_else(|e| e.into_inner());
+    if !guard.contains(&id.to_string()) {
+        guard.push(id.to_string());
+    }
+}
+
+pub fn unmark_alarm_ringing(id: &str) {
+    let mut guard = ACTIVE_RINGING.lock().unwrap_or_else(|e| e.into_inner());
+    guard.retain(|x| x != id);
+}
 /// Starts the polling loop. Runs for the lifetime of the process.
 pub fn spawn(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -467,6 +506,7 @@ pub fn spawn(app: tauri::AppHandle) {
             }
 
             for event in fired {
+                mark_alarm_ringing(&event.id);
                 let id = event.id.clone();
                 let label = event.label.clone();
                 let prompt = event.voice_prompt.clone();
@@ -525,6 +565,7 @@ mod tests {
             enabled: true,
             sound: default_sound(),
             voice_prompt: None,
+            note: None,
         }
     }
 
@@ -962,5 +1003,82 @@ mod tests {
         let previews_dis = alarm_preview(vec![dis], Some(3));
         assert!(previews_dis[0].disabled);
         assert!(previews_dis[0].next.is_empty());
+    }
+
+    #[test]
+    fn snoozed_once_alarm_rings_even_though_consumed() {
+        let mut state = state_with(vec![one_shot("once1", "07:00")]);
+        let (fired1, _) = tick(&mut state, wednesday(7, 0));
+        assert_eq!(fired1.len(), 1);
+        assert!(fired1[0].consumed);
+        assert!(!state.alarms[0].enabled);
+
+        state.snoozed.push(Snooze {
+            id: "once1".to_string(),
+            due_at: SystemTime::now() - Duration::from_secs(1),
+            minutes: 5,
+        });
+
+        let (fired2, _) = tick(&mut state, wednesday(7, 5));
+        assert_eq!(fired2.len(), 1, "snoozed one-shot alarm must ring when due");
+        assert_eq!(fired2[0].id, "once1");
+        assert_eq!(fired2[0].snoozed_for, 5);
+        assert!(fired2[0].consumed);
+    }
+
+    #[test]
+    fn snoozed_interval_alarm_does_not_double_fire() {
+        let mut a = alarm("int1", "09:00", Vec::new());
+        a.repeat = Repeat::Interval;
+        a.interval_minutes = Some(30);
+        a.window_start = Some("09:00".to_string());
+        a.window_end = Some("11:00".to_string());
+        let mut state = state_with(vec![a]);
+
+        let (fired1, _) = tick(&mut state, wednesday(9, 0));
+        assert_eq!(fired1.len(), 1);
+
+        state.snoozed.push(Snooze {
+            id: "int1".to_string(),
+            due_at: SystemTime::now() - Duration::from_secs(1),
+            minutes: 30,
+        });
+
+        let (fired2, _) = tick(&mut state, wednesday(9, 30));
+        assert_eq!(fired2.len(), 1, "must not double-fire coinciding snooze and interval slot");
+        assert_eq!(fired2[0].snoozed_for, 30);
+    }
+
+    #[test]
+    fn unknown_repeat_deserializes_to_daily() {
+        let json_unknown = r#"{"id":"test","label":"Test","time":"08:00","repeat":"custom","enabled":true}"#;
+        let parsed: Result<ScheduledAlarm, _> = serde_json::from_str(json_unknown);
+        assert!(parsed.is_ok(), "unknown repeat string must not fail deserialization");
+        let alarm = parsed.unwrap();
+        assert_eq!(alarm.repeat, Repeat::Daily);
+
+        let json_weekdays = r#"{"id":"test2","label":"Test2","time":"08:00","repeat":"weekdays","enabled":true}"#;
+        let parsed2: ScheduledAlarm = serde_json::from_str(json_weekdays).unwrap();
+        assert_eq!(parsed2.repeat, Repeat::Daily);
+
+        let json_empty = r#"{"id":"test3","label":"Test3","time":"08:00","repeat":"","enabled":true}"#;
+        let parsed3: ScheduledAlarm = serde_json::from_str(json_empty).unwrap();
+        assert_eq!(parsed3.repeat, Repeat::Daily);
+    }
+
+    #[test]
+    fn alarm_note_field_in_scheduled_alarm_and_fired_event() {
+        let json_with_note = r#"{"id":"note1","label":"Note Alarm","time":"08:00","repeat":"daily","enabled":true,"note":"Take pills"}"#;
+        let alarm: ScheduledAlarm = serde_json::from_str(json_with_note).unwrap();
+        assert_eq!(alarm.note.as_deref(), Some("Take pills"));
+
+        let mut state = state_with(vec![alarm]);
+        let (fired, _) = tick(&mut state, wednesday(8, 0));
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].note.as_deref(), Some("Take pills"));
+
+        let json_no_note = r#"{"id":"note2","label":"No Note","time":"08:00","repeat":"daily","enabled":true}"#;
+        let alarm2: ScheduledAlarm = serde_json::from_str(json_no_note).unwrap();
+        assert_eq!(alarm2.note, None);
     }
 }

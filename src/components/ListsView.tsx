@@ -16,12 +16,13 @@ import {
   deleteList,
   listTasks,
   createTask,
+  updateTask,
   toggleTask,
   deleteTask,
   moveListItemToTask,
 } from '../services/tasks';
 import { I18nService } from '../services/i18n';
-import { onDataChanged } from '../services/appEvents';
+import { onDataChanged, emitDataChanged } from '../services/appEvents';
 import { Row, IconButton } from './ui';
 
 export function ListsView() {
@@ -35,6 +36,8 @@ export function ListsView() {
   const [newItemDraft, setNewItemDraft] = useState('');
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editListNameDraft, setEditListNameDraft] = useState('');
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editItemTitleDraft, setEditItemTitleDraft] = useState('');
 
   const reload = useCallback(async () => {
     try {
@@ -84,6 +87,7 @@ export function ListsView() {
     setNewListDraft('');
     const created = await createList(name);
     setSelectedListId(created.id);
+    emitDataChanged('lists', [created.id]);
     await reload();
   };
 
@@ -95,11 +99,13 @@ export function ListsView() {
     }
     await renameList(id, name);
     setEditingListId(null);
+    emitDataChanged('lists', [id]);
     await reload();
   };
 
   const handleDeleteList = async (id: string) => {
     await deleteList(id);
+    emitDataChanged('lists', [id]);
     await reload();
   };
 
@@ -110,21 +116,37 @@ export function ListsView() {
     if (!title) return;
     setNewItemDraft('');
     await createTask({ title, listId: selectedListId });
+    emitDataChanged('tasks');
     await reload();
   };
 
   const handleToggleItem = async (id: string) => {
     await toggleTask(id);
+    emitDataChanged('tasks', [id]);
     await reload();
   };
 
   const handleDeleteItem = async (id: string) => {
     await deleteTask(id);
+    emitDataChanged('tasks', [id]);
     await reload();
   };
 
   const handleMoveToTask = async (id: string) => {
     await moveListItemToTask(id);
+    emitDataChanged('tasks', [id]);
+    emitDataChanged('lists');
+    await reload();
+  };
+
+  const handleRenameItem = async (id: string) => {
+    const title = editItemTitleDraft.trim();
+    setEditingItemId(null);
+    if (!title) return;
+    const current = tasks.find((t) => t.id === id);
+    if (current && current.title === title) return;
+    await updateTask(id, { title });
+    emitDataChanged('tasks', [id]);
     await reload();
   };
 
@@ -320,48 +342,84 @@ export function ListsView() {
                 </div>
               ) : (
                 <div className="flex flex-col divide-y divide-[var(--border)]">
-                  {currentItems.map((item) => (
-                    <Row
-                      key={item.id}
-                      control={
-                        <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
-                          <IconButton
-                            icon={item.done ? <CheckCircle2 size={16} /> : <Circle size={16} />}
-                            label={item.done ? t.tasksCompleted : t.tasksNew}
-                            onClick={() => void handleToggleItem(item.id)}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleMoveToTask(item.id)}
-                            className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors"
-                            style={{
-                              backgroundColor: 'var(--surface-hover, rgba(255,255,255,0.05))',
-                              color: 'var(--text-normal)',
-                            }}
-                            title={t.listsToTask}
-                          >
-                            <span>{t.listsToTask}</span>
-                            <ArrowRight size={12} />
-                          </button>
-                          <IconButton
-                            icon={<Trash2 size={14} />}
-                            label={t.tasksDelete}
-                            onClick={() => void handleDeleteItem(item.id)}
-                          />
-                        </div>
-                      }
-                      label={
-                        <span
-                          className={`text-sm font-medium ${
-                            item.done ? 'line-through text-muted opacity-60' : ''
-                          }`}
-                          style={{ color: 'var(--text-normal)' }}
-                        >
-                          {item.title}
-                        </span>
-                      }
-                    />
-                  ))}
+                  {currentItems.map((item) => {
+                    const isEditingItem = editingItemId === item.id;
+                    return (
+                      <Row
+                        key={item.id}
+                        control={
+                          <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                            <IconButton
+                              icon={item.done ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                              label={item.done ? t.tasksCompleted : t.tasksNew}
+                              onClick={() => void handleToggleItem(item.id)}
+                            />
+                            {!isEditingItem && (
+                              <IconButton
+                                icon={<Edit2 size={12} />}
+                                label="Rename item"
+                                onClick={() => {
+                                  setEditingItemId(item.id);
+                                  setEditItemTitleDraft(item.title);
+                                }}
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleMoveToTask(item.id)}
+                              className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors"
+                              style={{
+                                backgroundColor: 'var(--surface-hover, rgba(255,255,255,0.05))',
+                                color: 'var(--text-normal)',
+                              }}
+                              title={t.listsToTask}
+                            >
+                              <span>{t.listsToTask}</span>
+                              <ArrowRight size={12} />
+                            </button>
+                            <IconButton
+                              icon={<Trash2 size={14} />}
+                              label={t.tasksDelete}
+                              onClick={() => void handleDeleteItem(item.id)}
+                            />
+                          </div>
+                        }
+                        label={
+                          isEditingItem ? (
+                            <input
+                              type="text"
+                              autoFocus
+                              value={editItemTitleDraft}
+                              onChange={(e) => setEditItemTitleDraft(e.target.value)}
+                              onBlur={() => void handleRenameItem(item.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') void handleRenameItem(item.id);
+                                if (e.key === 'Escape') setEditingItemId(null);
+                              }}
+                              className="w-full px-2 py-1 text-sm font-medium rounded bg-transparent focus:outline-none"
+                              style={{
+                                border: '1px solid var(--border)',
+                                color: 'var(--text-normal)',
+                              }}
+                            />
+                          ) : (
+                            <span
+                              onDoubleClick={() => {
+                                setEditingItemId(item.id);
+                                setEditItemTitleDraft(item.title);
+                              }}
+                              className={`text-sm font-medium cursor-pointer ${
+                                item.done ? 'line-through text-muted opacity-60' : ''
+                              }`}
+                              style={{ color: 'var(--text-normal)' }}
+                            >
+                              {item.title}
+                            </span>
+                          )
+                        }
+                      />
+                    );
+                  })}
                 </div>
               )}
             </div>

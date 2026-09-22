@@ -4,7 +4,6 @@ import { DynamicBackground, getPhaseColorKey } from '../DynamicBackground';
 import { setPref, resetSettingsCacheForTesting } from '../../services/settings';
 import { PHASE_COLORS } from '../../constants/design';
 import type { TimerSnapshot } from '../../services/timer';
-Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
 
 // Mock backend listeners and invoke
 const listeners = new Map<string, (e: { payload: unknown }) => void>();

@@ -32,7 +32,17 @@ export function DrawingsView(): React.JSX.Element {
   const [loading, setLoading] = useState<boolean>(true);
 
   const saveTimerRef = useRef<number | undefined>(undefined);
+  const pendingSaveRef = useRef<{ drawingId: string; payload: string } | null>(null);
 
+  const flushSave = useCallback(() => {
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = undefined;
+    if (pendingSaveRef.current) {
+      const { drawingId, payload } = pendingSaveRef.current;
+      pendingSaveRef.current = null;
+      void updateDrawing(drawingId, { scene_json: payload });
+    }
+  }, []);
   // Initial load: fetch drawings
   useEffect(() => {
     let isMounted = true;
@@ -51,9 +61,9 @@ export function DrawingsView(): React.JSX.Element {
 
     return () => {
       isMounted = false;
-      clearTimeout(saveTimerRef.current);
+      flushSave();
     };
-  }, []);
+  }, [flushSave]);
 
   // Load drawing scene when selection changes
   useEffect(() => {
@@ -85,8 +95,9 @@ export function DrawingsView(): React.JSX.Element {
 
     return () => {
       isMounted = false;
+      flushSave();
     };
-  }, [activeDrawingId]);
+  }, [activeDrawingId, flushSave]);
 
   // Debounced auto-save on Excalidraw changes
   const handleExcalidrawChange = useCallback(
@@ -95,15 +106,21 @@ export function DrawingsView(): React.JSX.Element {
 
       clearTimeout(saveTimerRef.current);
 
+      const payload = JSON.stringify({
+        version: 2,
+        elements,
+        appState: {
+          viewBackgroundColor: appState?.viewBackgroundColor,
+          currentItemFontFamily: appState?.currentItemFontFamily,
+        },
+      });
+      pendingSaveRef.current = { drawingId: activeDrawingId, payload };
+
       saveTimerRef.current = window.setTimeout(() => {
-        const payload = JSON.stringify({
-          version: 2,
-          elements,
-          appState: {
-            viewBackgroundColor: appState?.viewBackgroundColor,
-            currentItemFontFamily: appState?.currentItemFontFamily,
-          },
-        });
+        saveTimerRef.current = undefined;
+        if (pendingSaveRef.current?.drawingId === activeDrawingId) {
+          pendingSaveRef.current = null;
+        }
         void updateDrawing(activeDrawingId, { scene_json: payload });
       }, 800);
     },
@@ -124,6 +141,12 @@ export function DrawingsView(): React.JSX.Element {
 
   // Delete drawing
   const handleDeleteDrawing = async (id: string) => {
+    const drawing = drawings.find((d) => d.id === id);
+    const title = drawing?.title || t.navDrawings;
+    const msg = t.vaultConfirmDelete ? t.vaultConfirmDelete.replace('{name}', title) : `Delete "${title}"?`;
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function' && !window.confirm(msg)) {
+      return;
+    }
     try {
       await deleteDrawing(id);
       const remaining = drawings.filter((d) => d.id !== id);

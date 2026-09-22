@@ -12,9 +12,6 @@ vi.mock('../../services/sound', () => ({
   },
 }));
 
-vi.mock('../../services/platform', () => ({
-  isTauri: () => false,
-}));
 
 vi.mock('../../services/shortcuts', () => ({
   installShortcutLayer: vi.fn(() => () => {}),

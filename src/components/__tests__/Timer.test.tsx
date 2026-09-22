@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
-// Define __TAURI_INTERNALS__ so isTauri() returns true in tests
-Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
 
 import { Timer } from '../Timer';
 import type { TimerSnapshot } from '../../services/timer';

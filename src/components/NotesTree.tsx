@@ -29,7 +29,7 @@ import {
   pickVaultFolder,
   type VaultEntry,
 } from '../services/vault';
-import { reindexVault } from '../services/notes';
+import { reindexVault, renameNotePath, deleteNote, noteByPath } from '../services/notes';
 import { I18nService } from '../services/i18n';
 import { IconButton } from './ui';
 
@@ -169,6 +169,7 @@ export function NotesTree({
         setRootPath(root);
       }
     }).catch(console.error);
+    void Promise.resolve(reindexVault?.()).catch(console.error);
     return () => {
       cancelled = true;
     };
@@ -194,8 +195,12 @@ export function NotesTree({
 
   const handleToday = async () => {
     try {
-      const todayIso = new Date().toISOString();
-      const path = await ensureDailyNote(todayIso);
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const localIso = `${year}-${month}-${day}T00:00:00.000`;
+      const path = await ensureDailyNote(localIso);
       await loadTree();
       onSelectNote(path);
       onRefresh?.();
@@ -222,6 +227,7 @@ export function NotesTree({
 
   const handleRefresh = async () => {
     await loadTree();
+    await Promise.resolve(reindexVault?.());
     onRefresh?.();
   };
 
@@ -286,6 +292,7 @@ export function NotesTree({
         const newPath = parent ? `${parent}/${newName}` : newName;
         if (newPath !== oldPath) {
           await renameNoteFile(oldPath, newPath);
+          await renameNotePath(oldPath, newPath);
           await loadTree();
           if (currentPath === oldPath) {
             onSelectNote(newPath);
@@ -306,7 +313,16 @@ export function NotesTree({
     if (!confirmed) return;
 
     try {
-      await deleteNoteFile(entry.path);
+      const isSelected = currentPath === entry.path || (entry.isDir && currentPath?.startsWith(entry.path + '/'));
+      if (isSelected) {
+        onSelectNote('');
+      }
+      const note = await noteByPath(entry.path);
+      if (note) {
+        await deleteNote(note.id);
+      } else {
+        await deleteNoteFile(entry.path);
+      }
       await loadTree();
       onRefresh?.();
     } catch (err) {

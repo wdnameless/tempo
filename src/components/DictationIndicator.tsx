@@ -144,8 +144,8 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
     };
   }, [pollIntervalMs]);
 
-  // Gate overlay variant when disabled by user preference
-  if (variant === 'overlay' && !overlayEnabled) {
+  // Gate indicator when disabled by user preference (governs both pill and overlay variants)
+  if (!overlayEnabled) {
     return null;
   }
 

@@ -203,7 +203,7 @@ pub fn list_vault_entries(root: &Path, current_dir: &Path) -> Result<Vec<VaultEn
                 is_dir: true,
                 children,
             });
-        } else if file_type.is_file() && name.ends_with(".md") {
+        } else if file_type.is_file() && name.to_lowercase().ends_with(".md") {
             entries.push(VaultEntry {
                 path: rel_path,
                 name,
@@ -544,6 +544,22 @@ mod tests {
         let sub_entries = &folder_entries[0].children;
         assert_eq!(sub_entries.len(), 1);
         assert_eq!(sub_entries[0].name, "note3.md");
+    }
+
+    #[test]
+    fn test_vault_list_handles_uppercase_md_extension() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        std::fs::write(root.join("UPPER.MD"), "# Upper").unwrap();
+        std::fs::write(root.join("Mixed.Md"), "# Mixed").unwrap();
+        std::fs::write(root.join("not_md.mdd"), "no").unwrap();
+
+        let entries = list_vault_entries(root, root).unwrap();
+        assert_eq!(entries.len(), 2);
+        let names: Vec<String> = entries.into_iter().map(|e| e.name).collect();
+        assert!(names.contains(&"UPPER.MD".to_string()));
+        assert!(names.contains(&"Mixed.Md".to_string()));
     }
 
     #[test]

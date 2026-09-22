@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AICompilerService } from '../aiCompiler';
+import { AIGateway } from '../aiGateway';
 import * as tasksService from '../tasks';
 import * as notesService from '../notes';
-import { TaskItem, ListItem } from '../../types';
+import { TaskItem, ListItem, AISettings } from '../../types';
 
 describe('AICompilerService (R36)', () => {
   beforeEach(() => {
@@ -270,7 +271,7 @@ describe('AICompilerService (R36)', () => {
     expect(plan1.alarms).toHaveLength(2);
     expect(plan1.alarms?.[0].time).toBe('07:30');
     expect(plan1.alarms?.[0].repeat).toBe('days');
-    expect(plan1.alarms?.[0].days).toEqual([0, 2, 4]);
+    expect(plan1.alarms?.[0].days).toEqual([1, 3, 5]);
 
     const plan2 = AICompilerService.compileLocalIntent(
       'план тренировок: понедельник 08:00 бег, среда 08:00 силовая, пятница 08:00 растяжка',
@@ -278,7 +279,7 @@ describe('AICompilerService (R36)', () => {
     expect(plan2.action).toBe('create_alarms');
     expect(plan2.alarms).toHaveLength(3);
     expect(plan2.alarms?.[0]).toEqual(
-      expect.objectContaining({ label: 'Бег', time: '08:00', repeat: 'days', days: [0] }),
+      expect.objectContaining({ label: 'Бег', time: '08:00', repeat: 'days', days: [1] }),
     );
   });
 
@@ -301,5 +302,82 @@ describe('AICompilerService (R36)', () => {
     const plan = AICompilerService.compileLocalIntent('какая-то случайная белиберда qwerty12345');
     expect(plan.action).toBe('noop');
     expect(plan.explanation).toBe('Команда не распознана');
+  });
+
+  it('pins weekday mapping 0=Sunday (Пн, Ср, Пт -> [1, 3, 5], по будням -> [1,2,3,4,5], по выходным -> [0,6])', () => {
+    const plan = AICompilerService.compileLocalIntent('будильник: пн, ср, пт 07:00 разминка');
+    expect(plan.action).toBe('create_alarms');
+    expect(plan.alarms?.[0].days).toEqual([1, 3, 5]);
+
+    const weekdaysPlan = AICompilerService.compileLocalIntent('будильник по будням 08:00 подъём');
+    expect(weekdaysPlan.alarms?.[0].days).toEqual([1, 2, 3, 4, 5]);
+
+    const weekendPlan = AICompilerService.compileLocalIntent('будильник по выходным 10:00 отдых');
+    expect(weekendPlan.alarms?.[0].days).toEqual([0, 6]);
+  });
+
+  it('cleans leading prepositions from alarm label when schedule segment has spaces', () => {
+    const plan = AICompilerService.compileLocalIntent('расписание тренировок: пн 07:00 в разминка, ср 19:00 на кардио');
+    expect(plan.action).toBe('create_alarms');
+    expect(plan.alarms?.[0].label).toBe('Разминка');
+    expect(plan.alarms?.[1].label).toBe('Кардио');
+  });
+
+  it('reports empty create_alarms proposal honestly rather than Готово', async () => {
+    const modelJson = JSON.stringify({
+      action: 'create_alarms',
+      alarms: [],
+    });
+    const plan = AICompilerService.parseActionJson(modelJson);
+    expect(plan.action).toBe('create_alarms');
+    expect(plan.alarms).toEqual([]);
+    expect(plan.explanation).not.toBe('Готово');
+    expect(plan.explanation).toContain('Будильники не созданы');
+
+    const outcome = await AICompilerService.executeAction({
+      action: 'create_alarms',
+      explanation: 'Готово',
+      alarms: [],
+    });
+    expect(outcome.action).toBe('noop');
+    expect(outcome.explanation).not.toBe('Готово');
+    expect(outcome.explanation).toContain('Будильники не созданы');
+  });
+
+  it('maps unknown model action to noop and preserves explanation without task dump', async () => {
+    vi.spyOn(tasksService, 'listTasks').mockResolvedValueOnce([
+      { id: 't1', title: 'Секретная задача', done: false, priority: 0, createdAt: '2026-09-22T00:00:00Z', position: 0 } as TaskItem,
+    ]);
+
+    const modelJson = JSON.stringify({
+      action: 'delete_everything',
+      explanation: 'Действие не поддерживается.',
+    });
+
+    const plan = AICompilerService.parseActionJson(modelJson);
+    expect(plan.action).toBe('noop');
+    expect(plan.explanation).toBe('Действие не поддерживается.');
+
+    const outcome = await AICompilerService.executeAction(plan);
+    expect(outcome.action).toBe('noop');
+    expect(outcome.explanation).toBe('Действие не поддерживается.');
+    expect(outcome.explanation).not.toContain('Секретная задача');
+  });
+
+  it('enables remote LLM path when AIGateway has key even if settings.apiKey is empty', async () => {
+    vi.spyOn(AIGateway, 'hasKey').mockResolvedValueOnce(true);
+    const genSpy = vi.spyOn(AIGateway, 'generateCompletion').mockResolvedValueOnce(
+      JSON.stringify({ action: 'noop', explanation: 'Ответ от удалённой модели' }),
+    );
+
+    const emptySettings: AISettings = {
+      apiKey: '',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      model: 'google/gemini-2.5-flash',
+    };
+
+    const plan = await AICompilerService.compileIntent('привет', emptySettings);
+    expect(genSpy).toHaveBeenCalled();
+    expect(plan.explanation).toBe('Ответ от удалённой модели');
   });
 });

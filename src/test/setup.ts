@@ -58,3 +58,58 @@ HTMLMediaElement.prototype.pause = () => {};
 // jsdom does not implement scrollIntoView, which the chat feed calls on every
 // message. A no-op keeps those paths testable.
 Element.prototype.scrollIntoView = () => {};
+
+/**
+ * Tauri runtime environment stub.
+ *
+ * The production app runs inside the Tauri webview shell where `isTauri()` is
+ * always true. Tauri internals (invoke, callback transformation, event listening)
+ * are stubbed here so tests run Tauri-shaped by default.
+ */
+let nextCallbackId = 1;
+const tauriCallbacks = new Map<number, (data: unknown) => unknown>();
+
+Object.defineProperty(window, '__TAURI_INTERNALS__', {
+  value: {
+    invoke: (cmd: string) => {
+      if (cmd === 'plugin:event|listen') return Promise.resolve(nextCallbackId++);
+      if (cmd === 'plugin:event|unlisten') return Promise.resolve(undefined);
+      if (cmd === 'db_list') return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    },
+    transformCallback: (callback?: (data: unknown) => unknown, once = false) => {
+      const id = nextCallbackId++;
+      if (callback) {
+        tauriCallbacks.set(id, (data: unknown) => {
+          if (once) tauriCallbacks.delete(id);
+          return callback(data);
+        });
+      }
+      return id;
+    },
+    unregisterCallback: (id: number) => {
+      tauriCallbacks.delete(id);
+    },
+    runCallback: (id: number, data: unknown) => {
+      tauriCallbacks.get(id)?.(data);
+    },
+    convertFileSrc: (filePath: string) => filePath,
+    callbacks: tauriCallbacks,
+    metadata: {
+      currentWindow: { label: 'main' },
+      currentWebview: { windowLabel: 'main', label: 'main' },
+    },
+  },
+  writable: true,
+  configurable: true,
+});
+
+Object.defineProperty(window, '__TAURI_EVENT_PLUGIN_INTERNALS__', {
+  value: {
+    unregisterListener: (_event: string, id: number) => {
+      tauriCallbacks.delete(id);
+    },
+  },
+  writable: true,
+  configurable: true,
+});

@@ -312,7 +312,7 @@ impl TimerState {
         let Ok(contents) = fs::read_to_string(path) else {
             return;
         };
-        let Ok(map) = serde_json::from_str::<serde_json::Map<String, Value>>(&contents) else {
+        let Ok(mut map) = serde_json::from_str::<serde_json::Map<String, Value>>(&contents) else {
             return;
         };
 
@@ -348,8 +348,76 @@ impl TimerState {
         if let Some(date) = map.get("tempo_last_focus_date").and_then(|v| v.as_str()) {
             self.last_focus_date = date.to_string();
         }
+        let mut loaded_phase = false;
+        if let Some(phase_str) = map.get("tempo_phase").and_then(|v| v.as_str()) {
+            match phase_str {
+                "short_rest" => {
+                    self.phase = Phase::ShortRest;
+                    let secs = (self.short_rest_min as u64) * 60;
+                    self.total_secs = secs;
+                    self.remaining_secs = secs;
+                    self.elapsed_secs = 0;
+                    loaded_phase = true;
+                }
+                "long_rest" => {
+                    self.phase = Phase::LongRest;
+                    let secs = (self.long_rest_min as u64) * 60;
+                    self.total_secs = secs;
+                    self.remaining_secs = secs;
+                    self.elapsed_secs = 0;
+                    loaded_phase = true;
+                }
+                "focus" => {
+                    self.phase = Phase::Focus;
+                    loaded_phase = true;
+                }
+                _ => {}
+            }
+        }
 
-        if loaded_settings && self.mode == TimerMode::Pomodoro && self.phase == Phase::Focus && self.deadline.is_none() {
+        if let Some(tot) = map.get("tempo_total_secs").and_then(|v| v.as_u64()) {
+            if tot > 0 {
+                self.total_secs = tot;
+                if let Some(rem) = map.get("tempo_remaining_secs").and_then(|v| v.as_u64()) {
+                    self.remaining_secs = rem.min(tot);
+                    self.elapsed_secs = tot.saturating_sub(self.remaining_secs);
+                }
+            }
+        }
+
+        if let Some(deadline_ms) = map.get("tempo_deadline_epoch_ms").and_then(|v| v.as_u64()) {
+            let deadline = SystemTime::UNIX_EPOCH + Duration::from_millis(deadline_ms);
+            let now = SystemTime::now();
+            if deadline > now {
+                self.deadline = Some(deadline);
+                self.remaining_secs = deadline.duration_since(now).unwrap_or_default().as_secs();
+                self.elapsed_secs = self.total_secs.saturating_sub(self.remaining_secs);
+                if self.phase == Phase::Focus {
+                    self.session_started = Some(now);
+                }
+            }
+        }
+
+        let in_flight_sec = map.get("tempo_in_flight_focus_sec").and_then(|v| v.as_u64()).unwrap_or(0);
+        if in_flight_sec > 0 {
+            let now_dt = Local::now();
+            let start_dt = now_dt - chrono::Duration::seconds(in_flight_sec as i64);
+            self.pending_sessions.push(TimerSession {
+                id: Uuid::new_v4().to_string(),
+                kind: "pomodoro".to_string(),
+                started_at: start_dt.to_rfc3339(),
+                ended_at: now_dt.to_rfc3339(),
+                duration_sec: in_flight_sec,
+                completed: false,
+                task_id: None,
+            });
+            map.remove("tempo_in_flight_focus_sec");
+            if let Ok(serialized) = serde_json::to_string_pretty(&map) {
+                let _ = fs::write(path, serialized);
+            }
+        }
+
+        if loaded_settings && self.mode == TimerMode::Pomodoro && self.phase == Phase::Focus && self.deadline.is_none() && !loaded_phase {
             let secs = (self.focus_min as u64) * 60;
             self.total_secs = secs;
             self.remaining_secs = secs;
@@ -381,6 +449,32 @@ impl TimerState {
         map.insert("tempo_completed_today".into(), serde_json::json!(self.completed_today));
         map.insert("tempo_last_focus_date".into(), serde_json::json!(self.last_focus_date));
 
+        let phase_str = match self.phase {
+            Phase::Focus => "focus",
+            Phase::ShortRest => "short_rest",
+            Phase::LongRest => "long_rest",
+        };
+        map.insert("tempo_phase".into(), serde_json::json!(phase_str));
+        map.insert("tempo_remaining_secs".into(), serde_json::json!(self.remaining_secs));
+        map.insert("tempo_total_secs".into(), serde_json::json!(self.total_secs));
+
+        if let Some(deadline) = self.deadline {
+            if let Ok(dur) = deadline.duration_since(SystemTime::UNIX_EPOCH) {
+                map.insert("tempo_deadline_epoch_ms".into(), serde_json::json!(dur.as_millis() as u64));
+            }
+        } else {
+            map.remove("tempo_deadline_epoch_ms");
+        }
+
+        let mut in_flight_focus = self.session_accumulated_secs;
+        if let Some(started) = self.session_started {
+            in_flight_focus += SystemTime::now().duration_since(started).unwrap_or_default().as_secs();
+        }
+        if in_flight_focus > 0 && self.phase == Phase::Focus {
+            map.insert("tempo_in_flight_focus_sec".into(), serde_json::json!(in_flight_focus));
+        } else {
+            map.remove("tempo_in_flight_focus_sec");
+        }
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }
@@ -470,6 +564,7 @@ pub fn start() {
                 }
             }
         }
+        state.save_persisted();
     });
 }
 
@@ -495,6 +590,7 @@ pub fn pause() {
                 }
             }
         }
+        state.save_persisted();
     });
 }
 
@@ -522,6 +618,7 @@ pub fn reset() {
                 state.elapsed_secs = 0;
             }
         }
+        state.save_persisted();
     });
 }
 
@@ -588,6 +685,7 @@ pub fn set_mode(mode: TimerMode) {
                 state.elapsed_secs = 0;
             }
         }
+        state.save_persisted();
     });
 }
 
@@ -1124,5 +1222,59 @@ mod tests {
             state.take_sessions().is_empty(),
             "a rest phase must not be recorded as focus"
         );
+    }
+
+    #[test]
+    fn break_phase_is_persisted_across_restarts() {
+        let tmp_dir = std::env::temp_dir().join(format!("tempo_test_{}", uuid::Uuid::new_v4()));
+        let _ = fs::create_dir_all(&tmp_dir);
+        let persist_path = tmp_dir.join("tempo.json");
+
+        let mut state = TimerState {
+            persist_path: Some(persist_path.clone()),
+            ..TimerState::default()
+        };
+        state.phase = Phase::ShortRest;
+        state.total_secs = 300;
+        state.remaining_secs = 240;
+        state.elapsed_secs = 60;
+        state.save_persisted();
+
+        let mut state2 = TimerState {
+            persist_path: Some(persist_path.clone()),
+            ..TimerState::default()
+        };
+        state2.load_persisted();
+
+        assert_eq!(state2.phase, Phase::ShortRest, "short rest phase must be restored on restart");
+        assert_eq!(state2.remaining_secs, 240, "remaining time must be restored on restart");
+        let _ = fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn in_flight_focus_session_is_recovered_on_restart() {
+        let tmp_dir = std::env::temp_dir().join(format!("tempo_test_{}", uuid::Uuid::new_v4()));
+        let _ = fs::create_dir_all(&tmp_dir);
+        let persist_path = tmp_dir.join("tempo.json");
+
+        let mut state = TimerState {
+            persist_path: Some(persist_path.clone()),
+            ..TimerState::default()
+        };
+        state.phase = Phase::Focus;
+        state.session_started = Some(SystemTime::now() - Duration::from_secs(180));
+        state.save_persisted();
+
+        let mut state2 = TimerState {
+            persist_path: Some(persist_path.clone()),
+            ..TimerState::default()
+        };
+        state2.load_persisted();
+
+        let recovered = state2.take_sessions();
+        assert_eq!(recovered.len(), 1, "in-flight focus session must be recovered");
+        assert!(!recovered[0].completed, "in-flight session must be incomplete");
+        assert!(recovered[0].duration_sec >= 180, "session duration must reflect in-flight elapsed time");
+        let _ = fs::remove_dir_all(&tmp_dir);
     }
 }

@@ -3,6 +3,7 @@ import { render, screen, act, fireEvent } from '@testing-library/react';
 import { ListsView } from '../ListsView';
 import * as tasksService from '../../services/tasks';
 import type { ListItem, TaskItem } from '../../types';
+import * as appEvents from '../../services/appEvents';
 
 vi.mock('../../services/tasks', () => ({
   listLists: vi.fn(),
@@ -126,5 +127,74 @@ describe('ListsView', () => {
     fireEvent.click(deleteButtons[0]);
 
     expect(tasksService.deleteList).toHaveBeenCalledWith('list-1');
+  });
+
+  it('provides inline rename control for list items and updates title on blur', async () => {
+    await act(async () => {
+      render(<ListsView />);
+    });
+
+    const renameBtn = screen.getAllByRole('button', { name: 'Rename item' })[0];
+    expect(renameBtn).toBeTruthy();
+    fireEvent.click(renameBtn);
+
+    // An input with 'Milk' should now be rendered
+    const input = screen.getByDisplayValue('Milk');
+    expect(input).toBeTruthy();
+
+    // Edit title and blur
+    fireEvent.change(input, { target: { value: 'Almond Milk' } });
+    fireEvent.blur(input);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(tasksService.updateTask).toHaveBeenCalledWith('item-1', {
+      title: 'Almond Milk',
+    });
+  });
+
+  it('emits dataChanged on item toggle and move', async () => {
+    const emitSpy = vi.spyOn(appEvents, 'emitDataChanged');
+
+    await act(async () => {
+      render(<ListsView />);
+    });
+
+    const toggleBtn = screen.getAllByRole('button', { name: /Новая задача|New task/i })[0];
+    fireEvent.click(toggleBtn);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(emitSpy).toHaveBeenCalledWith('tasks', ['item-1']);
+    emitSpy.mockRestore();
+  });
+
+  it('emits dataChanged on list creation', async () => {
+    const emitSpy = vi.spyOn(appEvents, 'emitDataChanged');
+    vi.mocked(tasksService.createList).mockResolvedValueOnce({
+      id: 'list-new',
+      name: 'Hardware',
+      position: 2,
+      createdAt: '',
+    });
+
+    await act(async () => {
+      render(<ListsView />);
+    });
+
+    const input = screen.getByPlaceholderText(/Новый список|New list/i);
+    fireEvent.change(input, { target: { value: 'Hardware' } });
+    fireEvent.submit(input.closest('form')!);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(emitSpy).toHaveBeenCalledWith('lists', ['list-new']);
+    emitSpy.mockRestore();
   });
 });

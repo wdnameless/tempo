@@ -95,7 +95,7 @@ const SYSTEM_PROMPT = `Ты — встроенный персональный а
       "label": "Тренировка",
       "time": "07:30",
       "repeat": "days" | "once" | "daily" | "date" | "interval",
-      "days": [0, 2, 4],
+      "days": [1, 3, 5],
       "date": null,
       "intervalMinutes": null,
       "windowStart": null,
@@ -110,37 +110,37 @@ const SYSTEM_PROMPT = `Ты — встроенный персональный а
 }`;
 
 const WEEKDAY_MAP: Record<string, number> = {
-  пн: 0,
-  понедельник: 0,
-  mon: 0,
-  monday: 0,
-  вт: 1,
-  вторник: 1,
-  tue: 1,
-  tuesday: 1,
-  ср: 2,
-  среда: 2,
-  среду: 2,
-  wed: 2,
-  wednesday: 2,
-  чт: 3,
-  четверг: 3,
-  thu: 3,
-  thursday: 3,
-  пт: 4,
-  пятница: 4,
-  пятницу: 4,
-  fri: 4,
-  friday: 4,
-  сб: 5,
-  суббота: 5,
-  субботу: 5,
-  sat: 5,
-  saturday: 5,
-  вс: 6,
-  воскресенье: 6,
-  sun: 6,
-  sunday: 6,
+  вс: 0,
+  воскресенье: 0,
+  sun: 0,
+  sunday: 0,
+  пн: 1,
+  понедельник: 1,
+  mon: 1,
+  monday: 1,
+  вт: 2,
+  вторник: 2,
+  tue: 2,
+  tuesday: 2,
+  ср: 3,
+  среда: 3,
+  среду: 3,
+  wed: 3,
+  wednesday: 3,
+  чт: 4,
+  четверг: 4,
+  thu: 4,
+  thursday: 4,
+  пт: 5,
+  пятница: 5,
+  пятницу: 5,
+  fri: 5,
+  friday: 5,
+  сб: 6,
+  суббота: 6,
+  субботу: 6,
+  sat: 6,
+  saturday: 6,
 };
 
 function extractWeekdaysFromText(text: string): number[] {
@@ -149,10 +149,10 @@ function extractWeekdaysFromText(text: string): number[] {
     return [0, 1, 2, 3, 4, 5, 6];
   }
   if (lower.includes('по будням') || lower.includes('в будни') || lower.includes('weekdays')) {
-    return [0, 1, 2, 3, 4];
+    return [1, 2, 3, 4, 5];
   }
   if (lower.includes('по выходным') || lower.includes('в выходные') || lower.includes('weekends')) {
-    return [5, 6];
+    return [0, 6];
   }
   const days = new Set<number>();
   for (const [name, dayNum] of Object.entries(WEEKDAY_MAP)) {
@@ -278,13 +278,16 @@ export function parseLocalAlarms(prompt: string, now: Date = new Date()): AlarmD
       let label = seg
         .replace(rawTime, '')
         .replace(/(?:понедельник|пн|вторник|вт|среда|среду|ср|четверг|чт|пятница|пятницу|пт|суббота|субботу|сб|воскресенье|вс)/gi, '')
-        .replace(/^(?:в|на|во|at)\s+/i, '')
-        .replace(
-          /^(?:пожалуйста,?\s*)?(?:поставь|создай|добавь)?\s*(?:будильник|будильники|тренирова|тренирову|тренирови)?\s*:?/i,
-          '',
-        )
         .replace(/[,\-;:]/g, ' ')
         .trim();
+      label = label.replace(/^(?:в|на|во|at)\s+/i, '').trim();
+      label = label
+        .replace(
+          /^(?:пожалуйста,?\s*)?(?:поставь|создай|добавь)?\s*(?:будильник|будильники|тренировка|тренировку|тренировки|тренирова|тренирови)?\s*:?/i,
+          '',
+        )
+        .trim();
+      label = label.replace(/^(?:в|на|во|at)\s+/i, '').trim();
 
       if (!label) {
         label = /трениров/i.test(prompt) ? 'Тренировка' : 'Будильник';
@@ -319,9 +322,13 @@ export function parseLocalAlarms(prompt: string, now: Date = new Date()): AlarmD
       const time = t.padStart(5, '0');
       let label = prompt
         .replace(/\b[01]?\d:[0-5]\d\b/g, '')
-        .replace(/^(?:пожалуйста,?\s*)?(?:поставь|создай|добавь)?\s*(?:будильник|напоминание|alarm)?\s*(?:на|в)?\s*:?/i, '')
+        .replace(/(?:понедельник|пн|вторник|вт|среда|среду|ср|четверг|чт|пятница|пятницу|пт|суббота|субботу|сб|воскресенье|вс)/gi, '')
         .replace(/[,\-;:]/g, ' ')
         .trim();
+      label = label
+        .replace(/^(?:пожалуйста,?\s*)?(?:поставь|создай|добавь)?\s*(?:будильник|напоминание|alarm)?\s*:?/i, '')
+        .trim();
+      label = label.replace(/^(?:в|на|во|at)\s+/i, '').trim();
       if (!label) label = /трениров/i.test(prompt) ? 'Тренировка' : 'Будильник';
       else label = label.charAt(0).toUpperCase() + label.slice(1);
 
@@ -411,15 +418,22 @@ export class AICompilerService {
 
       const hasAlarms = Boolean(parsedAlarms && parsedAlarms.length > 0);
       const rawAction = asString(parsed.action, '');
+      const validActions = ['create_alarms', 'create_task', 'create_list', 'create_note', 'build_plan', 'answer', 'noop'];
       const action = (hasAlarms || rawAction === 'create_alarms'
         ? 'create_alarms'
-        : ['create_task', 'create_list', 'create_note', 'build_plan', 'answer', 'noop'].includes(rawAction)
+        : validActions.includes(rawAction)
           ? rawAction
-          : 'answer') as AIActionPlan['action'];
+          : 'noop') as AIActionPlan['action'];
+
+      const defaultExplanation = hasAlarms
+        ? 'Предлагаю настроить будильники'
+        : rawAction === 'create_alarms'
+          ? 'Будильники не созданы: список пуст.'
+          : 'Готово';
 
       const explanation = asString(
         parsed.explanation,
-        asString(parsed.reply, asString(parsed.answer, hasAlarms ? 'Предлагаю настроить будильники' : 'Готово')),
+        asString(parsed.reply, asString(parsed.answer, defaultExplanation)),
       );
 
       return {
@@ -481,7 +495,8 @@ export class AICompilerService {
     }
 
     // If API key is present and enabled, query the model
-    if (settings.apiKey && settings.apiKey.trim().length > 0) {
+    const hasKey = Boolean(settings.apiKey && settings.apiKey.trim().length > 0) || (await AIGateway.hasKey());
+    if (hasKey) {
       try {
         // Collect active (non-deleted) context
         const [activeTasks, activeLists, activeNotes, activeRecordings] = await Promise.all([
@@ -771,6 +786,15 @@ export class AICompilerService {
       }
       if (actionPlan.action === 'create_alarms') {
         // R04: Alarms are not written to DB before confirmation.
+        if (!actionPlan.alarms || actionPlan.alarms.length === 0) {
+          return {
+            action: 'noop',
+            explanation:
+              actionPlan.explanation && actionPlan.explanation !== 'Готово'
+                ? actionPlan.explanation
+                : 'Будильники не созданы: список пуст.',
+          };
+        }
         return {
           action: 'create_alarms',
           explanation: actionPlan.explanation || actionPlan.reply || 'Предпросмотр будильников готов к подтверждению.',
@@ -784,6 +808,13 @@ export class AICompilerService {
             action: 'answer',
             explanation: actionPlan.answer,
             answer: actionPlan.answer,
+          };
+        }
+        if (actionPlan.explanation) {
+          return {
+            action: 'answer',
+            explanation: actionPlan.explanation,
+            answer: actionPlan.explanation,
           };
         }
         // If local query for tasks:

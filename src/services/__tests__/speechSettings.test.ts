@@ -1,15 +1,28 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   loadSpeechSettings,
   saveSpeechSettings,
   DEFAULT_SPEECH_SETTINGS,
   subscribeSpeechSettings,
+  mergeSpeechConfig,
+  type SpeechConfig,
 } from '../speechSettings';
 import { resetSettingsCacheForTesting, getPref, setPref } from '../settings';
 
+const mockInvoke = vi.fn();
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => mockInvoke(...args),
+}));
 describe('speechSettings', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     resetSettingsCacheForTesting();
+    mockInvoke.mockImplementation((cmd: string, args?: { patch?: Partial<SpeechConfig> }) => {
+      if (cmd === 'stt_apply_speech_settings') {
+        return Promise.resolve(mergeSpeechConfig(loadSpeechSettings(), args?.patch ?? {}));
+      }
+      return Promise.resolve(undefined);
+    });
   });
 
   it('loads default speech settings when cache is empty', () => {
@@ -50,6 +63,13 @@ describe('speechSettings', () => {
       modelId: 'whisper-large-v3',
     });
 
+    expect(mockInvoke).toHaveBeenCalledWith('stt_apply_speech_settings', {
+      patch: {
+        enabled: true,
+        hotkey: 'Alt+V',
+        modelId: 'whisper-large-v3',
+      },
+    });
     expect(getPref('tempo_speech_enabled', undefined)).toBe(true);
     expect(getPref('tempo_speech_hotkey', undefined)).toBe('Alt+V');
     expect(getPref('tempo_speech_model_id', undefined)).toBe('whisper-large-v3');

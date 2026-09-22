@@ -542,4 +542,69 @@ describe('NotesView', () => {
     // It must NOT write anything for user-emptied file
     expect(writeSpy).not.toHaveBeenCalledWith('UserEmpty.md', expect.anything());
   });
+
+  it('refresh with unsaved draft preserves draft and does not wipe it before user choice', async () => {
+    render(<NotesView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('First Note')).toBeDefined();
+    });
+
+    const textarea = screen.getByTestId('mock-notes-editor') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'My precious unsaved draft' } });
+
+    vi.mocked(vaultService.readNoteFile).mockResolvedValue('External change on disk');
+
+    const refreshBtn = screen.getByLabelText(t.vaultRefresh);
+    fireEvent.click(refreshBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('vault-conflict-banner')).toBeDefined();
+    });
+
+    // Crucial: Draft is preserved while conflict banner is shown
+    expect(textarea.value).toBe('My precious unsaved draft');
+  });
+
+  it('clicking a backlink loads the target note instead of freezing on ellipsis', async () => {
+    render(<NotesView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('First Note')).toBeDefined();
+      expect(screen.getByTestId('notes-backlinks-panel')).toBeDefined();
+    });
+
+    // Click backlink to Second Note (note-2)
+    const backlinkBtn = screen.getByText('Second Note');
+    fireEvent.click(backlinkBtn);
+
+    await waitFor(() => {
+      const textarea = screen.getByTestId('mock-notes-editor') as HTMLTextAreaElement;
+      expect(textarea.value).toContain('Body of second note');
+    });
+    // Ellipsis fallback must not be rendered
+    expect(screen.queryByText('...')).toBeNull();
+  });
+
+  it('handleTitleBlur passes body to updateNote to update file heading', async () => {
+    render(<NotesView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('First Note')).toBeDefined();
+    });
+
+    const titleInput = screen.getByPlaceholderText(t.titleNotes);
+    fireEvent.change(titleInput, { target: { value: 'Renamed First Note' } });
+    fireEvent.blur(titleInput);
+
+    await waitFor(() => {
+      expect(notesService.updateNote).toHaveBeenCalledWith(
+        'file:First Note.md',
+        expect.objectContaining({
+          title: 'Renamed First Note',
+          body: 'Hello world #tag',
+        })
+      );
+    });
+  });
 });

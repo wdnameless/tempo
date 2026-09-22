@@ -20,10 +20,13 @@ const mockInvoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
+vi.mock('../platform', () => ({
+  isTauri: () => true,
+}));
 
 describe('Tasks & Lists domain service (tasks.ts)', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockInvoke.mockReset();
   });
 
   describe('Tasks CRUD & toggle', () => {
@@ -363,6 +366,60 @@ describe('Tasks & Lists domain service (tasks.ts)', () => {
       expect(mockInvoke).toHaveBeenCalledWith('db_reindex', { kind: 'task' });
     });
 
+    it('deleteTask cleans up outgoing links and removes incoming backlinks from linking entities', async () => {
+      // 1. listTasks returns task-del with no subtasks
+      mockInvoke.mockResolvedValueOnce([
+        {
+          id: 'task-del',
+          title: 'To Delete',
+          note: null,
+          status: 'open',
+          list_id: null,
+          parent_id: null,
+          due_date: null,
+          start_at: null,
+          planned_minutes: null,
+          position: 0,
+          completed_at: null,
+          created_at: '2026-09-20',
+          updated_at: '2026-09-20',
+          deleted_at: null,
+        },
+      ]);
+      // 2. taskRepo.remove('task-del')
+      mockInvoke.mockResolvedValueOnce(undefined);
+      // 3. reindex('task')
+      mockInvoke.mockResolvedValueOnce(1);
+      // 4. upsertLinks for task-del (links_set)
+      mockInvoke.mockResolvedValueOnce(0);
+      // 5. backlinksOf('task', 'task-del') (links_backlinks)
+      mockInvoke.mockResolvedValueOnce([
+        { kind: 'note', id: 'note-1', title: 'A note that linked to this task' },
+      ]);
+      // 6. linksOf('note', 'note-1') (db_list links)
+      mockInvoke.mockResolvedValueOnce([
+        { from_kind: 'note', from_id: 'note-1', to_kind: 'task', to_id: 'task-del' },
+        { from_kind: 'note', from_id: 'note-1', to_kind: 'note', to_id: 'note-2' },
+      ]);
+      // 7. upsertLinks for note-1 removing task-del (links_set)
+      mockInvoke.mockResolvedValueOnce(1);
+
+      await deleteTask('task-del');
+
+      // Check outgoing links cleared
+      expect(mockInvoke).toHaveBeenCalledWith('links_set', {
+        fromKind: 'task',
+        fromId: 'task-del',
+        to: [],
+      });
+      // Check incoming backlinks cleaned up on note-1
+      expect(mockInvoke).toHaveBeenCalledWith('links_set', {
+        fromKind: 'note',
+        fromId: 'note-1',
+        to: [{ kind: 'note', id: 'note-2' }],
+      });
+    });
+
     it('moveTask updates listId, dueDate, and startAt', async () => {
       mockInvoke.mockResolvedValueOnce({
         id: 't1',
@@ -681,6 +738,15 @@ describe('Tasks & Lists domain service (tasks.ts)', () => {
       await updateTask('t1', { dueDate: '2026-09-20' });
 
       expect(patchSent()?.start_at).toBe('2026-09-20T10:00:00');
+    });
+
+    it('keeps startAt when dueDate matches the stored date even with trailing Z in non-UTC timezone', async () => {
+      mockInvoke.mockResolvedValueOnce(row('2026-09-20', '2026-09-20T22:00:00.000Z'));
+      mockInvoke.mockResolvedValueOnce(row('2026-09-20', '2026-09-20T22:00:00.000Z'));
+
+      await updateTask('t1', { dueDate: '2026-09-20' });
+
+      expect(patchSent()?.start_at).toBe('2026-09-20T22:00:00.000Z');
     });
 
     it('respects an explicit startAt in the same patch', async () => {

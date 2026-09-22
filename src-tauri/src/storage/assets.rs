@@ -328,10 +328,75 @@ pub fn prune_in(assets_dir: &Path, limit_bytes: u64) -> Result<AssetPruneResult,
             removed += 1;
             freed += file.bytes;
             total = total.saturating_sub(file.bytes);
+
+            let db_candidate_1 = assets_dir.join("tempo.db");
+            let db_candidate_2 = assets_dir.parent().map(|p| p.join("tempo.db")).unwrap_or_default();
+            let db_path = if db_candidate_1.exists() {
+                Some(db_candidate_1)
+            } else if db_candidate_2.exists() {
+                Some(db_candidate_2)
+            } else {
+                None
+            };
+            if let Some(dbp) = db_path {
+                sync_db_on_asset_removed(&dbp, &file.path, assets_dir);
+            }
         }
     }
 
     Ok(AssetPruneResult { removed, freed })
+}
+
+fn sync_db_on_asset_removed(db_path: &Path, file_path: &Path, assets_dir: &Path) {
+    if !db_path.exists() {
+        return;
+    }
+    let Ok(conn) = rusqlite::Connection::open(db_path) else {
+        return;
+    };
+    let now = chrono::Utc::now().to_rfc3339();
+    let abs_str = file_path.to_string_lossy().to_string();
+    let abs_norm = abs_str.replace('\\', "/");
+    let rel_assets = file_path
+        .strip_prefix(assets_dir)
+        .ok()
+        .map(|p| p.to_string_lossy().replace('\\', "/"));
+    let rel_data = assets_dir
+        .parent()
+        .and_then(|data_dir| file_path.strip_prefix(data_dir).ok())
+        .map(|p| p.to_string_lossy().replace('\\', "/"));
+    let filename = file_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let like_filename = format!("%/{filename}");
+    let exact_filename = filename.clone();
+
+    let params = rusqlite::params![
+        now,
+        abs_str,
+        abs_norm,
+        rel_assets.as_deref().unwrap_or(""),
+        rel_data.as_deref().unwrap_or(""),
+        exact_filename,
+        like_filename,
+    ];
+
+    // 1. Soft-delete recordings matching this file
+    let _ = conn.execute(
+        "UPDATE recordings SET deleted_at = ?1, updated_at = ?1 WHERE deleted_at IS NULL AND (
+            file_path = ?2 OR file_path = ?3 OR file_path = ?4 OR file_path = ?5 OR file_path = ?6 OR file_path LIKE ?7
+        )",
+        params,
+    );
+
+    // 2. Clear preview_path from drawings matching this file
+    let _ = conn.execute(
+        "UPDATE drawings SET preview_path = NULL, updated_at = ?1 WHERE preview_path IS NOT NULL AND (
+            preview_path = ?2 OR preview_path = ?3 OR preview_path = ?4 OR preview_path = ?5 OR preview_path = ?6 OR preview_path LIKE ?7
+        )",
+        params,
+    );
 }
 
 #[cfg(test)]
@@ -505,5 +570,77 @@ mod tests {
         // Outside assets -> error
         let err = stat_asset_in(&assets_dir, "../../secret.txt");
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_prune_synchronizes_with_db_recordings_and_drawings() {
+        let tmp = TestTempDir::new();
+        let assets_dir = tmp.path().join("assets");
+        fs::create_dir_all(&assets_dir).unwrap();
+        let db_path = tmp.path().join("tempo.db");
+
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE recordings (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                kind TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                duration_sec REAL,
+                transcript TEXT,
+                transcript_status TEXT,
+                updated_at TEXT NOT NULL,
+                deleted_at TEXT
+            );
+            CREATE TABLE drawings (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                scene_json TEXT NOT NULL,
+                preview_path TEXT,
+                updated_at TEXT NOT NULL,
+                deleted_at TEXT
+            );"
+        ).unwrap();
+
+        let audio_dir = assets_dir.join("audio");
+        fs::create_dir_all(&audio_dir).unwrap();
+        let audio_file = audio_dir.join("rec1.wav");
+        fs::write(&audio_file, vec![0u8; 100]).unwrap();
+
+        let drawing_dir = assets_dir.join("drawing");
+        fs::create_dir_all(&drawing_dir).unwrap();
+        let preview_file = drawing_dir.join("prev1.png");
+        fs::write(&preview_file, vec![0u8; 100]).unwrap();
+
+        conn.execute(
+            "INSERT INTO recordings (id, title, kind, file_path, duration_sec, transcript, transcript_status, updated_at, deleted_at)
+             VALUES ('rec-1', 'Rec 1', 'audio', ?1, 10.0, NULL, 'none', '2026-09-20T00:00:00Z', NULL)",
+            rusqlite::params![audio_file.to_string_lossy().to_string()],
+        ).unwrap();
+
+        conn.execute(
+            "INSERT INTO drawings (id, title, scene_json, preview_path, updated_at, deleted_at)
+             VALUES ('draw-1', 'Draw 1', '{}', ?1, '2026-09-20T00:00:00Z', NULL)",
+            rusqlite::params![preview_file.to_string_lossy().to_string()],
+        ).unwrap();
+
+        // Prune with limit 50 bytes -> will remove both 100-byte files
+        let prune = prune_in(&assets_dir, 50).unwrap();
+        assert_eq!(prune.removed, 2);
+
+        // Verify DB rows updated: recording soft-deleted, drawing preview_path cleared
+        let rec_deleted: Option<String> = conn.query_row(
+            "SELECT deleted_at FROM recordings WHERE id = 'rec-1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert!(rec_deleted.is_some(), "recording must be soft-deleted when asset is pruned");
+
+        let draw_preview: Option<String> = conn.query_row(
+            "SELECT preview_path FROM drawings WHERE id = 'draw-1'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert!(draw_preview.is_none(), "drawing preview_path must be cleared when preview is pruned");
     }
 }

@@ -14,6 +14,7 @@ import {
   getCalendarMonthGrid,
   eventSpansMidnight,
   isMultiDayEvent,
+  isEventOnDay,
   filterEventsForDay,
   calculateEventSlot,
   tasksToCalendarEvents,
@@ -251,6 +252,25 @@ describe('calendar service (Wave 8 / R18)', () => {
       expect(slotDay2.isCrossMidnight).toBe(true);
     });
 
+    it('does not project midnight-ending events as ghost slots on the following day', () => {
+      const midnightEndingEvent: CalendarEvent = {
+        id: 'e-end-midnight',
+        source: 'local',
+        title: 'Late Meeting',
+        startAt: '2026-09-20T23:00:00',
+        endAt: '2026-09-21T00:00:00',
+        allDay: false,
+        updated_at: '',
+        deleted_at: null,
+      };
+
+      // Day 1 (Sep 20): event is active
+      expect(isEventOnDay(midnightEndingEvent, new Date(2026, 8, 20))).toBe(true);
+      // Day 2 (Sep 21): event ends exactly at 00:00, must NOT be active on Sep 21
+      expect(isEventOnDay(midnightEndingEvent, new Date(2026, 8, 21))).toBe(false);
+      expect(filterEventsForDay([midnightEndingEvent], new Date(2026, 8, 21))).toHaveLength(0);
+    });
+
     it('properly classifies all-day events', () => {
       const allDayEvent: CalendarEvent = {
         id: 'e-allday',
@@ -321,6 +341,30 @@ describe('calendar service (Wave 8 / R18)', () => {
       expect(allDay).toBeDefined();
       expect(allDay?.allDay).toBe(true);
       expect(allDay?.startAt).toContain('2026-09-20');
+    });
+
+    it('projects tasks with startAt but no dueDate into timed calendar events', () => {
+      const tasks: TaskItem[] = [
+        {
+          id: 'task-start-only',
+          title: 'Scheduled without dueDate',
+          done: false,
+          priority: 0,
+          dueDate: null,
+          startAt: '2026-09-20T14:00:00',
+          plannedMinutes: 60,
+          position: 0,
+          createdAt: '',
+        },
+      ];
+
+      const projected = tasksToCalendarEvents(tasks);
+      expect(projected).toHaveLength(1);
+      expect(projected[0].id).toBe('task-event-task-start-only');
+      expect(projected[0].allDay).toBe(false);
+      expect(projected[0].startAt).toBe('2026-09-20T14:00:00');
+      expect(projected[0].endAt).toContain('15:00:00');
+      expect(projected[0].taskId).toBe('task-start-only');
     });
   });
 });

@@ -23,7 +23,8 @@ import {
 } from '../services/tasks';
 import { StoreService } from '../services/store';
 import { I18nService } from '../services/i18n';
-import { onDataChanged } from '../services/appEvents';
+import { dayKey } from '../services/stats';
+import { onDataChanged, emitDataChanged } from '../services/appEvents';
 import { Row, Segmented, IconButton } from './ui';
 
 /**
@@ -86,6 +87,7 @@ export function TasksView() {
     return () => window.removeEventListener('tempo:reveal', onReveal);
   }, [tasks]);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingTitleDraft, setEditingTitleDraft] = useState('');
   const [subtaskDrafts, setSubtaskDrafts] = useState<Record<string, string>>({});
 
   const reload = useCallback(async () => {
@@ -117,11 +119,15 @@ export function TasksView() {
       const custom = e as CustomEvent<{ id?: string; kind?: string }>;
       if (custom.detail?.id) {
         setEditingTaskId(custom.detail.id);
+        const target = tasks.find((t) => t.id === custom.detail.id);
+        if (target) {
+          setEditingTitleDraft(target.title);
+        }
       }
     };
     window.addEventListener('tempo:reveal', handleReveal);
     return () => window.removeEventListener('tempo:reveal', handleReveal);
-  }, []);
+  }, [tasks]);
 
   const handleSortChange = async (mode: TaskSortMode) => {
     setSortMode(mode);
@@ -134,22 +140,44 @@ export function TasksView() {
     if (!title) return;
     setDraft('');
     await createTask({ title });
+    emitDataChanged('tasks');
     await reload();
   };
 
   const handleToggle = async (id: string) => {
     await toggleTask(id);
+    emitDataChanged('tasks', [id]);
     await reload();
   };
 
   const handleDelete = async (id: string) => {
     await deleteTask(id);
+    emitDataChanged('tasks', [id]);
     await reload();
   };
 
-  const handleUpdate = async (id: string, patch: Partial<TaskItem>) => {
+  const handleUpdate = useCallback(async (id: string, patch: Partial<TaskItem>) => {
     await updateTask(id, patch);
+    emitDataChanged('tasks', [id]);
     await reload();
+  }, [reload]);
+
+  const startEditing = (task: TaskItem) => {
+    setEditingTaskId(task.id);
+    setEditingTitleDraft(task.title);
+  };
+
+  const commitEditingTitle = async (taskId: string) => {
+    const trimmed = editingTitleDraft.trim();
+    if (!trimmed) {
+      const original = tasks.find((t) => t.id === taskId);
+      if (original) setEditingTitleDraft(original.title);
+      return;
+    }
+    const current = tasks.find((t) => t.id === taskId);
+    if (current && current.title !== trimmed) {
+      await handleUpdate(taskId, { title: trimmed });
+    }
   };
 
   const handleAddSubtask = async (parentId: string) => {
@@ -157,6 +185,7 @@ export function TasksView() {
     if (!title) return;
     setSubtaskDrafts((prev) => ({ ...prev, [parentId]: '' }));
     await createTask({ title, parentId });
+    emitDataChanged('tasks');
     setExpandedParents((prev) => ({ ...prev, [parentId]: true }));
     await reload();
   };
@@ -203,7 +232,14 @@ export function TasksView() {
               <PriorityBadge priority={task.priority} />
               <button
                 type="button"
-                onClick={() => setEditingTaskId(isEditing ? null : task.id)}
+                onClick={() => {
+                  if (isEditing) {
+                    void commitEditingTitle(task.id);
+                    setEditingTaskId(null);
+                  } else {
+                    startEditing(task);
+                  }
+                }}
                 className={`text-left font-medium text-sm hover:underline focus:outline-none truncate max-w-full ${
                   task.done ? 'line-through text-[var(--text-muted)] opacity-60' : 'text-[var(--text)]'
                 }`}
@@ -271,7 +307,7 @@ export function TasksView() {
                   label={t.tasksAddSubtask}
                   onClick={() => {
                     setExpandedParents((prev) => ({ ...prev, [task.id]: true }));
-                    setEditingTaskId(task.id);
+                    startEditing(task);
                   }}
                 />
               )}
@@ -290,8 +326,15 @@ export function TasksView() {
             <div className="flex items-center gap-2">
               <input
                 type="text"
-                value={task.title}
-                onChange={(e) => handleUpdate(task.id, { title: e.target.value })}
+                value={editingTitleDraft}
+                onChange={(e) => setEditingTitleDraft(e.target.value)}
+                onBlur={() => void commitEditingTitle(task.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void commitEditingTitle(task.id);
+                  }
+                }}
                 className="w-full px-2.5 py-1.5 rounded-md bg-[var(--surface)] font-medium text-sm text-[var(--text)] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)]"
               />
             </div>
@@ -331,8 +374,8 @@ export function TasksView() {
                   value={task.startAt ? task.startAt.slice(11, 16) : ''}
                   onChange={(e) => {
                     const val = e.target.value;
-                    const datePart = task.dueDate || new Date().toISOString().slice(0, 10);
-                    const iso = val ? `${datePart}T${val}:00.000Z` : null;
+                    const datePart = task.dueDate || (task.startAt ? task.startAt.slice(0, 10) : dayKey(new Date()));
+                    const iso = val ? `${datePart}T${val}:00` : null;
                     void handleUpdate(task.id, { startAt: iso });
                   }}
                   className="px-2 py-1 rounded-md bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)]"

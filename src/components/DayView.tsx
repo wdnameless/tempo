@@ -16,6 +16,7 @@ import { buildDay, findConflicts, dayKey, type DayItem, type ConflictPair } from
 import { listEvents, createLocalEvent, type CalendarEvent } from '../services/events';
 import { listTasks, updateTask, moveTask } from '../services/tasks';
 import type { TaskItem } from '../types';
+import { onDataChanged, emitDataChanged } from '../services/appEvents';
 import { Segmented, type SegmentOption } from './ui';
 
 export type DayStep = 'plan' | 'execute' | 'review';
@@ -119,6 +120,16 @@ export function DayView() {
     void reload();
   }, [reload]);
 
+  // Subscribe to external data changes
+  useEffect(() => {
+    const unsubscribe = onDataChanged((table) => {
+      if (table === 'tasks' || table === 'events' || table === 'lists') {
+        void reload();
+      }
+    });
+    return unsubscribe;
+  }, [reload]);
+
   // Listen to search reveal events
   useEffect(() => {
     const onReveal = (event: Event) => {
@@ -193,6 +204,7 @@ export function DayView() {
   // Handlers
   const handleToggleTask = async (taskId: string, currentDone: boolean) => {
     await updateTask(taskId, { done: !currentDone });
+    emitDataChanged('tasks', [taskId]);
     await reload();
   };
 
@@ -207,6 +219,7 @@ export function DayView() {
     });
 
     setCarriedOverTaskIds((prev) => ({ ...prev, [taskId]: true }));
+    emitDataChanged('tasks', [taskId]);
     await reload();
   };
 
@@ -214,6 +227,7 @@ export function DayView() {
     await updateTask(taskId, {
       dueDate: targetKey,
     });
+    emitDataChanged('tasks', [taskId]);
     await reload();
   };
 
@@ -240,6 +254,7 @@ export function DayView() {
       allDay: eventAllDay,
     });
 
+    emitDataChanged('events');
     setEventTitle('');
     setShowNewEventForm(false);
     await reload();
@@ -253,6 +268,7 @@ export function DayView() {
       plannedMinutes: taskDurationMinutes,
     });
     setSchedulingTaskId(null);
+    emitDataChanged('tasks', [taskId]);
     await reload();
   };
 

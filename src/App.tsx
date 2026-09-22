@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Clock,
   CalendarDays,
@@ -28,7 +28,8 @@ import { NotesView } from './components/NotesView';
 import { DrawingsView } from './components/DrawingsView';
 import { StatsView } from './components/StatsView';
 import { RecordingsView } from './components/RecordingsView';
-import { AlarmCenter } from './components/AlarmCenter';
+import { AlarmCenter, type MissedAlarm } from './components/AlarmCenter';
+import { listen } from '@tauri-apps/api/event';
 import { UpdateBanner } from './components/UpdateBanner';
 import { CommandPalette } from './components/CommandPalette';
 import { SectionTabs } from './components/SectionTabs';
@@ -64,7 +65,7 @@ import {
 import { isTauri } from './services/platform';
 import { installShortcutLayer } from './services/shortcuts';
 import { onDataChanged } from './services/appEvents';
-import { listAlarms } from './services/alarms';
+import { listAlarms, toggleAlarm } from './services/alarms';
 import { listTasks } from './services/tasks';
 import { listNotes } from './services/notes';
 import { TimerService } from './services/timer';
@@ -202,6 +203,7 @@ function MainShell() {
 
   // Entities state
   const [alarms, setAlarms] = useState<AlarmItem[]>([]);
+  const [missedAlarms, setMissedAlarms] = useState<MissedAlarm[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [timerMinutes, setTimerMinutes] = useState<number | undefined>(undefined);
@@ -229,6 +231,35 @@ function MainShell() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
+  const handleDisableAlarm = useCallback(
+    (id: string) => {
+      setAlarms((prev) => {
+        const updated = prev.map((a) => (a.id === id ? { ...a, enabled: false } : a));
+        void StoreService.persist({ alarms: updated });
+        return updated;
+      });
+      void toggleAlarm(id, false);
+    },
+    [setAlarms],
+  );
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    listen<MissedAlarm>('alarm://missed', (event) => {
+      const item = event.payload;
+      if (!item || !item.id) return;
+      setMissedAlarms((prev) => {
+        if (prev.some((m) => m.id === item.id)) return prev;
+        return [...prev, item];
+      });
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, []);
   // Initialize theme accent and shortcut layer
   useEffect(() => {
     applyAccent(accentKey);
@@ -448,8 +479,9 @@ function MainShell() {
           firings={alarms}
           alarmVolume={alarmVolume}
           alarmEnabled={alarmEnabled}
-          missed={[]}
-          onDismissMissed={() => {}}
+          onDisableAlarm={handleDisableAlarm}
+          missed={missedAlarms}
+          onDismissMissed={() => setMissedAlarms([])}
           hydrated={hydrated}
         >
           {null}

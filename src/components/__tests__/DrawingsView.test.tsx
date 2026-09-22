@@ -132,7 +132,8 @@ describe('DrawingsView', () => {
     });
   });
 
-  it('deletes a drawing when delete button is clicked', async () => {
+  it('deletes a drawing when delete button is clicked and confirmed', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const mockDrawing: DrawingItem = {
       id: 'draw-to-del',
       title: 'To Delete',
@@ -160,8 +161,43 @@ describe('DrawingsView', () => {
     fireEvent.click(delBtn);
 
     await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalled();
       expect(drawingsService.deleteDrawing).toHaveBeenCalledWith('draw-to-del');
     });
+    confirmSpy.mockRestore();
+  });
+
+  it('does not delete drawing when confirmation is cancelled', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const mockDrawing: DrawingItem = {
+      id: 'draw-cancel',
+      title: 'Cancel Delete',
+      preview_path: null,
+      updated_at: '2026-09-20T00:00:00Z',
+    };
+    vi.mocked(drawingsService.listDrawings).mockResolvedValue([mockDrawing]);
+    vi.mocked(drawingsService.deleteDrawing).mockResolvedValue();
+    vi.mocked(drawingsService.getDrawingRaw).mockResolvedValue({
+      id: 'draw-cancel',
+      title: 'Cancel Delete',
+      scene_json: '{}',
+      preview_path: null,
+      updated_at: '2026-09-20T00:00:00Z',
+      deleted_at: null,
+    });
+
+    render(<DrawingsView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Cancel Delete')).toBeDefined();
+    });
+
+    const delBtn = screen.getByLabelText(t.drawingsDelete);
+    fireEvent.click(delBtn);
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(drawingsService.deleteDrawing).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 
   it('renders preview image using convertFileSrc with tempo-media scheme', async () => {
@@ -226,6 +262,50 @@ describe('DrawingsView', () => {
         );
       },
       { timeout: 2000 }
+    );
+  });
+
+  it('flushes pending debounced scene save on component unmount', async () => {
+    const mockDrawing: DrawingItem = {
+      id: 'draw-flush',
+      title: 'Flush Drawing',
+      preview_path: null,
+      updated_at: '2026-09-20T00:00:00Z',
+    };
+    vi.mocked(drawingsService.listDrawings).mockResolvedValue([mockDrawing]);
+    vi.mocked(drawingsService.getDrawingRaw).mockResolvedValue({
+      id: 'draw-flush',
+      title: 'Flush Drawing',
+      scene_json: '{}',
+      preview_path: null,
+      updated_at: '2026-09-20T00:00:00Z',
+      deleted_at: null,
+    });
+    vi.mocked(drawingsService.updateDrawing).mockResolvedValue({
+      id: 'draw-flush',
+      title: 'Flush Drawing',
+      preview_path: null,
+      updated_at: '2026-09-20T00:00:01Z',
+    });
+
+    const { unmount } = render(<DrawingsView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Flush Drawing')).toBeDefined();
+    });
+
+    const drawBtn = await screen.findByTestId('simulate-draw');
+    fireEvent.click(drawBtn);
+
+    // Unmount immediately without waiting 800ms
+    unmount();
+
+    // updateDrawing must have been flushed synchronously on unmount
+    expect(drawingsService.updateDrawing).toHaveBeenCalledWith(
+      'draw-flush',
+      expect.objectContaining({
+        scene_json: expect.stringContaining('elem-1'),
+      })
     );
   });
 });

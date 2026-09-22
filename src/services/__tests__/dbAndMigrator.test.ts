@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { repo, SCHEMA_VERSION, search, dbReady, dbPath } from '../db';
 import { getPref, setPref, subscribePrefs } from '../settings';
 import { StoreService, runLegacyMigration } from '../store';
@@ -8,6 +8,10 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
 
+let isTauriEnv = true;
+vi.mock('../platform', () => ({
+  isTauri: () => isTauriEnv,
+}));
 function tableOf(args: unknown): string | undefined {
   if (!args || typeof args !== 'object' || !('table' in args)) return undefined;
   return typeof args.table === 'string' ? args.table : undefined;
@@ -134,6 +138,66 @@ describe('Database layer (db.ts)', () => {
     expect(p).toBe('C:/app/data/tempo.db');
   });
 });
+
+  describe('Browser mode (isTauri() === false)', () => {
+    beforeEach(() => {
+      isTauriEnv = false;
+      vi.clearAllMocks();
+    });
+    afterEach(() => {
+      isTauriEnv = true;
+    });
+
+    it('all() returns empty array without calling invoke', async () => {
+      const taskRepo = repo<{ id: string; title: string; updated_at: string; deleted_at: string | null }>('tasks');
+      const rows = await taskRepo.all();
+      expect(rows).toEqual([]);
+      expect(mockInvoke).not.toHaveBeenCalled();
+    });
+
+    it('byId() returns null without calling invoke', async () => {
+      const noteRepo = repo<{ id: string; title: string; updated_at: string; deleted_at: string | null }>('notes');
+      const row = await noteRepo.byId('abc');
+      expect(row).toBeNull();
+      expect(mockInvoke).not.toHaveBeenCalled();
+    });
+
+    it('insert() and update() return in-memory entity without calling invoke', async () => {
+      interface TestRow {
+        id: string;
+        title: string;
+        updated_at: string;
+        deleted_at: string | null;
+      }
+      const taskRepo = repo<TestRow>('tasks');
+      const inserted = await taskRepo.insert({ title: 'New Task' });
+      expect(inserted.id).toBeDefined();
+      expect(inserted.title).toBe('New Task');
+      expect(mockInvoke).not.toHaveBeenCalled();
+
+      const updated = await taskRepo.update(inserted.id, { title: 'Updated Task' });
+      expect(updated.title).toBe('Updated Task');
+      expect(mockInvoke).not.toHaveBeenCalled();
+    });
+
+    it('remove() is a safe no-op without calling invoke', async () => {
+      const taskRepo = repo<{ id: string; title: string; updated_at: string; deleted_at: string | null }>('tasks');
+      await expect(taskRepo.remove('abc')).resolves.toBeUndefined();
+      expect(mockInvoke).not.toHaveBeenCalled();
+    });
+
+    it('dbPath() returns :memory: without calling invoke', async () => {
+      const path = await dbPath();
+      expect(path).toBe(':memory:');
+      expect(mockInvoke).not.toHaveBeenCalled();
+    });
+
+    it('search() returns empty array without calling invoke', async () => {
+      const hits = await search('test');
+      expect(hits).toEqual([]);
+      expect(mockInvoke).not.toHaveBeenCalled();
+    });
+  });
 
 describe('Settings layer (settings.ts)', () => {
   beforeEach(() => {

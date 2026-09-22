@@ -413,12 +413,20 @@ pub fn recording_level(state: tauri::State<'_, RecordingManager>) -> RecordingLe
 }
 
 #[tauri::command]
+pub fn preview_path_in(assets_dir: &Path) -> PathBuf {
+    assets_dir.join("screen").join("preview.png")
+}
+
+#[tauri::command]
 pub fn recording_preview(
     app: tauri::AppHandle,
     source_id: String,
 ) -> Result<String, String> {
     let dir = get_assets_dir(&app)?;
-    let target_path = choose_media_path(&dir, "screen", "png").map_err(String::from)?;
+    let target_path = preview_path_in(&dir);
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("Failed to create preview dir: {e}"))?;
+    }
     let out = screen::capture_preview_frame(&source_id, &target_path).map_err(String::from)?;
     Ok(out.to_string_lossy().to_string())
 }
@@ -442,6 +450,15 @@ mod tests {
         assert!(!bad_path.to_string_lossy().contains(".."));
 
         let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_preview_path_reuses_single_file() {
+        let temp_dir = std::env::temp_dir().join(format!("tempo_test_{}", Uuid::new_v4()));
+        let p1 = preview_path_in(&temp_dir);
+        let p2 = preview_path_in(&temp_dir);
+        assert_eq!(p1, p2);
+        assert_eq!(p1, temp_dir.join("screen").join("preview.png"));
     }
 
     #[test]

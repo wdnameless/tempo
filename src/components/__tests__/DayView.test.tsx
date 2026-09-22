@@ -32,6 +32,7 @@ vi.mock('../../services/day', () => ({
 import { listTasks, updateTask, moveTask } from '../../services/tasks';
 import { listEvents, createLocalEvent } from '../../services/events';
 import { buildDay, findConflicts } from '../../services/day';
+import * as appEvents from '../../services/appEvents';
 
 describe('DayView component', () => {
   const t = I18nService.t();
@@ -339,5 +340,73 @@ describe('DayView component', () => {
         done: true,
       });
     });
+  });
+
+  it('reloads when onDataChanged is emitted for tasks or events', async () => {
+    vi.mocked(listTasks).mockResolvedValue([]);
+    vi.mocked(listEvents).mockResolvedValue([]);
+    vi.mocked(buildDay).mockReturnValue([]);
+    vi.mocked(findConflicts).mockReturnValue([]);
+
+    render(<DayView />);
+
+    await waitFor(() => {
+      expect(listTasks).toHaveBeenCalledTimes(1);
+      expect(listEvents).toHaveBeenCalledTimes(1);
+    });
+
+    // Fire onDataChanged for tasks
+    appEvents.emitDataChanged('tasks');
+
+    await waitFor(() => {
+      expect(listTasks).toHaveBeenCalledTimes(2);
+      expect(listEvents).toHaveBeenCalledTimes(2);
+    });
+
+    // Fire onDataChanged for events
+    appEvents.emitDataChanged('events');
+
+    await waitFor(() => {
+      expect(listTasks).toHaveBeenCalledTimes(3);
+      expect(listEvents).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  it('emits dataChanged on task toggle in Execute step', async () => {
+    const emitSpy = vi.spyOn(appEvents, 'emitDataChanged');
+    const timedTask: DayItem = {
+      kind: 'task',
+      id: 'task-toggle-1',
+      title: 'Actionable item',
+      startMin: 600,
+      endMin: 660,
+      allDay: false,
+      done: false,
+      source: null,
+      ref: {} as TaskItem,
+    };
+
+    vi.mocked(listTasks).mockResolvedValue([]);
+    vi.mocked(listEvents).mockResolvedValue([]);
+    vi.mocked(buildDay).mockReturnValue([timedTask]);
+    vi.mocked(findConflicts).mockReturnValue([]);
+    vi.mocked(updateTask).mockResolvedValue({} as TaskItem);
+
+    render(<DayView />);
+
+    const executeBtn = screen.getByRole('radio', { name: t.dayStepExecute });
+    fireEvent.click(executeBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Actionable item')).toBeDefined();
+    });
+
+    const toggleBtn = screen.getByRole('button', { name: /Mark as completed/i });
+    fireEvent.click(toggleBtn);
+
+    await waitFor(() => {
+      expect(emitSpy).toHaveBeenCalledWith('tasks', ['task-toggle-1']);
+    });
+    emitSpy.mockRestore();
   });
 });

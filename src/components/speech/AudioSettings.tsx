@@ -31,6 +31,7 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({
   const [channelCount, setChannelCount] = useState<number>(1);
   const [isTestingMic, setIsTestingMic] = useState(false);
   const [meterLevel, setMeterLevel] = useState(0);
+  const [probeNotice, setProbeNotice] = useState<string | null>(null);
 
   // Load input devices on mount
   useEffect(() => {
@@ -72,29 +73,127 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({
     };
   }, [config.device]);
 
-  // Polling mic level when test microphone is active
+  // Live mic probe / polling when test microphone is active
   useEffect(() => {
     if (!isTestingMic) {
       return;
     }
 
     let active = true;
-    const interval = setInterval(async () => {
-      try {
-        const lvl = await micLevel();
-        if (active) {
-          setMeterLevel(Math.max(0, Math.min(1, lvl)));
+    let stream: MediaStream | null = null;
+    let audioCtx: AudioContext | null = null;
+    let intervalId: number | null = null;
+
+    const startProbe = async () => {
+      // SAFETY: webkitAudioContext is a legacy WebKit prefix fallback on window
+      const AudioCtxClass =
+        typeof window !== 'undefined'
+          ? window.AudioContext ||
+            (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+          : undefined;
+
+      if (
+        typeof navigator !== 'undefined' &&
+        navigator.mediaDevices &&
+        typeof navigator.mediaDevices.getUserMedia === 'function' &&
+        AudioCtxClass
+      ) {
+        try {
+          const constraints: MediaStreamConstraints = {
+            audio: config.device ? { deviceId: { ideal: config.device } } : true,
+          };
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          if (!active) {
+            stream.getTracks().forEach((track) => track.stop());
+            return;
+          }
+
+          audioCtx = new AudioCtxClass();
+          if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+          }
+
+          const source = audioCtx.createMediaStreamSource(stream);
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 256;
+          source.connect(analyser);
+
+          const dataArray = new Float32Array(analyser.fftSize);
+
+          intervalId = window.setInterval(() => {
+            if (!active) return;
+            if (typeof analyser.getFloatTimeDomainData === 'function') {
+              analyser.getFloatTimeDomainData(dataArray);
+              let sumSquares = 0;
+              for (let i = 0; i < dataArray.length; i++) {
+                const val = dataArray[i];
+                sumSquares += val * val;
+              }
+              const rms = Math.sqrt(sumSquares / dataArray.length);
+              const scaled = Math.min(1, Math.max(0, rms * 4));
+              setMeterLevel(scaled);
+            } else {
+              const byteData = new Uint8Array(analyser.frequencyBinCount);
+              analyser.getByteFrequencyData(byteData);
+              let sum = 0;
+              for (let i = 0; i < byteData.length; i++) {
+                sum += byteData[i];
+              }
+              const avg = sum / byteData.length;
+              setMeterLevel(Math.min(1, Math.max(0, (avg / 128) * 1.5)));
+            }
+          }, 50);
+          return;
+        } catch (err) {
+          console.warn('WebAudio mic probe failed, falling back to backend micLevel():', err);
+          if (active) {
+            setProbeNotice(
+              I18nService.getLang() === 'ru'
+                ? 'Для проверки микрофона требуется доступ к аудио; уровень будет отображаться во время диктовки.'
+                : 'Live microphone test requires audio permission or active dictation.'
+            );
+          }
         }
-      } catch {
-        // Polling failure, e.g. device disconnected
+      } else {
+        if (active) {
+          setProbeNotice(
+            I18nService.getLang() === 'ru'
+              ? 'Для проверки микрофона требуется доступ к аудио; уровень будет отображаться во время диктовки.'
+              : 'Live microphone test requires audio permission or active dictation.'
+          );
+        }
       }
-    }, 100);
+
+      // Fallback: poll backend micLevel()
+      intervalId = window.setInterval(async () => {
+        try {
+          const lvl = await micLevel();
+          if (active) {
+            setMeterLevel(Math.max(0, Math.min(1, lvl)));
+          }
+        } catch {
+          // Silently ignore device/backend polling failures
+        }
+      }, 100);
+    };
+
+    void startProbe();
 
     return () => {
       active = false;
-      clearInterval(interval);
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+      if (audioCtx && audioCtx.state !== 'closed') {
+        void audioCtx.close().catch(() => {});
+      }
+      setMeterLevel(0);
+      setProbeNotice(null);
     };
-  }, [isTestingMic]);
+  }, [isTestingMic, config.device]);
 
   const vadOptions: { value: VadBackend; label: string }[] = [
     { value: 'energy', label: t.settingsSpeechVadEnergy || 'Energy (RMS)' },
@@ -274,6 +373,15 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({
               }}
             />
           </div>
+          {isTestingMic && probeNotice && (
+            <div
+              data-testid="mic-probe-notice"
+              className="text-xs pt-1"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              {probeNotice}
+            </div>
+          )}
         </div>
       </div>
     </div>

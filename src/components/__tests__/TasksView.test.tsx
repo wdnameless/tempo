@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { TasksView } from '../TasksView';
 import * as tasksService from '../../services/tasks';
+import * as appEvents from '../../services/appEvents';
 import { StoreService } from '../../services/store';
 import type { TaskItem } from '../../types';
 
@@ -196,5 +197,85 @@ describe('TasksView', () => {
     });
 
     expect(document.querySelector('[data-task-row="task-1"]')?.getAttribute('style')).toBeNull();
+  });
+
+  it('editing title maintains local draft and only updates DB on blur or Enter', async () => {
+    await act(async () => {
+      render(<TasksView />);
+    });
+
+    // Click title to enter editing mode
+    const titleBtn = screen.getByText('Buy groceries');
+    fireEvent.click(titleBtn);
+
+    // Find the input with 'Buy groceries'
+    const inputs = screen.getAllByDisplayValue('Buy groceries');
+    const input = inputs[0];
+
+    // Change title without blurring
+    fireEvent.change(input, { target: { value: 'Buy organic groceries' } });
+
+    // Should NOT call updateTask yet on keystroke
+    expect(tasksService.updateTask).not.toHaveBeenCalled();
+
+    // Blur input
+    fireEvent.blur(input);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(tasksService.updateTask).toHaveBeenCalledWith('task-1', {
+      title: 'Buy organic groceries',
+    });
+  });
+
+  it('sets startAt as local ISO without trailing Z', async () => {
+    await act(async () => {
+      render(<TasksView />);
+    });
+
+    // Enter editing mode for task-1 (which has dueDate '2026-09-21')
+    const titleBtn = screen.getByText('Buy groceries');
+    fireEvent.click(titleBtn);
+
+    // Find the time input
+    const timeInput = document.querySelector('input[type="time"]') as HTMLInputElement;
+    expect(timeInput).toBeTruthy();
+
+    // Set time to 22:00
+    fireEvent.change(timeInput, { target: { value: '22:00' } });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Must be local ISO without 'Z'
+    expect(tasksService.updateTask).toHaveBeenCalledWith(
+      'task-1',
+      expect.objectContaining({
+        startAt: '2026-09-21T22:00:00',
+      })
+    );
+    const lastCall = vi.mocked(tasksService.updateTask).mock.calls[0];
+    expect(lastCall[1].startAt).not.toMatch(/Z$/);
+  });
+
+  it('emits dataChanged on create, toggle, update, and delete', async () => {
+    const emitSpy = vi.spyOn(appEvents, 'emitDataChanged');
+
+    await act(async () => {
+      render(<TasksView />);
+    });
+
+    const markBtn = screen.getAllByRole('button', { name: 'Новая задача' })[0];
+    fireEvent.click(markBtn);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(emitSpy).toHaveBeenCalledWith('tasks', ['task-1']);
+    emitSpy.mockRestore();
   });
 });

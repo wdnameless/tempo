@@ -128,10 +128,14 @@ describe('StatsView', () => {
 
     // Period total label updates specifically via data-testid
     expect(screen.getByTestId('period-focus-label').textContent).toBe('Фокус (12 недель)');
+    expect(screen.getByTestId('chart-period-subtitle').textContent).toBe('LAST 12 WEEKS');
+    expect(screen.getByTestId('chart-bars').children.length).toBe(12);
 
     const dayBtn = screen.getByTestId('toggle-period-day');
     fireEvent.click(dayBtn);
     expect(screen.getByTestId('period-focus-label').textContent).toBe('Фокус (14 дней)');
+    expect(screen.getByTestId('chart-period-subtitle').textContent).toBe('LAST 14 DAYS');
+    expect(screen.getByTestId('chart-bars').children.length).toBe(14);
   });
 
   it('the heat map renders weeks * 7 cells', async () => {
