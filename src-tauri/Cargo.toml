@@ -1,6 +1,6 @@
 [package]
 name = "tempo"
-version = "0.19.1"
+version = "0.19.2"
 description = "Tempo backend: alarm scheduler, countdown timer, alarm audio and AI gateway"
 authors = ["Tempo"]
 edition = "2021"

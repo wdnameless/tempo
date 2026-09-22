@@ -152,10 +152,26 @@ describe('App Shell', () => {
     expect(alarmsRadio.getAttribute('aria-checked')).toBe('true');
   });
 
-  it('displays the version from currentVersion service in sidebar', async () => {
+  it('does not render Tempo branding or version in sidebar', () => {
     render(<App />);
     const sidebar = screen.getByTestId('sidebar');
-    expect(await within(sidebar).findByText('v0.18.2')).toBeDefined();
+    expect(within(sidebar).queryByText('Tempo')).toBeNull();
+    expect(within(sidebar).queryByText(/0\.18\.2/)).toBeNull();
+  });
+
+  it('does not render AI assistant in sidebar, but right-edge AI control opens drawer', () => {
+    render(<App />);
+    const sidebar = screen.getByTestId('sidebar');
+    expect(within(sidebar).queryByRole('button', { name: /AI Ассистент/i })).toBeNull();
+    expect(within(sidebar).queryByText('AI Ассистент')).toBeNull();
+
+    // Drawer is closed initially
+    expect(screen.queryByText('Tempo Assistant')).toBeNull();
+
+    // Right-edge button opens the drawer
+    const rightEdgeButton = screen.getByRole('button', { name: /Раскрыть AI Co-Pilot|AI/i });
+    fireEvent.click(rightEdgeButton);
+    expect(screen.getByText('Tempo Assistant')).toBeDefined();
   });
 
   it('handles tempo:toggle-sidebar event on window', () => {

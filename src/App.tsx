@@ -59,7 +59,6 @@ import {
   detectPortable,
   checkForUpdate,
   installUpdate,
-  currentVersion,
   UpdateInfo,
 } from './services/update';
 import { isTauri } from './services/platform';
@@ -321,6 +320,7 @@ function MainShell() {
       try {
         if (table === 'alarms') {
           const fresh = await listAlarms();
+          // SAFETY: Alarm with label mapped to title satisfies AlarmItem
           setAlarms(fresh.map((a) => ({ ...a, title: a.label } as unknown as AlarmItem)));
         } else if (table === 'tasks') {
           const fresh = await listTasks();
@@ -347,13 +347,6 @@ function MainShell() {
     });
   }, []);
 
-  const [sidebarVersion, setSidebarVersion] = useState<string>('');
-
-  useEffect(() => {
-    void currentVersion().then((v) => {
-      if (v) setSidebarVersion(v);
-    });
-  }, []);
 
   // Update check
   useEffect(() => {
@@ -497,17 +490,6 @@ function MainShell() {
             }`}
           >
             <div className="flex flex-col p-2 gap-1">
-              {!sidebarCollapsed && (
-                <div className="flex items-center gap-2.5 px-3 py-2.5 border-b border-white/10 mb-1 select-none">
-                  <div className="w-7 h-7 rounded-lg bg-white/10 border border-white/15 flex items-center justify-center text-white shrink-0 shadow-xs">
-                    <Clock className="w-3.5 h-3.5 text-white" />
-                  </div>
-                  <div className="flex flex-col leading-none min-w-0">
-                    <span className="text-xs font-bold text-white tracking-wide">Tempo</span>
-                    <span className="text-[10px] font-mono text-white/40 tracking-wider mt-0.5">{sidebarVersion ? (sidebarVersion.startsWith('v') ? sidebarVersion : `v${sidebarVersion}`) : ''}</span>
-                  </div>
-                </div>
-              )}
               {navSections.map((section) => {
                 const isActive = currentSection.id === section.id;
                 return (
@@ -531,23 +513,6 @@ function MainShell() {
             </div>
 
             <div className="p-2 border-t border-white/10 flex flex-col gap-1">
-              <button
-                onClick={() => {
-                  soundService.playUiClick();
-                  setIsAiOpen((prev) => !prev);
-                }}
-                title={sidebarCollapsed ? 'AI Ассистент' : undefined}
-                aria-label="AI Ассистент"
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                  isAiOpen
-                    ? 'bg-white/10 text-white font-semibold'
-                    : 'text-white/50 hover:text-white hover:bg-white/5'
-                } ${sidebarCollapsed ? 'justify-center px-0' : ''}`}
-              >
-                <Bot size={18} className="shrink-0" />
-                {!sidebarCollapsed && <span className="truncate">AI Ассистент</span>}
-              </button>
-
               <button
                 data-testid="sidebar-collapse-button"
                 onClick={handleToggleSidebar}
@@ -726,6 +691,7 @@ function MainShell() {
               onClick={() => setIsAiOpen(true)}
               className="absolute right-0 top-1/2 -translate-y-1/2 z-40 flex items-center space-x-1.5 py-3 px-2 rounded-l-xl border border-r-0 shadow-2xl backdrop-blur-md transition-all active:scale-95 group hover:px-2.5 bg-[var(--surface)] border-[var(--border)]"
               title="Раскрыть AI Co-Pilot"
+              aria-label="Раскрыть AI Co-Pilot"
             >
               <div className="flex flex-col items-center space-y-1.5 opacity-55 group-hover:opacity-100 transition-opacity">
                 <Bot size={16} className="text-[var(--text)]" />

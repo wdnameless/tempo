@@ -6,16 +6,10 @@ interface IconProps {
   color?: string;
 }
 
-// Custom hand-drawn hourglass with organic strokes
+// Custom minimalist hand-drawn hourglass: thin single-line drawing with generous whitespace
 export const HandHourglass: React.FC<IconProps> = ({ size = 16, className = '', color = 'currentColor' }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <path d="M5 3.5h14" />
-    <path d="M5 20.5h14" />
-    <path d="M6 3.5c0 6 5.5 8.5 6 8.5-0.5 0-6 2.5-6 8.5" />
-    <path d="M18 3.5c0 6-5.5 8.5-6 8.5 0.5 0 6 2.5 6 8.5" />
-    <circle cx="12" cy="16" r="0.8" fill={color} stroke="none" />
-    <circle cx="11.2" cy="18" r="0.7" fill={color} stroke="none" />
-    <circle cx="12.8" cy="18.2" r="0.6" fill={color} stroke="none" />
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M 7.0 5.2 C 10.4 5.0 13.6 5.1 17.0 4.9 C 15.4 7.8 13.4 10.3 12.1 11.9 C 13.5 14.1 15.3 16.9 16.8 19.3 C 13.6 19.4 10.4 19.5 7.2 19.5 C 8.7 17.0 10.6 14.2 11.9 12.1 C 10.6 10.0 8.6 7.5 7.0 5.2 Z" />
   </svg>
 );
 

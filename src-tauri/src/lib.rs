@@ -5,13 +5,14 @@ use std::sync::{Mutex, OnceLock};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Emitter, Manager,
+    Emitter, Listener, Manager,
 };
 use scheduler::ScheduledAlarm;
 use base64::Engine;
 mod ai;
 mod alarm_sound;
 mod credentials;
+pub mod hourglass;
 mod media_protocol;
 mod portable_update;
 pub mod recording;
@@ -166,16 +167,21 @@ async fn has_api_key() -> Result<bool, String> {
 
 /// Silences a ring started by the backend (window hidden or in the tray).
 #[tauri::command]
-async fn stop_alarm_sound() -> Result<(), String> {
+async fn stop_alarm_sound(app: tauri::AppHandle) -> Result<(), String> {
     alarm_sound::stop();
+    hourglass::stop_animation(&app);
     Ok(())
 }
 
 /// Id of the alarm still ringing, so a window opened late still shows the
 /// takeover for an alarm that started while it was hidden.
 #[tauri::command]
-async fn ringing_alarm_id() -> Result<Option<String>, String> {
-    Ok(alarm_sound::ringing_id())
+async fn ringing_alarm_id(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let id = alarm_sound::ringing_id();
+    if id.is_some() {
+        hourglass::start_animation(&app);
+    }
+    Ok(id)
 }
 
 /// Pushes the user's alarm volume and mute state down to the backend.
@@ -386,18 +392,20 @@ async fn sync_alarms(alarms: Vec<ScheduledAlarm>) -> Result<(), String> {
 
 /// Deletes an alarm's pending state and silences it.
 #[tauri::command]
-async fn snooze_alarm(id: String, minutes: u32) -> Result<(), String> {
+async fn snooze_alarm(app: tauri::AppHandle, id: String, minutes: u32) -> Result<(), String> {
     alarm_sound::stop();
+    hourglass::stop_animation(&app);
     scheduler::snooze(&id, minutes);
     Ok(())
 }
 
 /// Marks an alarm as acknowledged.
 #[tauri::command]
-async fn dismiss_alarm(id: String) -> Result<(), String> {
+async fn dismiss_alarm(app: tauri::AppHandle, id: String) -> Result<(), String> {
     // The backend may be the one ringing (window hidden); silencing it here is
     // what makes Stop work when the webview never saw the alarm.
     alarm_sound::stop();
+    hourglass::stop_animation(&app);
     scheduler::dismiss(&id);
     Ok(())
 }
@@ -637,7 +645,7 @@ pub fn run() {
             let default_icon = app.default_window_icon().cloned();
 
             // Setup Tray Icon
-            let mut builder = TrayIconBuilder::new()
+            let mut builder = TrayIconBuilder::with_id(hourglass::TRAY_ID)
                 .menu(&menu)
                 .tooltip("Tempo — Умный таймер");
             let hourglass_bytes = include_bytes!("../icons/icon.ico");
@@ -695,6 +703,15 @@ pub fn run() {
 
             // The timer tick loop outlives any screen it is displayed on.
             timer::spawn(app.handle().clone());
+
+            // Flip the hourglass tray icon while an alarm is ringing
+            let app_handle = app.handle().clone();
+            let _ = app.listen("alarm://fired", move |_| {
+                hourglass::start_animation(&app_handle);
+            });
+            if alarm_sound::ringing_id().is_some() {
+                hourglass::start_animation(app.handle());
+            }
 
             // Started by the OS at login: come up in the tray, as promised, and
             // let the scheduler wake the window when an alarm actually rings.
