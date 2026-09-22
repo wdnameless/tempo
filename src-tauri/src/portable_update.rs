@@ -239,10 +239,12 @@ pub fn has_staged_update() -> bool {
 /// installed path does — one signing identity, checked in two places.
 const PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ3NzBCNDFGRDUyMjE3NjEKUldSaEZ5TFZIN1J3UnpZV2pWWmhTeXdiWmVZMlpZdFJnbnVGSFEyS1lBb1lxa0FIRVVHY3ZBak8K";
 
-/// Where the release manifest lives. Same file the installed build reads.
-/// Kept on wdnameless/Alarmer because the GitHub repository is not being renamed.
+/// Where the release manifest lives. Same file the installed build reads, and
+/// the same repository the product ships from — the older `wdnameless/Alarmer`
+/// repository no longer exists, so a portable build pointed at it would never
+/// see an update again.
 const MANIFEST_URL: &str =
-    "https://github.com/wdnameless/Alarmer/releases/latest/download/latest.json";
+    "https://github.com/wdnameless/tempo/releases/latest/download/latest.json";
 /// Decodes the public key Tauri ships (base64 of a minisign `key` file).
 fn decode_public_key() -> Result<minisign_verify::PublicKey, String> {
     let raw = base64::engine::general_purpose::STANDARD

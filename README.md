@@ -35,7 +35,7 @@
 
 ## Обновления
 
-Приложение обновляется само, из релизов **этого** репозитория (`wdnameless/Alarmer`). Два пути, потому
+Приложение обновляется само, из релизов **этого** репозитория (`wdnameless/tempo`). Два пути, потому
 что приложение поставляется двумя способами и они не могут использовать один:
 
 | Сборка | Как обновляется |
@@ -50,7 +50,7 @@ NSIS-установщик, который пишет в `Program Files` и ре�
 Оба пути читают один `latest.json`, который публикуется на каждом релизе:
 
 ```
-https://github.com/wdnameless/Alarmer/releases/latest/download/latest.json
+https://github.com/wdnameless/tempo/releases/latest/download/latest.json
 ```
 ### Ключ подписи
 

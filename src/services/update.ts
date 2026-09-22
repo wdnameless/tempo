@@ -20,10 +20,11 @@ import { StoreService } from './store';
 
 /**
  * Where the app looks for updates. Fixed to this project's own releases.
- * The GitHub repository stays wdnameless/Alarmer while the product is renamed to Tempo.
+ * `wdnameless/tempo` is the repository the product ships from; the old
+ * `wdnameless/Alarmer` name is gone, and an update check against it would 404.
  */
 export const UPDATE_ENDPOINT =
-  'https://github.com/wdnameless/Alarmer/releases/latest/download/latest.json';
+  'https://github.com/wdnameless/tempo/releases/latest/download/latest.json';
 
 /** What an update looks like to the UI. */
 export interface UpdateInfo {
