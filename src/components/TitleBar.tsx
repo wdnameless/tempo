@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Minus, X, Maximize2, Minimize2, Pin, PinOff, PictureInPicture2, Globe, RefreshCw } from 'lucide-react';
 import { ThemeColors } from '../types';
 import { WindowService } from '../services/window';
-
+import { currentVersion } from '../services/update';
 interface TitleBarProps {
   theme?: ThemeColors;
   isCompact: boolean;
@@ -27,6 +27,32 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   updateStatus,
   onCheckUpdate,
 }) => {
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void currentVersion()
+      .then((v) => {
+        if (!active) return;
+        const trimmed = v?.trim();
+        if (trimmed && trimmed !== 'dev' && trimmed !== 'unknown') {
+          setVersion(trimmed);
+        }
+      })
+      .catch(() => {
+        // Fallback: show nothing if resolution fails
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const displayVersion = version
+    ? version.startsWith('v') || version.startsWith('V')
+      ? version
+      : `v${version}`
+    : null;
+
   return (
     <div
       data-tauri-drag-region
@@ -43,7 +69,6 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <span className="text-sm font-black tracking-[0.25em] uppercase text-white font-sans leading-none">
               TEMPO
             </span>
-            <div className="w-5 h-[2px] bg-white mt-1 rounded-full" />
           </div>
         )}
         {isCompact && (
@@ -76,10 +101,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       </div>
 
       <div className="flex items-center space-x-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-        <div className="flex flex-col items-end mr-2 select-none leading-none opacity-60 hover:opacity-90 transition-opacity">
-          <span className="text-[11px] font-mono tracking-widest font-bold text-white">TEMPO</span>
-          <span className="text-[9px] font-mono text-white/50 tracking-wider mt-0.5">V.0.16.0</span>
-        </div>
+        {displayVersion && (
+          <div className="h-7 flex items-center mr-2 select-none leading-none opacity-60 hover:opacity-90 transition-opacity">
+            <span className="text-[9px] font-mono text-white/50 tracking-wider">
+              {displayVersion}
+            </span>
+          </div>
+        )}
         {/* Language switch RU/EN */}
         {onToggleLang && (
           <button

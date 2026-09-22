@@ -1,12 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Bell,
   Clock,
-  CheckSquare,
-  ListChecks,
   CalendarDays,
   Calendar,
-  PenTool,
   FileText,
   BarChart2,
   Settings,
@@ -35,6 +31,7 @@ import { RecordingsView } from './components/RecordingsView';
 import { AlarmCenter } from './components/AlarmCenter';
 import { UpdateBanner } from './components/UpdateBanner';
 import { CommandPalette } from './components/CommandPalette';
+import { SectionTabs } from './components/SectionTabs';
 
 import { DictationIndicator } from './components/DictationIndicator';
 import { DynamicBackground } from './components/DynamicBackground';
@@ -62,6 +59,7 @@ import {
   detectPortable,
   checkForUpdate,
   installUpdate,
+  currentVersion,
   UpdateInfo,
 } from './services/update';
 import { isTauri } from './services/platform';
@@ -157,7 +155,15 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-type ScreenId = 'dashboard' | 'day' | 'calendar' | 'alarms' | 'tasks' | 'lists' | 'notes' | 'drawings' | 'recordings' | 'stats' | 'settings';
+export type ScreenId = 'dashboard' | 'day' | 'calendar' | 'alarms' | 'tasks' | 'lists' | 'notes' | 'drawings' | 'recordings' | 'stats' | 'settings';
+type SectionId = 'dashboard' | 'day' | 'calendar' | 'notes' | 'recordings' | 'stats' | 'settings';
+
+interface NavSection {
+  id: SectionId;
+  label: string;
+  icon: React.ReactNode;
+  tabs: ScreenId[];
+}
 
 /**
  * True when this webview is the mini overlay window rather than the main app.
@@ -341,6 +347,14 @@ function MainShell() {
     });
   }, []);
 
+  const [sidebarVersion, setSidebarVersion] = useState<string>('');
+
+  useEffect(() => {
+    void currentVersion().then((v) => {
+      if (v) setSidebarVersion(v);
+    });
+  }, []);
+
   // Update check
   useEffect(() => {
     if (!isTauri()) return;
@@ -394,19 +408,38 @@ function MainShell() {
     ...dynamicUi.colors,
   };
 
-  const navItems: Array<{ id: ScreenId; label: string; icon: React.ReactNode }> = [
-    { id: 'dashboard', label: t.navDashboard, icon: <Clock size={18} /> },
-    { id: 'day', label: t.navDay, icon: <CalendarDays size={18} /> },
-    { id: 'calendar', label: t.navCalendar, icon: <Calendar size={18} /> },
-    { id: 'alarms', label: t.navAlarms, icon: <Bell size={18} /> },
-    { id: 'tasks', label: t.navTasks, icon: <CheckSquare size={18} /> },
-    { id: 'lists', label: t.navLists, icon: <ListChecks size={18} /> },
-    { id: 'notes', label: t.navNotes, icon: <FileText size={18} /> },
-    { id: 'drawings', label: t.navDrawings, icon: <PenTool size={18} /> },
-    { id: 'recordings', label: t.navRecordings, icon: <Mic size={18} /> },
-    { id: 'stats', label: t.navStats, icon: <BarChart2 size={18} /> },
-    { id: 'settings', label: t.navSettings, icon: <Settings size={18} /> },
+  const navSections: NavSection[] = [
+    { id: 'dashboard', label: t.navDashboard, icon: <Clock size={18} />, tabs: ['dashboard', 'alarms'] },
+    { id: 'day', label: t.navDay, icon: <CalendarDays size={18} />, tabs: ['day', 'tasks', 'lists'] },
+    { id: 'calendar', label: t.navCalendar, icon: <Calendar size={18} />, tabs: ['calendar'] },
+    { id: 'notes', label: t.navNotes, icon: <FileText size={18} />, tabs: ['notes', 'drawings'] },
+    { id: 'recordings', label: t.navRecordings, icon: <Mic size={18} />, tabs: ['recordings'] },
+    { id: 'stats', label: t.navStats, icon: <BarChart2 size={18} />, tabs: ['stats'] },
+    { id: 'settings', label: t.navSettings, icon: <Settings size={18} />, tabs: ['settings'] },
   ];
+
+  const currentSection = navSections.find((s) => s.tabs.includes(activeTab)) ?? navSections[0];
+
+  const handleSectionClick = (section: NavSection) => {
+    soundService.playUiClick();
+    setActiveTab(section.tabs[0]);
+  };
+
+  const getTabLabel = (id: ScreenId): string => {
+    switch (id) {
+      case 'dashboard': return t.navDashboard;
+      case 'alarms': return t.navAlarms;
+      case 'day': return t.navDay;
+      case 'tasks': return t.navTasks;
+      case 'lists': return t.navLists;
+      case 'calendar': return t.navCalendar;
+      case 'notes': return t.navNotes;
+      case 'drawings': return t.navDrawings;
+      case 'recordings': return t.navRecordings;
+      case 'stats': return t.navStats;
+      case 'settings': return t.navSettings;
+    }
+  };
 
   return (
     <ErrorBoundary>
@@ -471,18 +504,18 @@ function MainShell() {
                   </div>
                   <div className="flex flex-col leading-none min-w-0">
                     <span className="text-xs font-bold text-white tracking-wide">Tempo</span>
-                    <span className="text-[10px] font-mono text-white/40 tracking-wider mt-0.5">v0.16.0</span>
+                    <span className="text-[10px] font-mono text-white/40 tracking-wider mt-0.5">{sidebarVersion ? (sidebarVersion.startsWith('v') ? sidebarVersion : `v${sidebarVersion}`) : ''}</span>
                   </div>
                 </div>
               )}
-              {navItems.map((item) => {
-                const isActive = activeTab === item.id;
+              {navSections.map((section) => {
+                const isActive = currentSection.id === section.id;
                 return (
                   <button
-                    key={item.id}
-                    onClick={() => handleNavigate(item.id)}
-                    title={sidebarCollapsed ? item.label : undefined}
-                    aria-label={item.label}
+                    key={section.id}
+                    onClick={() => handleSectionClick(section)}
+                    title={sidebarCollapsed ? section.label : undefined}
+                    aria-label={section.label}
                     aria-current={isActive ? 'page' : undefined}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors relative ${
                       isActive
@@ -490,8 +523,8 @@ function MainShell() {
                         : 'text-white/50 hover:text-white hover:bg-white/5'
                     } ${sidebarCollapsed ? 'justify-center px-0' : ''}`}
                   >
-                    <span className="shrink-0">{item.icon}</span>
-                    {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+                    <span className="shrink-0">{section.icon}</span>
+                    {!sidebarCollapsed && <span className="truncate">{section.label}</span>}
                   </button>
                 );
               })}
@@ -552,6 +585,14 @@ function MainShell() {
 
           {/* Main content area */}
           <main className="flex-1 flex flex-col overflow-hidden bg-[var(--bg)] relative">
+            <SectionTabs
+              activeTab={activeTab}
+              tabs={currentSection.tabs.map((tabId) => ({
+                id: tabId,
+                label: getTabLabel(tabId),
+              }))}
+              onChange={handleNavigate}
+            />
             <div className={`flex-1 overflow-y-auto overflow-x-hidden ${['dashboard', 'drawings', 'stats'].includes(activeTab) ? 'p-0' : 'p-6'}`}>
               {activeTab === 'dashboard' && (
                 <DashboardView
