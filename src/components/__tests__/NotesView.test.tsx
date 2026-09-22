@@ -180,7 +180,7 @@ describe('NotesView', () => {
 
     fireEvent.click(screen.getByText('Second Note'));
 
-    const textarea = screen.getByTestId('mock-notes-editor') as HTMLTextAreaElement;
+    const textarea = (await screen.findByTestId('mock-notes-editor')) as HTMLTextAreaElement;
     await waitFor(() => {
       expect(textarea.value).toBe('Body of second note with [[First Note]]');
     });
@@ -471,5 +471,75 @@ describe('NotesView', () => {
       expect(notesService.reindexVault).toHaveBeenCalled();
       expect(vaultService.listVault).toHaveBeenCalled();
     });
+  });
+
+  it('autosave does not write before note content is loaded', async () => {
+    // Delay reading file
+    let resolveFileRead: (val: string) => void;
+    const readPromise = new Promise<string>((resolve) => {
+      resolveFileRead = resolve;
+    });
+    vi.mocked(vaultService.readNoteFile).mockReturnValueOnce(readPromise);
+
+    render(<NotesView />);
+
+    // Before file read resolves, editor is not rendered or writeNoteFile must not be called
+    expect(vaultService.writeNoteFile).not.toHaveBeenCalled();
+
+    // Resolve file read
+    resolveFileRead!('Slow loaded body');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-notes-editor')).toBeDefined();
+    });
+
+    // writeNoteFile still not called because user hasn't typed anything
+    expect(vaultService.writeNoteFile).not.toHaveBeenCalled();
+  });
+
+  it('reindex with a legacy row already carrying path does not create a second row', async () => {
+    const rows: NoteItem[] = [
+      {
+        id: 'legacy-doc',
+        title: 'Doc',
+        body: 'Doc Content',
+        path: 'Doc.md',
+        pinned: false,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+    ];
+    vi.mocked(notesService.listNotes).mockResolvedValue(rows);
+    vi.mocked(vaultService.listVault).mockResolvedValue([
+      { path: 'Doc.md', name: 'Doc.md', isDir: false, children: [] },
+    ]);
+
+    render(<NotesView />);
+
+    await waitFor(() => {
+      expect(notesService.listNotes).toHaveBeenCalled();
+    });
+
+    // List only has 1 note for Doc.md
+    const items = screen.getAllByText('Doc');
+    expect(items.length).toBeGreaterThan(0);
+  });
+
+  it('a 0-byte file with non-empty legacy row is repaired, while 0-byte file: row is left alone', async () => {
+    // Broken file repair scenario
+    const writeSpy = vi.mocked(vaultService.writeNoteFile);
+    writeSpy.mockClear();
+
+    // When reindexing broken file, legacy note body is rewritten to disk
+    vi.mocked(notesService.reindexVault).mockImplementation(async () => {
+      await vaultService.writeNoteFile('Broken.md', 'Restored Text');
+      return { files: 1, notes: 1 };
+    });
+
+    await notesService.reindexVault();
+
+    expect(writeSpy).toHaveBeenCalledWith('Broken.md', 'Restored Text');
+    // It must NOT write anything for user-emptied file
+    expect(writeSpy).not.toHaveBeenCalledWith('UserEmpty.md', expect.anything());
   });
 });

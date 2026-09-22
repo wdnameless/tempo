@@ -56,6 +56,8 @@ export function NotesView(): React.ReactElement {
   const [backlinks, setBacklinks] = useState<BacklinkItem[]>([]);
   const [externalConflict, setExternalConflict] = useState<{ diskContent: string } | null>(null);
 
+  const [loadedNoteId, setLoadedNoteId] = useState<string | null>(null);
+  const loadedNoteIdRef = useRef<string | null>(null);
   /**
    * The note+body combination whose links were found to be broken.
    */
@@ -109,6 +111,8 @@ export function NotesView(): React.ReactElement {
         }
         setBody(initialBody);
         setLastSavedBody(initialBody);
+        loadedNoteIdRef.current = active.id;
+        setLoadedNoteId(active.id);
 
         void backlinksOf('note', active.id).then((bl) => {
           setBacklinks(bl || []);
@@ -233,6 +237,9 @@ export function NotesView(): React.ReactElement {
   const saveCurrentNote = useCallback(
     async (bodyToSave: string, titleToSave?: string) => {
       if (!selectedNoteId) return;
+      if (loadedNoteIdRef.current !== selectedNoteId) {
+        return;
+      }
       const targetTitle = titleToSave !== undefined ? titleToSave : title;
       const filePath = selectedPath;
 
@@ -260,8 +267,10 @@ export function NotesView(): React.ReactElement {
   // Handle editor text change (debounced write)
   const handleBodyChange = useCallback(
     (newBody: string) => {
+      if (loadedNoteIdRef.current !== selectedNoteId) {
+        return;
+      }
       setBody(newBody);
-
       // Check [[ autocomplete
       const lastOpenIndex = newBody.lastIndexOf('[[');
       if (lastOpenIndex !== -1) {
@@ -287,16 +296,19 @@ export function NotesView(): React.ReactElement {
         void saveCurrentNote(newBody);
       }, 500);
     },
-    [saveCurrentNote]
+    [saveCurrentNote, selectedNoteId]
   );
 
   // Immediate save on Ctrl+S / blur
   const handleEditorSave = useCallback(
     (markdownText: string) => {
+      if (loadedNoteIdRef.current !== selectedNoteId) {
+        return;
+      }
       clearTimeout(saveTimeoutRef.current ?? undefined);
       void saveCurrentNote(markdownText);
     },
-    [saveCurrentNote]
+    [saveCurrentNote, selectedNoteId]
   );
 
   // Select note from tree by relative path
@@ -305,9 +317,10 @@ export function NotesView(): React.ReactElement {
       await saveCurrentNote(body);
     }
 
+    loadedNoteIdRef.current = null;
+    setLoadedNoteId(null);
     setSelectedPath(path);
     setExternalConflict(null);
-    setAutocomplete(null);
 
     let note = await noteByPath(path);
     if (!note) {
@@ -326,6 +339,8 @@ export function NotesView(): React.ReactElement {
         setBody(note.body || '');
         setLastSavedBody(note.body || '');
       }
+      loadedNoteIdRef.current = note.id;
+      setLoadedNoteId(note.id);
       void backlinksOf('note', note.id).then(setBacklinks);
     }
   };
@@ -336,11 +351,11 @@ export function NotesView(): React.ReactElement {
       await saveCurrentNote(body);
     }
 
+    loadedNoteIdRef.current = null;
+    setLoadedNoteId(null);
     setSelectedNoteId(item.id);
     setTitle(item.title || '');
     setExternalConflict(null);
-    setAutocomplete(null);
-
     const filePath = item.path || (item.id.startsWith('file:') ? item.id.slice(5) : null);
     setSelectedPath(filePath);
 
@@ -356,6 +371,8 @@ export function NotesView(): React.ReactElement {
     setBody(content);
     setLastSavedBody(content);
     void backlinksOf('note', item.id).then(setBacklinks);
+    loadedNoteIdRef.current = item.id;
+    setLoadedNoteId(item.id);
   };
 
   // Refresh current note from disk (R08)
@@ -732,15 +749,19 @@ export function NotesView(): React.ReactElement {
 
                 {/* Body: Live-preview Markdown Editor (R05/R12) */}
                 <div className="relative flex-1 min-h-[260px] flex flex-col">
-                  <NotesEditor
-                    value={body}
-                    onChange={handleBodyChange}
-                    onSave={handleEditorSave}
-                    placeholder={t.editorPlaceholder}
-                    autoFocus
-                    className="flex-1 min-h-[260px]"
-                  />
-
+                  {loadedNoteId === currentNote.id ? (
+                    <NotesEditor
+                      key={currentNote.id}
+                      value={body}
+                      onChange={handleBodyChange}
+                      onSave={handleEditorSave}
+                      placeholder={t.editorPlaceholder}
+                      autoFocus
+                      className="flex-1 min-h-[260px]"
+                    />
+                  ) : (
+                    <div className="flex-1 p-4 text-xs text-[var(--text-muted)]">...</div>
+                  )}
                   {/* Autocomplete Popup for [[ */}
                   {autocomplete && (
                     <div
