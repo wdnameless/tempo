@@ -1,10 +1,8 @@
 // src-tauri/src/storage/repo.rs
 // Generic CRUD operations and FTS / Preferences helpers.
 
-use rusqlite::params;
-use rusqlite::params_from_iter;
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use rusqlite::types::{ToSql, ToSqlOutput, ValueRef};
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use super::schema::{self, ColType, TableSchema};
@@ -34,11 +32,11 @@ static LISTS_SQL: TableSql = TableSql {
 };
 
 static NOTES_SQL: TableSql = TableSql {
-    list_active: "SELECT id, title, body_md, pinned, updated_at, deleted_at FROM notes WHERE deleted_at IS NULL",
-    list_all: "SELECT id, title, body_md, pinned, updated_at, deleted_at FROM notes",
-    get_by_id: "SELECT id, title, body_md, pinned, updated_at, deleted_at FROM notes WHERE id = ?1",
+    list_active: "SELECT id, title, body_md, pinned, updated_at, deleted_at, path FROM notes WHERE deleted_at IS NULL",
+    list_all: "SELECT id, title, body_md, pinned, updated_at, deleted_at, path FROM notes",
+    get_by_id: "SELECT id, title, body_md, pinned, updated_at, deleted_at, path FROM notes WHERE id = ?1",
     soft_delete: "UPDATE notes SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
-    changed_since: "SELECT id, title, body_md, pinned, updated_at, deleted_at FROM notes WHERE updated_at > ?1",
+    changed_since: "SELECT id, title, body_md, pinned, updated_at, deleted_at, path FROM notes WHERE updated_at > ?1",
 };
 
 static DRAWINGS_SQL: TableSql = TableSql {
@@ -1012,6 +1010,123 @@ fn base64_simd_or_hex(bytes: &[u8]) -> String {
     s
 }
 
+/// Retrieves a note by its vault relative path.
+pub fn get_note_by_path(conn: &Connection, path: &str) -> Result<Option<Value>, String> {
+    let schema = schema::table("notes").ok_or_else(|| "Missing notes schema".to_string())?;
+    let sql = "SELECT id, title, body_md, pinned, updated_at, deleted_at, path FROM notes WHERE path = ?1 AND deleted_at IS NULL LIMIT 1";
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let mut rows = stmt
+        .query_map(params![path], |row| row_to_json(row, schema))
+        .map_err(|e| e.to_string())?;
+    if let Some(first) = rows.next() {
+        Ok(Some(first.map_err(|e| e.to_string())?))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Upsert a note by relative vault path.
+/// If a note with this path already exists, updates its title, body_md, path, updated_at, and clears deleted_at.
+/// Otherwise inserts a new note with id = "file:<path>".
+pub fn upsert_note_by_path(
+    conn: &Connection,
+    path: &str,
+    title: &str,
+    body_md: &str,
+) -> Result<Value, String> {
+    let schema = schema::table("notes").ok_or_else(|| "Missing notes schema".to_string())?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let id = format!("file:{path}");
+
+    let existing: Option<String> = conn
+        .query_row(
+            "SELECT id FROM notes WHERE path = ?1 OR id = ?2 LIMIT 1",
+            params![path, id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    if let Some(existing_id) = existing {
+        conn.execute(
+            "UPDATE notes SET title = ?1, body_md = ?2, path = ?3, updated_at = ?4, deleted_at = NULL WHERE id = ?5",
+            params![title, body_md, path, now, existing_id],
+        )
+        .map_err(|e| e.to_string())?;
+        journal_outbox(conn, "notes", &existing_id, "update", None, &now)?;
+        let mut stmt = conn
+            .prepare("SELECT id, title, body_md, pinned, updated_at, deleted_at, path FROM notes WHERE id = ?1")
+            .map_err(|e| e.to_string())?;
+        stmt.query_row(params![existing_id], |row| row_to_json(row, schema))
+            .map_err(|e| e.to_string())
+    } else {
+        conn.execute(
+            "INSERT INTO notes (id, title, body_md, pinned, updated_at, deleted_at, path) VALUES (?1, ?2, ?3, 0, ?4, NULL, ?5)",
+            params![id, title, body_md, now, path],
+        )
+        .map_err(|e| e.to_string())?;
+        journal_outbox(conn, "notes", &id, "insert", None, &now)?;
+        let mut stmt = conn
+            .prepare("SELECT id, title, body_md, pinned, updated_at, deleted_at, path FROM notes WHERE id = ?1")
+            .map_err(|e| e.to_string())?;
+        stmt.query_row(params![id], |row| row_to_json(row, schema))
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// Returns all notes that have a non-null relative path and are not deleted.
+pub fn list_note_paths(conn: &Connection) -> Result<Vec<Value>, String> {
+    let mut stmt = conn
+        .prepare("SELECT id, path FROM notes WHERE path IS NOT NULL AND deleted_at IS NULL")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            let id: String = row.get(0)?;
+            let path: String = row.get(1)?;
+            Ok(serde_json::json!({ "id": id, "path": path }))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut res = Vec::new();
+    for r in rows {
+        res.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(res)
+}
+
+/// Soft deletes notes whose path is not in the provided active_paths list.
+pub fn delete_notes_missing_paths(conn: &Connection, active_paths: &[String]) -> Result<u32, String> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut stmt = conn
+        .prepare("SELECT id, path FROM notes WHERE path IS NOT NULL AND deleted_at IS NULL")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            let id: String = row.get(0)?;
+            let path: String = row.get(1)?;
+            Ok((id, path))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut to_delete = Vec::new();
+    for r in rows {
+        let (id, path) = r.map_err(|e| e.to_string())?;
+        if !active_paths.iter().any(|p| p == &path) {
+            to_delete.push(id);
+        }
+    }
+
+    let count = to_delete.len() as u32;
+    for id in to_delete {
+        conn.execute(
+            "UPDATE notes SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )
+        .map_err(|e| e.to_string())?;
+        journal_outbox(conn, "notes", &id, "delete", None, &now)?;
+    }
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1505,5 +1620,49 @@ mod tests {
         assert_eq!(outbox3.len(), 3);
         assert_eq!(outbox3[2]["op"], "delete");
         assert_eq!(outbox3[2]["device_id"], dev_id);
+    }
+
+    #[test]
+    fn test_note_path_operations() {
+        let conn = setup_test_db();
+
+        // Upsert new note by path
+        let note = upsert_note_by_path(&conn, "Journal/2026/09/2026-09-22.md", "Daily Note", "# Daily\n\nContent").unwrap();
+        assert_eq!(note["id"], "file:Journal/2026/09/2026-09-22.md");
+        assert_eq!(note["path"], "Journal/2026/09/2026-09-22.md");
+        assert_eq!(note["title"], "Daily Note");
+        assert_eq!(note["body_md"], "# Daily\n\nContent");
+
+        // Get by path
+        let fetched = get_note_by_path(&conn, "Journal/2026/09/2026-09-22.md").unwrap().expect("note found");
+        assert_eq!(fetched["id"], note["id"]);
+
+        // Update note by path
+        let updated = upsert_note_by_path(&conn, "Journal/2026/09/2026-09-22.md", "Daily Note Updated", "# Daily\n\nUpdated").unwrap();
+        assert_eq!(updated["title"], "Daily Note Updated");
+        assert_eq!(updated["body_md"], "# Daily\n\nUpdated");
+
+        // Add a second note
+        upsert_note_by_path(&conn, "Ideas/Project.md", "Project Idea", "Secret idea").unwrap();
+
+        // List paths
+        let paths = list_note_paths(&conn).unwrap();
+        assert_eq!(paths.len(), 2);
+
+        // FTS reindex
+        let fts_count = reindex_fts(&conn, Some("note")).unwrap();
+        assert_eq!(fts_count, 2);
+        let hits = search_fts(&conn, "Updated", None).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].row_id, "file:Journal/2026/09/2026-09-22.md");
+
+        // Prune missing paths (file gone)
+        let active = vec!["Journal/2026/09/2026-09-22.md".to_string()];
+        let pruned = delete_notes_missing_paths(&conn, &active).unwrap();
+        assert_eq!(pruned, 1);
+
+        let remaining = list_note_paths(&conn).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0]["path"], "Journal/2026/09/2026-09-22.md");
     }
 }

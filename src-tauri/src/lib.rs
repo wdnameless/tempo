@@ -20,6 +20,7 @@ mod timer;
 pub mod storage;
 pub mod stt;
 pub mod sync;
+pub mod vault;
 
 /// Whether this build keeps its data beside the executable.
 #[tauri::command]
@@ -493,6 +494,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(storage::DbState(std::sync::Mutex::new(None)))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(recording::RecordingManager::new())
         .plugin(tauri_plugin_notification::init())
         .register_asynchronous_uri_scheme_protocol(media_protocol::SCHEME_NAME, |ctx, req, resp| {
@@ -560,6 +562,19 @@ pub fn run() {
             storage::asset_usage,
             storage::asset_stat,
             storage::asset_prune,
+            storage::db_note_by_path,
+            vault::vault_root,
+            vault::vault_set_root,
+            vault::vault_pick_folder,
+            vault::vault_list,
+            vault::vault_read,
+            vault::vault_write,
+            vault::vault_create,
+            vault::vault_rename,
+            vault::vault_delete,
+            vault::vault_mkdir,
+            vault::vault_daily,
+            vault::vault_open,
             recording::recording_devices,
             recording::recording_sources,
             recording::recording_start,

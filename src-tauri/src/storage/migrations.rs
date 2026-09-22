@@ -3,8 +3,7 @@
 
 use rusqlite::{params, Connection};
 
-pub const SCHEMA_VERSION_LATEST: u32 = 4;
-
+pub const SCHEMA_VERSION_LATEST: u32 = 5;
 pub fn migrate(conn: &Connection) -> Result<u32, String> {
     // 1. Ensure schema_version table exists
     conn.execute_batch(
@@ -33,6 +32,9 @@ pub fn migrate(conn: &Connection) -> Result<u32, String> {
     }
     if current_version < 4 {
         apply_migration_0004(conn)?;
+    }
+    if current_version < 5 {
+        apply_migration_0005(conn)?;
     }
     // Return the latest applied version
     let latest_version: u32 = conn
@@ -332,20 +334,23 @@ CREATE INDEX IF NOT EXISTS idx_stt_history_created_at ON stt_history(created_at 
 
     Ok(())
 }
+fn table_column_names(conn: &Connection, table: &str) -> Result<Vec<String>, String> {
+    let sql = format!("PRAGMA table_info({table});");
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("Failed to inspect {table} pragma: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| row.get(1))
+        .map_err(|e| format!("Failed to query table_info for {table}: {e}"))?;
+    Ok(rows.flatten().collect())
+}
+
 fn apply_migration_0004(conn: &Connection) -> Result<(), String> {
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Failed to start transaction for migration 0004: {e}"))?;
 
-    let existing_cols: Vec<String> = {
-        let mut stmt = tx
-            .prepare("PRAGMA table_info(alarms);")
-            .map_err(|e| format!("Failed to inspect alarms pragma: {e}"))?;
-        let rows = stmt
-            .query_map([], |row| row.get(1))
-            .map_err(|e| format!("Failed to query table_info: {e}"))?;
-        rows.flatten().collect()
-    };
+    let existing_cols = table_column_names(&tx, "alarms")?;
 
     if !existing_cols.contains(&"date".to_string()) {
         tx.execute("ALTER TABLE alarms ADD COLUMN date TEXT;", [])
@@ -376,6 +381,34 @@ fn apply_migration_0004(conn: &Connection) -> Result<(), String> {
 
     Ok(())
 }
+
+fn apply_migration_0005(conn: &Connection) -> Result<(), String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Failed to start transaction for migration 0005: {e}"))?;
+
+    let existing_cols = table_column_names(&tx, "notes")?;
+
+    if !existing_cols.contains(&"path".to_string()) {
+        tx.execute("ALTER TABLE notes ADD COLUMN path TEXT;", [])
+            .map_err(|e| format!("Migration 0005 ALTER TABLE path failed: {e}"))?;
+        tx.execute("CREATE INDEX IF NOT EXISTS idx_notes_path ON notes(path);", [])
+            .map_err(|e| format!("Migration 0005 CREATE INDEX idx_notes_path failed: {e}"))?;
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    tx.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (?1, ?2);",
+        params![5, now],
+    )
+    .map_err(|e| format!("Failed to record schema version 5: {e}"))?;
+
+    tx.commit()
+        .map_err(|e| format!("Failed to commit migration 0005: {e}"))?;
+
+    Ok(())
+}
+
 
 
 #[cfg(test)]
@@ -408,7 +441,7 @@ mod tests {
     #[test]
     fn test_migration_0003_creates_stt_history_table() {
         let (conn, version) = migrated_db();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let cols = table_columns(&conn, "stt_history");
         assert!(cols.contains(&"id".to_string()));
         assert!(cols.contains(&"text".to_string()));
@@ -426,7 +459,7 @@ mod tests {
     #[test]
     fn test_migration_0004_adds_alarm_columns() {
         let (conn, version) = migrated_db();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let cols = table_columns(&conn, "alarms");
         assert!(cols.contains(&"date".to_string()));
         assert!(cols.contains(&"interval_minutes".to_string()));
@@ -454,7 +487,7 @@ mod tests {
 
         // Migrate to v4
         let version = migrate(&conn).unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
 
         // Read back via repo
         let loaded = crate::storage::repo::get(&conn, "alarms", "old1").unwrap().expect("alarm exists");
@@ -465,5 +498,13 @@ mod tests {
         assert!(loaded["interval_minutes"].is_null());
         assert!(loaded["window_start"].is_null());
         assert!(loaded["window_end"].is_null());
+    }
+
+    #[test]
+    fn test_migration_0005_adds_notes_path_column() {
+        let (conn, version) = migrated_db();
+        assert_eq!(version, 5);
+        let cols = table_columns(&conn, "notes");
+        assert!(cols.contains(&"path".to_string()), "notes must contain path column");
     }
 }

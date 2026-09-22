@@ -1,6 +1,6 @@
 [package]
 name = "tempo"
-version = "0.18.3"
+version = "0.19.0"
 description = "Tempo backend: alarm scheduler, countdown timer, alarm audio and AI gateway"
 authors = ["Tempo"]
 edition = "2021"
@@ -40,6 +40,7 @@ hound = "3.5"
 transcribe-cpp = "0.2"
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Local wall-clock time for the scheduler. The previous hand-rolled offset maths

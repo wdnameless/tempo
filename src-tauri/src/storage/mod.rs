@@ -208,6 +208,14 @@ pub fn links_backlinks(
     with_db(&app, |conn| repo::links_backlinks(conn, &kind, &id))
 }
 
+#[tauri::command]
+pub fn db_note_by_path(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<Option<Value>, String> {
+    with_db(&app, |conn| repo::get_note_by_path(conn, &path))
+}
+
 /// Resolves the media root directory (`<data>/assets`).
 pub fn assets_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let p_str = db_path(app.clone())?;

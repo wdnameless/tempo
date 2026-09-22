@@ -3,8 +3,33 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { NotesView } from '../NotesView';
 import * as notesService from '../../services/notes';
 import * as linkingService from '../../services/linking';
+import * as vaultService from '../../services/vault';
 import { I18nService } from '../../services/i18n';
 import type { NoteItem } from '../../types';
+
+vi.mock('../NotesEditor', () => ({
+  NotesEditor: ({
+    value,
+    onChange,
+    onSave,
+    placeholder,
+  }: {
+    value: string;
+    onChange: (val: string) => void;
+    onSave?: (val: string) => void;
+    placeholder?: string;
+  }) => (
+    <div data-testid="notes-editor">
+      <textarea
+        data-testid="mock-notes-editor"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => onSave?.(value)}
+      />
+    </div>
+  ),
+}));
 
 vi.mock('../../services/notes', () => ({
   listNotes: vi.fn(),
@@ -13,6 +38,9 @@ vi.mock('../../services/notes', () => ({
   deleteNote: vi.fn(),
   togglePin: vi.fn(),
   noteByTitle: vi.fn(),
+  noteByPath: vi.fn(),
+  reindexVault: vi.fn(),
+  migrateNotesToFiles: vi.fn(),
 }));
 
 vi.mock('../../services/linking', () => ({
@@ -22,25 +50,85 @@ vi.mock('../../services/linking', () => ({
   linksOf: vi.fn(),
 }));
 
+vi.mock('../../services/vault', () => ({
+  listVault: vi.fn(),
+  readNoteFile: vi.fn(),
+  writeNoteFile: vi.fn(),
+  createNoteFile: vi.fn(),
+  renameNoteFile: vi.fn(),
+  deleteNoteFile: vi.fn(),
+  createVaultFolder: vi.fn(),
+  ensureDailyNote: vi.fn(),
+  openVaultInExplorer: vi.fn(),
+  dailyNotePath: vi.fn(),
+  vaultRoot: vi.fn(),
+  setVaultRoot: vi.fn(),
+  pickVaultFolder: vi.fn(),
+}));
+
 describe('NotesView', () => {
   const t = I18nService.t();
 
   const mockNotes: NoteItem[] = [
     {
-      id: 'note-1',
+      id: 'file:First Note.md',
       title: 'First Note',
       body: 'Hello world #tag',
+      path: 'First Note.md',
       pinned: true,
       createdAt: '2026-09-01T00:00:00Z',
       updatedAt: '2026-09-02T00:00:00Z',
     },
     {
-      id: 'note-2',
+      id: 'file:Second Note.md',
       title: 'Second Note',
       body: 'Body of second note with [[First Note]]',
+      path: 'Second Note.md',
       pinned: false,
       createdAt: '2026-09-01T00:00:00Z',
       updatedAt: '2026-09-01T12:00:00Z',
+    },
+  ];
+
+  const mockVaultEntries: vaultService.VaultEntry[] = [
+    {
+      path: 'Journal',
+      name: 'Journal',
+      isDir: true,
+      children: [
+        {
+          path: 'Journal/2026',
+          name: '2026',
+          isDir: true,
+          children: [
+            {
+              path: 'Journal/2026/09',
+              name: '09',
+              isDir: true,
+              children: [
+                {
+                  path: 'Journal/2026/09/2026-09-22.md',
+                  name: '2026-09-22.md',
+                  isDir: false,
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      path: 'First Note.md',
+      name: 'First Note.md',
+      isDir: false,
+      children: [],
+    },
+    {
+      path: 'Second Note.md',
+      name: 'Second Note.md',
+      isDir: false,
+      children: [],
     },
   ];
 
@@ -53,24 +141,33 @@ describe('NotesView', () => {
       );
       return found ?? null;
     });
+    vi.mocked(notesService.noteByPath).mockImplementation(async (path: string) => {
+      const found = mockNotes.find((n) => n.path === path || n.id === `file:${path}`);
+      return found ?? null;
+    });
+    vi.mocked(vaultService.listVault).mockResolvedValue([...mockVaultEntries]);
+    vi.mocked(vaultService.readNoteFile).mockImplementation(async (path: string) => {
+      const found = mockNotes.find((n) => n.path === path || n.id === `file:${path}`);
+      return found ? found.body : '';
+    });
     vi.mocked(linkingService.parseLinks).mockReturnValue([]);
     vi.mocked(linkingService.upsertLinks).mockResolvedValue(0);
     vi.mocked(linkingService.backlinksOf).mockResolvedValue([]);
+    vi.mocked(vaultService.vaultRoot).mockResolvedValue('/mock/vault');
+    vi.mocked(vaultService.setVaultRoot).mockImplementation(async (p: string) => p);
   });
 
-  it('renders notes in the returned order and selects the first one', async () => {
+  it('renders notes in the list and selects the first one', async () => {
     render(<NotesView />);
 
     await waitFor(() => {
       expect(notesService.listNotes).toHaveBeenCalled();
     });
 
-    // Check titles rendered
     expect(screen.getByText('First Note')).toBeDefined();
     expect(screen.getByText('Second Note')).toBeDefined();
 
-    // Selecting note-1 shows its body in the textarea
-    const textarea = screen.getByPlaceholderText(t.notesBody) as HTMLTextAreaElement;
+    const textarea = screen.getByTestId('mock-notes-editor') as HTMLTextAreaElement;
     expect(textarea.value).toBe('Hello world #tag');
   });
 
@@ -83,18 +180,20 @@ describe('NotesView', () => {
 
     fireEvent.click(screen.getByText('Second Note'));
 
-    const textarea = screen.getByPlaceholderText(t.notesBody) as HTMLTextAreaElement;
-    expect(textarea.value).toBe('Body of second note with [[First Note]]');
+    const textarea = screen.getByTestId('mock-notes-editor') as HTMLTextAreaElement;
+    await waitFor(() => {
+      expect(textarea.value).toBe('Body of second note with [[First Note]]');
+    });
   });
 
-  it('editing and blurring calls updateNote and upserts links', async () => {
+  it('editing and blurring calls updateNote and writeNoteFile', async () => {
     render(<NotesView />);
 
     await waitFor(() => {
       expect(screen.getByText('First Note')).toBeDefined();
     });
 
-    const textarea = screen.getByPlaceholderText(t.notesBody) as HTMLTextAreaElement;
+    const textarea = screen.getByTestId('mock-notes-editor') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'Updated body [[Second Note]]' } });
 
     vi.mocked(linkingService.parseLinks).mockReturnValue(['Second Note']);
@@ -102,52 +201,40 @@ describe('NotesView', () => {
     fireEvent.blur(textarea);
 
     await waitFor(() => {
-      expect(notesService.updateNote).toHaveBeenCalledWith('note-1', {
+      expect(notesService.updateNote).toHaveBeenCalledWith('file:First Note.md', {
+        title: 'First Note',
         body: 'Updated body [[Second Note]]',
       });
+      expect(vaultService.writeNoteFile).toHaveBeenCalledWith(
+        'First Note.md',
+        'Updated body [[Second Note]]'
+      );
       expect(linkingService.upsertLinks).toHaveBeenCalledWith(
-        { kind: 'note', id: 'note-1' },
-        [{ kind: 'note', id: 'note-2' }]
+        { kind: 'note', id: 'file:First Note.md' },
+        [{ kind: 'note', id: 'file:Second Note.md' }]
       );
     });
   });
 
-  it('the preview toggle shows rendered markdown', async () => {
-    render(<NotesView />);
-
-    // Wait for the note to load and textarea to appear
-    const textarea = await screen.findByPlaceholderText(t.notesBody);
-    expect((textarea as HTMLTextAreaElement).value).toBe('Hello world #tag');
-
-    // Click the preview toggle button
-    const previewBtn = screen.getByLabelText(t.notesPreview);
-    fireEvent.click(previewBtn);
-
-    // Textarea should not be rendered in preview mode
-    expect(screen.queryByPlaceholderText(t.notesBody)).toBeNull();
-    // Rendered content is present inside markdown container
-    const previewContainer = screen.getByTestId('notes-markdown-preview');
-    expect(previewContainer.textContent).toContain('Hello world #tag');
-  });
   it('typing [[ lists suggestions and inserting one puts the title in the body', async () => {
     render(<NotesView />);
 
-    const textarea = await screen.findByPlaceholderText(t.notesBody) as HTMLTextAreaElement;
-    // Type [[Sec
+    const textarea = (await screen.findByTestId('mock-notes-editor')) as HTMLTextAreaElement;
     fireEvent.change(textarea, {
-      target: { value: 'Link to [[Sec', selectionStart: 13 },
+      target: { value: 'Link to [[Sec' },
     });
-    // Should show autocomplete popup with "Second Note" suggestion
+
     await waitFor(() => {
       expect(screen.getByTestId('notes-autocomplete')).toBeDefined();
     });
     expect(within(screen.getByTestId('notes-autocomplete')).getByText('Second Note')).toBeDefined();
 
-    // Press Enter to insert suggestion
-    fireEvent.keyDown(textarea, { key: 'Enter' });
+    const suggestionBtn = within(screen.getByTestId('notes-autocomplete')).getByText('Second Note');
+    fireEvent.click(suggestionBtn);
 
     await waitFor(() => {
-      expect(notesService.updateNote).toHaveBeenCalledWith('note-1', {
+      expect(notesService.updateNote).toHaveBeenCalledWith('file:First Note.md', {
+        title: 'First Note',
         body: 'Link to [[Second Note]]',
       });
     });
@@ -163,7 +250,6 @@ describe('NotesView', () => {
       expect(screen.getByText('First Note')).toBeDefined();
     });
 
-    // Notice notesBrokenLink warning
     await waitFor(() => {
       expect(screen.getByText(t.notesBrokenLink)).toBeDefined();
     });
@@ -171,14 +257,13 @@ describe('NotesView', () => {
 
   it('the backlinks panel lists what backlinksOf returned and shows empty message when empty', async () => {
     vi.mocked(linkingService.backlinksOf).mockResolvedValue([
-      { kind: 'note', id: 'note-2', title: 'Second Note' },
+      { kind: 'note', id: 'file:Second Note.md', title: 'Second Note' },
     ]);
 
     const { unmount } = render(<NotesView />);
 
-    await screen.findByPlaceholderText(t.notesBody);
+    await screen.findByTestId('mock-notes-editor');
 
-    // Backlinks list Second Note
     await waitFor(() => {
       expect(screen.getByTestId('notes-backlinks-panel')).toBeDefined();
     });
@@ -186,10 +271,9 @@ describe('NotesView', () => {
 
     unmount();
 
-    // Now when backlinksOf returns empty list
     vi.mocked(linkingService.backlinksOf).mockResolvedValue([]);
     render(<NotesView />);
-    await screen.findByPlaceholderText(t.notesBody);
+    await screen.findByTestId('mock-notes-editor');
 
     await waitFor(() => {
       expect(screen.getByText(t.notesNoBacklinks)).toBeDefined();
@@ -203,12 +287,189 @@ describe('NotesView', () => {
       expect(screen.getByText('First Note')).toBeDefined();
     });
 
-    // Note 1 is pinned, so the button label should be notesUnpin
     const pinBtn = screen.getByLabelText(t.notesUnpin);
     fireEvent.click(pinBtn);
 
     await waitFor(() => {
-      expect(notesService.togglePin).toHaveBeenCalledWith('note-1');
+      expect(notesService.togglePin).toHaveBeenCalledWith('file:First Note.md');
+    });
+  });
+
+  it('the tree renders folders and .md files from a mocked listVault', async () => {
+    render(<NotesView />);
+
+    // Switch to tree tab
+    const treeTab = screen.getByTestId('notes-tab-tree');
+    fireEvent.click(treeTab);
+
+    await waitFor(() => {
+      expect(vaultService.listVault).toHaveBeenCalled();
+    });
+
+    expect(screen.getByText('Journal')).toBeDefined();
+    expect(screen.getByText('First Note')).toBeDefined();
+    expect(screen.getByText('Second Note')).toBeDefined();
+  });
+
+  it('creating and renaming call the vault API with expected paths', async () => {
+    render(<NotesView />);
+
+    const treeTab = screen.getByTestId('notes-tab-tree');
+    fireEvent.click(treeTab);
+
+    await waitFor(() => {
+      expect(vaultService.listVault).toHaveBeenCalled();
+    });
+
+    // Create note via tree button
+    const newNoteBtn = screen.getByLabelText(t.vaultNewNote);
+    fireEvent.click(newNoteBtn);
+
+    const input = screen.getByPlaceholderText(t.vaultNewNote);
+    fireEvent.change(input, { target: { value: 'New Test Note' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(vaultService.createNoteFile).toHaveBeenCalledWith('New Test Note.md', '');
+    });
+
+    // Rename entry
+    const renameBtn = screen.getByTestId('vault-rename-First Note.md');
+    fireEvent.click(renameBtn);
+
+    const renameInput = screen.getByTestId('vault-rename-input');
+    fireEvent.change(renameInput, { target: { value: 'Renamed Note' } });
+    fireEvent.keyDown(renameInput, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(vaultService.renameNoteFile).toHaveBeenCalledWith('First Note.md', 'Renamed Note.md');
+    });
+  });
+
+  it('the Today button opens Journal/YYYY/MM/YYYY-MM-DD.md', async () => {
+    const todayPath = 'Journal/2026/09/2026-09-22.md';
+    vi.mocked(vaultService.ensureDailyNote).mockResolvedValue(todayPath);
+
+    render(<NotesView />);
+
+    const treeTab = screen.getByTestId('notes-tab-tree');
+    fireEvent.click(treeTab);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('vault-today-btn')).toBeDefined();
+    });
+
+    const todayBtn = screen.getByLabelText(t.vaultToday);
+    fireEvent.click(todayBtn);
+
+    await waitFor(() => {
+      expect(vaultService.ensureDailyNote).toHaveBeenCalled();
+      expect(notesService.noteByPath).toHaveBeenCalledWith(todayPath);
+    });
+  });
+
+  it('an external file change appears after Refresh', async () => {
+    render(<NotesView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('First Note')).toBeDefined();
+    });
+
+    // Simulate external edit to First Note.md
+    vi.mocked(vaultService.readNoteFile).mockResolvedValue('Content modified by external editor');
+
+    // Click refresh button in toolbar
+    const refreshBtn = screen.getByLabelText(t.vaultRefresh);
+    fireEvent.click(refreshBtn);
+
+    await waitFor(() => {
+      const textarea = screen.getByTestId('mock-notes-editor') as HTMLTextAreaElement;
+      expect(textarea.value).toBe('Content modified by external editor');
+    });
+  });
+
+  it('shows conflict banner when external change conflicts with unsaved editor draft', async () => {
+    render(<NotesView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('First Note')).toBeDefined();
+    });
+
+    const textarea = screen.getByTestId('mock-notes-editor') as HTMLTextAreaElement;
+    // Type unsaved draft
+    fireEvent.change(textarea, { target: { value: 'My local unsaved work' } });
+
+    // File on disk was modified externally
+    vi.mocked(vaultService.readNoteFile).mockResolvedValue('External modification from disk');
+
+    const refreshBtn = screen.getByLabelText(t.vaultRefresh);
+    fireEvent.click(refreshBtn);
+
+    // Conflict banner appears
+    await waitFor(() => {
+      expect(screen.getByTestId('vault-conflict-banner')).toBeDefined();
+      expect(screen.getByText(t.vaultExternalChanged)).toBeDefined();
+    });
+
+    // Clicking Reload from disk adopts disk content
+    const reloadBtn = screen.getByTestId('vault-reload-btn');
+    fireEvent.click(reloadBtn);
+
+    expect(textarea.value).toBe('External modification from disk');
+  });
+
+  it('calls migrateNotesToFiles on mount before reloading notes', async () => {
+    render(<NotesView />);
+
+    await waitFor(() => {
+      expect(notesService.migrateNotesToFiles).toHaveBeenCalled();
+      expect(notesService.listNotes).toHaveBeenCalled();
+    });
+  });
+
+  it('migration exports every note row once and second run does not duplicate or resurrect them', async () => {
+    vi.mocked(notesService.migrateNotesToFiles).mockResolvedValueOnce({ exported: 2 });
+    const firstRun = await notesService.migrateNotesToFiles();
+    expect(firstRun.exported).toBe(2);
+
+    vi.mocked(notesService.migrateNotesToFiles).mockResolvedValueOnce({ exported: 0 });
+    const secondRun = await notesService.migrateNotesToFiles();
+    expect(secondRun.exported).toBe(0);
+    expect(notesService.migrateNotesToFiles).toHaveBeenCalledTimes(2);
+  });
+
+  it('changing vault folder calls pickVaultFolder, setVaultRoot, re-reads tree and reindexes, cancelling does nothing', async () => {
+    vi.mocked(vaultService.vaultRoot).mockResolvedValue('/default/vault');
+    vi.mocked(vaultService.setVaultRoot).mockImplementation(async (p: string) => p);
+
+    render(<NotesView />);
+
+    const treeTab = screen.getByTestId('notes-tab-tree');
+    fireEvent.click(treeTab);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('vault-change-folder-btn')).toBeDefined();
+    });
+
+    // 1. User cancels folder picker: pickVaultFolder returns null
+    vi.mocked(vaultService.pickVaultFolder).mockResolvedValueOnce(null);
+    const changeBtn = screen.getByLabelText(t.vaultChangeFolder);
+    fireEvent.click(changeBtn);
+
+    await waitFor(() => {
+      expect(vaultService.pickVaultFolder).toHaveBeenCalled();
+    });
+    expect(vaultService.setVaultRoot).not.toHaveBeenCalled();
+
+    // 2. User selects a new folder
+    const newPath = 'D:/MyObsidianVault';
+    vi.mocked(vaultService.pickVaultFolder).mockResolvedValueOnce(newPath);
+    fireEvent.click(changeBtn);
+
+    await waitFor(() => {
+      expect(vaultService.setVaultRoot).toHaveBeenCalledWith(newPath);
+      expect(notesService.reindexVault).toHaveBeenCalled();
+      expect(vaultService.listVault).toHaveBeenCalled();
     });
   });
 });

@@ -479,6 +479,25 @@ export interface Translations {
   notesPin: string;
   notesUnpin: string;
   notesLinkHint: string;
+  vaultTitle: string;
+  vaultFolder: string;
+  vaultChangeFolder: string;
+  vaultOpenFolder: string;
+  vaultRefresh: string;
+  vaultToday: string;
+  vaultNewNote: string;
+  vaultNewFolder: string;
+  vaultRename: string;
+  vaultDelete: string;
+  vaultConfirmDelete: string;
+  vaultExternalChanged: string;
+  vaultReload: string;
+  vaultKeepMine: string;
+  vaultEmptyTree: string;
+  vaultMigrationDone: string;
+  notesUnsaved: string;
+  editorPlaceholder: string;
+  notesFilesHint: string;
 
   navRecordings: string;
   recLibrary: string;
@@ -1076,6 +1095,25 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     notesPin: 'Закрепить',
     notesUnpin: 'Открепить',
     notesLinkHint: '[[ — ссылка на другую заметку',
+    vaultTitle: 'Хранилище',
+    vaultFolder: 'Папка',
+    vaultChangeFolder: 'Сменить папку',
+    vaultOpenFolder: 'Открыть в проводнике',
+    vaultRefresh: 'Обновить',
+    vaultToday: 'Сегодня',
+    vaultNewNote: 'Новая заметка',
+    vaultNewFolder: 'Новая папка',
+    vaultRename: 'Переименовать',
+    vaultDelete: 'Удалить',
+    vaultConfirmDelete: 'Удалить {name}?',
+    vaultExternalChanged: 'Файл был изменён снаружи',
+    vaultReload: 'Перезагрузить с диска',
+    vaultKeepMine: 'Оставить мою версию',
+    vaultEmptyTree: 'В хранилище пока нет файлов',
+    vaultMigrationDone: 'Заметки экспортированы в файлы',
+    notesUnsaved: 'Есть несохранённые изменения',
+    editorPlaceholder: 'Начните писать или введите [[ для ссылки...',
+    notesFilesHint: 'Заметки хранятся как .md файлы',
     navRecordings: 'Записи',
     recLibrary: 'Библиотека записей',
     recTabAudio: 'Звук',
@@ -1667,6 +1705,25 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     notesPin: 'Pin',
     notesUnpin: 'Unpin',
     notesLinkHint: '[[ links to another note',
+    vaultTitle: 'Vault',
+    vaultFolder: 'Folder',
+    vaultChangeFolder: 'Change folder',
+    vaultOpenFolder: 'Open in Explorer',
+    vaultRefresh: 'Refresh',
+    vaultToday: 'Today',
+    vaultNewNote: 'New note',
+    vaultNewFolder: 'New folder',
+    vaultRename: 'Rename',
+    vaultDelete: 'Delete',
+    vaultConfirmDelete: 'Delete {name}?',
+    vaultExternalChanged: 'File was modified externally',
+    vaultReload: 'Reload from disk',
+    vaultKeepMine: 'Keep my version',
+    vaultEmptyTree: 'No files in vault yet',
+    vaultMigrationDone: 'Notes exported to files',
+    notesUnsaved: 'Unsaved changes',
+    editorPlaceholder: 'Start writing or type [[ to link...',
+    notesFilesHint: 'Notes are stored as .md files',
     navRecordings: 'Recordings',
     recLibrary: 'Recording library',
     recTabAudio: 'Audio',

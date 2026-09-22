@@ -48,6 +48,7 @@ static NOTES_COLS: &[(&str, ColType)] = &[
     ("pinned", ColType::Integer),
     ("updated_at", ColType::Text),
     ("deleted_at", ColType::Text),
+    ("path", ColType::Text),
 ];
 
 static DRAWINGS_COLS: &[(&str, ColType)] = &[
