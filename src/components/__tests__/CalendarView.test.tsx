@@ -70,9 +70,9 @@ describe('CalendarView Component (Wave 8 / R18)', () => {
   it('renders header with navigation, view mode switcher, and new event button', async () => {
     render(<CalendarView />);
 
-    expect(screen.getByRole('button', { name: 'Previous' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Today' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Next' })).toBeDefined();
+    expect(screen.getByRole('button', { name: t.calendarPrevious })).toBeDefined();
+    expect(screen.getByRole('button', { name: t.calendarToday })).toBeDefined();
+    expect(screen.getByRole('button', { name: t.calendarNext })).toBeDefined();
 
     expect(screen.getByText(t.calendarMonth)).toBeDefined();
     expect(screen.getByText(t.calendarWeek)).toBeDefined();

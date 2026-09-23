@@ -281,8 +281,7 @@ describe('SettingsView Component', () => {
     expect(aboutTab).toBeDefined();
 
     // Check General content is shown initially
-    expect(screen.getByText(t.settingsTimerFocus)).toBeDefined();
-
+    expect(screen.getByRole('heading', { name: t.settingsTimerFocus })).toBeDefined();
     // Click Integrations tab
     fireEvent.click(integrationsTab);
     await waitFor(() => {
@@ -428,7 +427,7 @@ describe('SettingsView Component', () => {
 
     // 6291456 bytes is 6.0 MB
     await waitFor(() => {
-      expect(screen.getByText(/Media Used: 6.0 MB/i)).toBeDefined();
+      expect(screen.getByText(/Занято медиа: 6.0 MB/i)).toBeDefined();
     });
   });
 
@@ -440,7 +439,7 @@ describe('SettingsView Component', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Device: a1b2c3d4/i)).toBeDefined();
-      expect(screen.getByText(/3 changes pending/i)).toBeDefined();
+      expect(screen.getByText(/Ожидает изменений: 3/i)).toBeDefined();
     });
   });
 
@@ -457,7 +456,7 @@ describe('SettingsView Component', () => {
     const input = screen.getByPlaceholderText(t.syncFolderPlaceholder);
     fireEvent.change(input, { target: { value: '/custom/sync/path' } });
 
-    const saveBtn = screen.getByRole('button', { name: /Save Path/i });
+    const saveBtn = screen.getByRole('button', { name: /Сохранить путь/i });
     fireEvent.click(saveBtn);
 
     await waitFor(() => {
@@ -471,16 +470,16 @@ describe('SettingsView Component', () => {
     const aboutTab = screen.getByRole('tab', { name: t.settingsAboutTab });
     fireEvent.click(aboutTab);
 
-    const syncBtn = await screen.findByRole('button', { name: /Sync Now/i });
+    const syncBtn = await screen.findByRole('button', { name: /Синхронизировать сейчас/i });
     fireEvent.click(syncBtn);
 
     await waitFor(() => {
       expect(mockSyncNow).toHaveBeenCalled();
-      expect(screen.getByText(/Sent: 2/i)).toBeDefined();
-      expect(screen.getByText(/Received: 4/i)).toBeDefined();
-      expect(screen.getByText(/Applied: 4/i)).toBeDefined();
-      expect(screen.getByText(/Media copied: 0/i)).toBeDefined();
-      expect(screen.getByText(/1 change was resolved in favour of the later edit/i)).toBeDefined();
+      expect(screen.getByText(/Отправлено: 2/i)).toBeDefined();
+      expect(screen.getByText(/Получено: 4/i)).toBeDefined();
+      expect(screen.getByText(/Применено: 4/i)).toBeDefined();
+      expect(screen.getByText(/Медиа скопировано: 0/i)).toBeDefined();
+      expect(screen.getByText(/1 изменение разрешено в пользу более поздней правки/i)).toBeDefined();
     });
   });
 
@@ -494,7 +493,7 @@ describe('SettingsView Component', () => {
     const aboutTab = screen.getByRole('tab', { name: t.settingsAboutTab });
     fireEvent.click(aboutTab);
 
-    const syncBtn = await screen.findByRole('button', { name: /Sync Now/i });
+    const syncBtn = await screen.findByRole('button', { name: /Синхронизировать сейчас/i });
     fireEvent.click(syncBtn);
 
     await waitFor(() => {
@@ -510,7 +509,7 @@ describe('SettingsView Component', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Google Drive')).toBeDefined();
-      expect(screen.getByText('Unavailable')).toBeDefined();
+      expect(screen.getByText('Недоступно')).toBeDefined();
     });
 
     // Verify honest explanation is present
@@ -538,7 +537,7 @@ describe('SettingsView Component', () => {
 
     await waitFor(() => {
       expect(screen.getByText(t.syncConfirmMedia)).toBeDefined();
-      expect(screen.getAllByText(/Files leave this device/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText(/покинут это устройство/i).length).toBeGreaterThanOrEqual(1);
     });
 
     // Confirming enables it
@@ -611,5 +610,147 @@ describe('SettingsView Component', () => {
         model: 'claude-3-5-sonnet',
       })
     );
+  });
+
+  it('renders vertical sidebar with all six sections and keeps ARIA wiring intact', () => {
+    render(<SettingsView />);
+
+    const tablist = screen.getByRole('tablist');
+    expect(tablist.getAttribute('aria-orientation')).toBe('vertical');
+
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs).toHaveLength(6);
+
+    const expectedSectionIds = [
+      'section-general',
+      'section-ai',
+      'section-integrations',
+      'section-speech',
+      'section-shortcuts',
+      'section-about',
+    ];
+
+    tabs.forEach((tab, idx) => {
+      expect(tab.getAttribute('aria-controls')).toBe(expectedSectionIds[idx]);
+    });
+
+    // General is active initially
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+    expect(document.getElementById('section-general')).not.toBeNull();
+    expect(document.getElementById('section-general')?.getAttribute('role')).toBe('tabpanel');
+
+    // Other tabs are not selected
+    tabs.slice(1).forEach((tab) => {
+      expect(tab.getAttribute('aria-selected')).toBe('false');
+    });
+  });
+
+  it('clicking a section tab swaps the active pane and updates aria-selected', async () => {
+    render(<SettingsView />);
+
+    const aiTab = screen.getByRole('tab', { name: t.settingsAiTab });
+    const generalTab = screen.getByRole('tab', { name: t.settingsGeneral });
+
+    expect(generalTab.getAttribute('aria-selected')).toBe('true');
+    expect(aiTab.getAttribute('aria-selected')).toBe('false');
+    expect(document.getElementById('section-general')).not.toBeNull();
+    expect(document.getElementById('section-ai')).toBeNull();
+
+    fireEvent.click(aiTab);
+
+    await waitFor(() => {
+      expect(aiTab.getAttribute('aria-selected')).toBe('true');
+      expect(generalTab.getAttribute('aria-selected')).toBe('false');
+      expect(document.getElementById('section-ai')).not.toBeNull();
+      expect(document.getElementById('section-ai')?.getAttribute('role')).toBe('tabpanel');
+      expect(document.getElementById('section-general')).toBeNull();
+    });
+  });
+
+  it('renders sub-items for General section and clicking a sub-item scrolls its block into view', async () => {
+    render(<SettingsView />);
+
+    // Sub-items for General section should be visible initially
+    const timerSubItem = screen.getByTestId('settings-subitem-timer-focus');
+    const rolloverSubItem = screen.getByTestId('settings-subitem-rollover');
+    const mediaSubItem = screen.getByTestId('settings-subitem-media');
+
+    expect(timerSubItem).toBeDefined();
+    expect(rolloverSubItem).toBeDefined();
+    expect(mediaSubItem).toBeDefined();
+
+    expect(timerSubItem.textContent).toBe(t.settingsTimerFocus);
+    expect(rolloverSubItem.textContent).toBe(t.settingsRollover);
+    expect(mediaSubItem.textContent).toBe(t.settingsMedia);
+
+    // Initial active sub-item is timer-focus
+    expect(timerSubItem.getAttribute('aria-current')).toBe('true');
+
+    // Target block elements exist in the DOM
+    const rolloverBlock = document.getElementById('general-rollover');
+    expect(rolloverBlock).not.toBeNull();
+
+    const scrollSpy = vi.fn();
+    rolloverBlock!.scrollIntoView = scrollSpy;
+
+    // Click rollover sub-item
+    fireEvent.click(rolloverSubItem);
+
+    expect(scrollSpy).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    expect(rolloverSubItem.getAttribute('aria-current')).toBe('true');
+    expect(timerSubItem.getAttribute('aria-current')).toBeNull();
+
+    // Now test media sub-item
+    const mediaBlock = document.getElementById('general-media');
+    expect(mediaBlock).not.toBeNull();
+
+    const mediaScrollSpy = vi.fn();
+    mediaBlock!.scrollIntoView = mediaScrollSpy;
+
+    fireEvent.click(mediaSubItem);
+
+    expect(mediaScrollSpy).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    expect(mediaSubItem.getAttribute('aria-current')).toBe('true');
+    expect(rolloverSubItem.getAttribute('aria-current')).toBeNull();
+  });
+
+  it('hides General sub-items when navigating away to another section', async () => {
+    render(<SettingsView />);
+
+    expect(screen.queryByTestId('settings-subitem-timer-focus')).not.toBeNull();
+
+    const speechTab = screen.getByRole('tab', { name: t.settingsSpeechToText });
+    fireEvent.click(speechTab);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('settings-subitem-timer-focus')).toBeNull();
+      expect(screen.queryByTestId('settings-subitem-rollover')).toBeNull();
+      expect(screen.queryByTestId('settings-subitem-media')).toBeNull();
+    });
+  });
+
+  it('updates the active sub-item when the pane is scrolled to the bottom', async () => {
+    const { container } = render(<SettingsView />);
+
+    const scrollContainer = container.querySelector('.flex-1.overflow-y-auto');
+    expect(scrollContainer).not.toBeNull();
+
+    const mediaSubItem = screen.getByTestId('settings-subitem-media');
+    const timerSubItem = screen.getByTestId('settings-subitem-timer-focus');
+
+    expect(timerSubItem.getAttribute('aria-current')).toBe('true');
+    expect(mediaSubItem.getAttribute('aria-current')).toBeNull();
+
+    // Simulate scrolling near bottom of pane
+    Object.defineProperty(scrollContainer, 'scrollHeight', { value: 2000, configurable: true });
+    Object.defineProperty(scrollContainer, 'clientHeight', { value: 600, configurable: true });
+    Object.defineProperty(scrollContainer, 'scrollTop', { value: 1400, configurable: true });
+
+    fireEvent.scroll(scrollContainer!);
+
+    await waitFor(() => {
+      expect(mediaSubItem.getAttribute('aria-current')).toBe('true');
+      expect(timerSubItem.getAttribute('aria-current')).toBeNull();
+    });
   });
 });

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Keyboard, X, AlertCircle } from 'lucide-react';
 import { validateHotkey, suspendShortcuts, resumeShortcuts } from '../../services/stt';
 import { Kbd } from '../ui/Kbd';
+import { I18nService } from '../../services/i18n';
 
 export interface HotkeyRecorderProps {
   value: string;
@@ -46,6 +47,7 @@ export const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
   placeholder = 'Click to record hotkey',
   disabled = false,
 }) => {
+  const t = I18nService.t();
   const [isRecording, setIsRecording] = useState(false);
   const [currentKeys, setCurrentKeys] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -213,8 +215,8 @@ export const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
                 type="button"
                 onClick={handleClear}
                 className="p-1 rounded hover:bg-[var(--elevated)] transition-colors"
-                title="Clear shortcut"
-                aria-label="Clear shortcut"
+                title={t.speechClearShortcut}
+                aria-label={t.speechClearShortcut}
               >
                 <X className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
               </button>

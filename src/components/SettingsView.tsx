@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useTransition } from 'react';
+import React, { useState, useEffect, useTransition, useRef } from 'react';
 import {
   Sparkles,
   Check,
@@ -108,6 +108,20 @@ const SECTION_DEFS: Array<{ id: SettingsSection; labelKey: keyof Translations; i
   { id: 'about', labelKey: 'settingsAboutTab', icon: <Info className="w-4 h-4" /> },
 ];
 
+interface SubItemDef {
+  id: string;
+  labelKey: keyof Translations;
+  blockId: string;
+}
+
+const SECTION_SUB_ITEMS: Partial<Record<SettingsSection, SubItemDef[]>> = {
+  general: [
+    { id: 'timer-focus', labelKey: 'settingsTimerFocus', blockId: 'general-timer-focus' },
+    { id: 'rollover', labelKey: 'settingsRollover', blockId: 'general-rollover' },
+    { id: 'media', labelKey: 'settingsMedia', blockId: 'general-media' },
+  ],
+};
+
 export const SettingsView: React.FC<SettingsViewProps> = (props) => {
   const {
     aiSettings,
@@ -115,7 +129,69 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
   } = props;
   const t = I18nService.t();
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
+  const [activeSubItem, setActiveSubItem] = useState<string | null>('timer-focus');
+  const contentRef = useRef<HTMLDivElement>(null);
   const [, startTransition] = useTransition();
+
+  const handleSelectSection = (secId: SettingsSection) => {
+    startTransition(() => {
+      setActiveSection(secId);
+      const subs = SECTION_SUB_ITEMS[secId];
+      if (subs && subs.length > 0) {
+        setActiveSubItem(subs[0].id);
+      } else {
+        setActiveSubItem(null);
+      }
+    });
+  };
+
+  const handleSubItemClick = (sub: SubItemDef) => {
+    setActiveSubItem(sub.id);
+    const el = document.getElementById(sub.blockId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  useEffect(() => {
+    if (contentRef.current) {
+      contentRef.current.scrollTop = 0;
+    }
+  }, [activeSection]);
+
+  useEffect(() => {
+    const container = contentRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const subItems = SECTION_SUB_ITEMS[activeSection];
+      if (!subItems || subItems.length === 0) return;
+
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 10) {
+        setActiveSubItem(subItems[subItems.length - 1].id);
+        return;
+      }
+
+      const containerRect = container.getBoundingClientRect();
+      let currentId = subItems[0].id;
+
+      for (const item of subItems) {
+        const el = document.getElementById(item.blockId);
+        if (el) {
+          const elRect = el.getBoundingClientRect();
+          if (elRect.top - containerRect.top <= 80) {
+            currentId = item.id;
+          }
+        }
+      }
+      setActiveSubItem(currentId);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+    };
+  }, [activeSection]);
 
   // General Settings state (loaded synchronously from cache)
   const [general, setGeneral] = useState<GeneralSettings>(() => loadGeneralSettings());
@@ -561,46 +637,84 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
         </div>
       </div>
 
-      {/* Navigation tabs */}
-      <div
-        className="flex border-b px-6 gap-1 shrink-0 overflow-x-auto"
-        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
-        role="tablist"
-      >
-        {SECTION_DEFS.map((sec) => {
-          const isActive = activeSection === sec.id;
-          return (
-            <button
-              key={sec.id}
-              role="tab"
-              aria-selected={isActive}
-              aria-controls={`section-${sec.id}`}
-              onClick={() => startTransition(() => setActiveSection(sec.id))}
-              className="flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap"
-              style={{
-                borderColor: isActive ? 'var(--accent)' : 'transparent',
-                color: isActive ? 'var(--accent)' : 'var(--text-muted)',
-              }}
-            >
-              {sec.icon}
-              <span>{t[sec.labelKey]}</span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Body: Left column sidebar + Main content pane */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* Navigation sidebar (macOS System Settings style) */}
+        <aside
+          className="w-60 shrink-0 border-r overflow-y-auto p-3 flex flex-col gap-1 select-none"
+          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+          role="tablist"
+          aria-orientation="vertical"
+          aria-label={t.settingsTitle}
+        >
+          {SECTION_DEFS.map((sec) => {
+            const isActive = activeSection === sec.id;
+            const subItems = SECTION_SUB_ITEMS[sec.id];
+            return (
+              <div key={sec.id} className="flex flex-col">
+                <button
+                  role="tab"
+                  id={`tab-${sec.id}`}
+                  aria-selected={isActive}
+                  aria-controls={`section-${sec.id}`}
+                  onClick={() => handleSelectSection(sec.id)}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left w-full cursor-pointer hover:bg-white/5"
+                  style={{
+                    backgroundColor: isActive ? 'var(--elevated)' : 'transparent',
+                    color: isActive ? 'var(--accent)' : 'var(--text-muted)',
+                  }}
+                >
+                  <span className="shrink-0">{sec.icon}</span>
+                  <span className="truncate">{t[sec.labelKey]}</span>
+                </button>
 
-      {/* Main content scroll container */}
-      <div className="flex-1 overflow-y-auto p-6 max-w-4xl w-full mx-auto space-y-6">
-        {/* ========================================================================= */}
-        {/* 1. GENERAL SECTION                                                        */}
-        {/* ========================================================================= */}
-        {activeSection === 'general' && (
-          <section id="section-general" role="tabpanel" aria-label={t.settingsGeneral} className="space-y-6">
-            {/* Timer & Pomodoro Configuration */}
-            <div
-              className="p-5 rounded-lg border space-y-4"
-              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
-            >
+                {/* Sub-items for long sections (under active section) */}
+                {isActive && subItems && subItems.length > 0 && (
+                  <div
+                    className="ml-6 pl-3 border-l space-y-0.5 my-1"
+                    style={{ borderColor: 'var(--border)' }}
+                  >
+                    {subItems.map((sub) => {
+                      const isSubActive = activeSubItem === sub.id;
+                      return (
+                        <button
+                          key={sub.id}
+                          type="button"
+                          data-testid={`settings-subitem-${sub.id}`}
+                          onClick={() => handleSubItemClick(sub)}
+                          className="w-full text-left px-2 py-1.5 rounded text-xs transition-colors block truncate cursor-pointer hover:bg-white/5"
+                          style={{
+                            color: isSubActive ? 'var(--accent)' : 'var(--text-muted)',
+                            fontWeight: isSubActive ? 600 : 400,
+                            backgroundColor: isSubActive ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
+                          }}
+                          aria-current={isSubActive ? 'true' : undefined}
+                        >
+                          {t[sub.labelKey]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </aside>
+
+        {/* Main content scroll container */}
+        <div ref={contentRef} className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-4xl w-full mx-auto space-y-6">
+            {/* ========================================================================= */}
+            {/* 1. GENERAL SECTION                                                        */}
+            {/* ========================================================================= */}
+            {activeSection === 'general' && (
+              <section id="section-general" role="tabpanel" aria-label={t.settingsGeneral} className="space-y-6">
+                {/* Timer & Pomodoro Configuration */}
+                <div
+                  id="general-timer-focus"
+                  className="p-5 rounded-lg border space-y-4 scroll-mt-4"
+                  style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+                >
               <h2 className="text-sm font-semibold tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 {t.settingsTimerFocus}
               </h2>
@@ -748,7 +862,8 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
 
             {/* Day rollover */}
             <div
-              className="p-5 rounded-lg border space-y-4"
+              id="general-rollover"
+              className="p-5 rounded-lg border space-y-4 scroll-mt-4"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
             >
               <div className="flex items-center justify-between">
@@ -757,7 +872,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                     {t.settingsRollover}
                   </h2>
                   <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                    {t.settingsRolloverHint || "The hour at which today's tasks roll over to yesterday"}
+                    {t.settingsRolloverHint}
                   </p>
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -770,7 +885,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                     className="w-4 h-4 rounded cursor-pointer"
                   />
                   <span className="text-xs font-medium" style={{ color: 'var(--text)' }}>
-                    {rolloverEnabled ? 'Enabled' : 'Disabled'}
+                    {rolloverEnabled ? t.settingsEnabled : t.settingsDisabled}
                   </span>
                 </label>
               </div>
@@ -779,7 +894,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                   {t.settingsRolloverHour}
                 </label>
                 <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
-                  The hour at which today's tasks roll over to yesterday
+                  {t.settingsRolloverHint}
                 </p>
                 <select
                   aria-label={t.settingsRolloverHour}
@@ -805,7 +920,8 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
 
             {/* Media Usage & Pruning (R43) */}
             <div
-              className="p-5 rounded-lg border space-y-4"
+              id="general-media"
+              className="p-5 rounded-lg border space-y-4 scroll-mt-4"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
             >
               <div className="flex items-center justify-between">
@@ -830,7 +946,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                   }}
                 >
                   {isPruning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <HardDrive className="w-3.5 h-3.5" />}
-                  Prune Media
+                  {t.settingsPruneMedia}
                 </button>
               </div>
 
@@ -840,15 +956,15 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
               >
                 <div>
                   <div className="font-medium">
-                    Media Used: {mediaStats ? formatBytes(mediaStats.total) : '0 B'}
+                    {t.settingsMediaUsed.replace('{used}', mediaStats ? formatBytes(mediaStats.total) : '0 B')}
                   </div>
                   <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    Limit: {formatBytes(general.mediaLimitBytes || DEFAULT_MEDIA_LIMIT_BYTES)}
+                    {t.settingsMediaLimit.replace('{limit}', formatBytes(general.mediaLimitBytes || DEFAULT_MEDIA_LIMIT_BYTES))}
                   </div>
                 </div>
                 {mediaStats && (
                   <div className="text-xs text-right" style={{ color: 'var(--text-muted)' }}>
-                    {Object.keys(mediaStats.by_kind ?? {}).length} categories tracked
+                    {t.settingsCategoriesTracked.replace('{count}', String(Object.keys(mediaStats.by_kind ?? {}).length))}
                   </div>
                 )}
               </div>
@@ -882,7 +998,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                     <input
                       aria-label={t.settingsApiKeyAria}
                       type="password"
-                      placeholder={keyStored ? '•••••••••••••••• (Stored securely)' : 'Enter API Key...'}
+                      placeholder={keyStored ? t.syncApiKeyPlaceholderStored : t.syncApiKeyPlaceholderEmpty}
                       value={apiKeyInput}
                       onChange={(e) => setApiKeyInput(e.target.value)}
                       className="w-full px-3 py-2 rounded-md border text-sm font-mono"
@@ -998,7 +1114,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                 {fetchedModels.length > 0 && (
                   <div>
                     <select
-                      aria-label="Select AI Model"
+                      aria-label={t.syncSelectAiModel}
                       data-testid="ai-model-select"
                       value={ai.model}
                       onChange={(e) =>
@@ -1031,7 +1147,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                     aria-label={t.settingsModelAria}
                     data-testid="ai-model-input"
                     type="text"
-                    placeholder="e.g. gpt-4o, claude-3-5-sonnet..."
+                    placeholder={t.syncAiModelPlaceholder}
                     value={ai.model}
                     onChange={(e) =>
                       onUpdateAISettings?.({
@@ -1074,7 +1190,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                   }}
                 >
                   {isPlayingVoice ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-                  Test Voice
+                  {t.settingsTestVoice}
                 </button>
               </div>
             </div>
@@ -1273,9 +1389,9 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
             {/* 1. Хранилище и система (Matching User Reference) */}
             <div className="space-y-3">
               <div>
-                <h2 className="text-base font-semibold text-white">Хранилище и система</h2>
+                <h2 className="text-base font-semibold text-white">{t.settingsStorageAndSystem}</h2>
                 <p className="text-xs text-white/50 mt-0.5">
-                  Расположение моделей, кэша и режим работы приложения
+                  {t.settingsStorageAndSystemHint}
                 </p>
               </div>
 
@@ -1287,10 +1403,10 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <Package className="w-4 h-4 text-white/70" />
-                    <span className="text-sm font-semibold text-white">Портативный режим</span>
+                    <span className="text-sm font-semibold text-white">{t.settingsPortable}</span>
                   </div>
                   <p className="text-xs text-white/50 leading-relaxed max-w-xl">
-                    Все файлы хранятся в одной папке рядом с приложением. Можно распаковать на флешку и переносить вместе с моделями.
+                    {t.settingsPortableDesc}
                   </p>
                   <div className="text-[11px] font-mono text-white/40 pt-0.5">
                     {isPortable ? 'портативный • ' : 'обычный • '}
@@ -1314,13 +1430,13 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
               >
                 <div className="flex items-center gap-2 mb-1">
                   <Folder className="w-4 h-4 text-white/70" />
-                  <span className="text-sm font-semibold text-white">Каталоги</span>
+                  <span className="text-sm font-semibold text-white">{t.settingsDirectories}</span>
                 </div>
 
                 <div className="space-y-2 text-xs">
                   {/* Модели */}
                   <div className="flex items-center justify-between gap-3">
-                    <span className="w-16 font-medium text-white/60">Модели</span>
+                    <span className="w-16 font-medium text-white/60">{t.settingsDirModels}</span>
                     <input
                       type="text"
                       readOnly
@@ -1329,7 +1445,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                     />
                     <button
                       type="button"
-                      title="Открыть папку"
+                      title={t.settingsOpenFolder}
                       onClick={() => handleOpenFolder(dataDir ? `${dataDir}\\models` : '')}
                       className="p-2 rounded-lg border border-white/10 hover:bg-white/10 text-white/70 transition-colors shrink-0"
                     >
@@ -1339,7 +1455,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
 
                   {/* Движок */}
                   <div className="flex items-center justify-between gap-3">
-                    <span className="w-16 font-medium text-white/60">Движок</span>
+                    <span className="w-16 font-medium text-white/60">{t.settingsDirEngine}</span>
                     <input
                       type="text"
                       readOnly
@@ -1348,7 +1464,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                     />
                     <button
                       type="button"
-                      title="Открыть папку"
+                      title={t.settingsOpenFolder}
                       onClick={() => handleOpenFolder(dataDir ? `${dataDir}\\bin` : '')}
                       className="p-2 rounded-lg border border-white/10 hover:bg-white/10 text-white/70 transition-colors shrink-0"
                     >
@@ -1358,7 +1474,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
 
                   {/* Логи */}
                   <div className="flex items-center justify-between gap-3">
-                    <span className="w-16 font-medium text-white/60">Логи</span>
+                    <span className="w-16 font-medium text-white/60">{t.settingsDirLogs}</span>
                     <input
                       type="text"
                       readOnly
@@ -1367,7 +1483,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                     />
                     <button
                       type="button"
-                      title="Открыть папку"
+                      title={t.settingsOpenFolder}
                       onClick={() => handleOpenFolder(dataDir ? `${dataDir}\\logs` : '')}
                       className="p-2 rounded-lg border border-white/10 hover:bg-white/10 text-white/70 transition-colors shrink-0"
                     >
@@ -1382,24 +1498,24 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                 className="p-4 rounded-xl border space-y-1.5"
                 style={{ backgroundColor: 'var(--elevated)', borderColor: 'var(--border)' }}
               >
-                <div className="text-sm font-semibold text-white">Состояние распознавания</div>
+                <div className="text-sm font-semibold text-white">{t.settingsRecognitionStatus}</div>
                 {models.some((m) => m.installed) ? (
                   <div className="flex items-center gap-2 text-xs text-emerald-400">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
                     <span>
-                      Модель Whisper установлена:{' '}
-                      {models.find((m) => m.installed)?.name ?? 'Base'}{' '}
-                      ({Math.round((models.find((m) => m.installed)?.bytes ?? 0) / 1048576)} MB)
+                      {t.settingsWhisperInstalled
+                        .replace('{model}', models.find((m) => m.installed)?.name ?? 'Base')
+                        .replace('{size}', String(Math.round((models.find((m) => m.installed)?.bytes ?? 0) / 1048576)))}
                     </span>
                   </div>
                 ) : (
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 text-xs text-amber-400">
                       <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                      <span>Модель распознавания не найдена. Откройте «Настройки → Speech to Text» и скачайте подходящую.</span>
+                      <span>{t.settingsWhisperNotFound}</span>
                     </div>
                     <div className="text-[11px] text-white/40 pl-4">
-                      Моделей пока нет — скачайте на странице «Speech to Text».
+                      {t.settingsWhisperNotFoundHint}
                     </div>
                   </div>
                 )}
@@ -1413,10 +1529,10 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <Zap className="w-4 h-4 text-white/70" />
-                    <span className="text-sm font-semibold text-white">Запускать свёрнутым в трей</span>
+                    <span className="text-sm font-semibold text-white">{t.settingsAutostart}</span>
                   </div>
                   <p className="text-xs text-white/50">
-                    Окно не появляется при старте — приложение ждёт в трее.
+                    {t.settingsAutostartHint}
                   </p>
                 </div>
                 <button
@@ -1438,12 +1554,11 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
             {/* 2. Обновления (Matching User Reference) */}
             <div className="space-y-3">
               <div>
-                <h2 className="text-base font-semibold text-white">Обновления</h2>
+                <h2 className="text-base font-semibold text-white">{t.settingsUpdatesTitle}</h2>
                 <p className="text-xs text-white/50 mt-0.5">
-                  Проверка наличия новых версий приложения Tempo
+                  {t.settingsUpdatesSubtitle}
                 </p>
               </div>
-
               <div
                 className="p-4 rounded-xl border space-y-3"
                 style={{ backgroundColor: 'var(--elevated)', borderColor: 'var(--border)' }}
@@ -1475,23 +1590,23 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                     {updateCheckStatus === 'checking' && (
                        <span className="inline-flex items-center gap-2 text-white/70">
                         <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                        <span>Проверка наличия обновлений...</span>
+                        <span>{t.settingsCheckingUpdates}</span>
                       </span>
                     )}
                     {updateCheckStatus === 'latest' && (
                       <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium">
                         <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>У вас установлена последняя версия ({appVersion})</span>
+                        <span>{t.settingsLatestVersionInstalled.replace('{version}', appVersion)}</span>
                       </span>
                     )}
                     {updateCheckStatus === 'error' && (
                       <span className="inline-flex items-center gap-1.5 text-amber-400 font-medium">
-                        <span>Не удалось проверить обновления</span>
+                        <span>{t.settingsCheckUpdateFailed}</span>
                       </span>
                     )}
                     {updateCheckStatus === 'idle' && (
                       <span className="text-white/40">
-                        Нажмите кнопку для проверки новых релизов
+                        {t.settingsCheckUpdateHint}
                       </span>
                     )}
                   </div>
@@ -1524,12 +1639,12 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                         {isCheckingUpdate ? (
                           <>
                             <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                            <span>Проверка...</span>
+                            <span>{t.settingsChecking}</span>
                           </>
                         ) : (
                           <>
                             <RefreshCw className="w-3.5 h-3.5" />
-                            <span>{updateCheckStatus === 'latest' ? 'Проверить снова' : 'Проверить обновления'}</span>
+                            <span>{updateCheckStatus === 'latest' ? t.settingsCheckAgain : t.settingsCheckUpdate}</span>
                           </>
                         )}
                       </button>
@@ -1590,7 +1705,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                 {/* Transport selection */}
                 <div className="space-y-2">
                   <label className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                    Sync Method
+                    {t.syncMethod}
                   </label>
                   <div className="flex gap-4">
                     <label className="flex items-center gap-2 text-xs cursor-pointer">
@@ -1602,7 +1717,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                         onChange={() => handleSetSyncTransport('none')}
                         className="cursor-pointer"
                       />
-                      Disabled
+                      {t.syncDisabled}
                     </label>
                     <label className="flex items-center gap-2 text-xs cursor-pointer">
                       <input
@@ -1613,7 +1728,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                         onChange={() => handleSetSyncTransport('folder', syncFolderInput || null)}
                         className="cursor-pointer"
                       />
-                      Shared Folder
+                      {t.syncSharedFolder}
                     </label>
                   </div>
                 </div>
@@ -1649,7 +1764,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                         className="px-3 py-1.5 rounded-md text-xs font-medium"
                         style={{ backgroundColor: 'var(--accent)', color: 'var(--bg)' }}
                       >
-                        Save Path
+                        {t.syncSavePath}
                       </button>
                     </div>
                   </div>
@@ -1664,7 +1779,9 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
                         <div className="text-xs font-medium">
-                          {syncStatus.pending} {syncStatus.pending === 1 ? 'change pending' : 'changes pending'}
+                          {t.syncChangesPending
+                            .replace('{count}', String(syncStatus.pending))
+                            .replace('{pendingText}', syncStatus.pending === 1 ? 'change pending' : 'changes pending')}
                         </div>
                         <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                           {syncStatus.last_sync
@@ -1684,7 +1801,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                         ) : (
                           <RefreshCw className="w-3.5 h-3.5" />
                         )}
-                        Sync Now
+                        {t.syncNow}
                       </button>
                     </div>
 
@@ -1692,16 +1809,16 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                     {syncOutcome && (
                       <div className="text-xs space-y-1 pt-1 border-t" style={{ borderColor: 'var(--border)' }}>
                         <div className="flex flex-wrap gap-x-4 gap-y-1" style={{ color: 'var(--text)' }}>
-                          <span>Sent: {syncOutcome.sent}</span>
-                          <span>Received: {syncOutcome.received}</span>
-                          <span>Applied: {syncOutcome.applied}</span>
-                          <span>Media copied: {syncOutcome.media_copied}</span>
+                          <span>{t.syncOutcomeSent.replace('{count}', String(syncOutcome.sent))}</span>
+                          <span>{t.syncOutcomeReceived.replace('{count}', String(syncOutcome.received))}</span>
+                          <span>{t.syncOutcomeApplied.replace('{count}', String(syncOutcome.applied))}</span>
+                          <span>{t.syncOutcomeMediaCopied.replace('{count}', String(syncOutcome.media_copied))}</span>
                         </div>
                         {syncOutcome.conflicts > 0 && (
                           <div className="text-xs font-medium" style={{ color: '#eab308' }}>
                             {syncOutcome.conflicts === 1
-                              ? '1 change was resolved in favour of the later edit'
-                              : `${syncOutcome.conflicts} changes were resolved in favour of the later edit`}
+                              ? t.syncOutcomeConflictSingle
+                              : t.syncOutcomeConflictPlural.replace('{count}', String(syncOutcome.conflicts))}
                           </div>
                         )}
                       </div>
@@ -1759,7 +1876,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                         <span>{t.syncConfirmMedia}</span>
                       </div>
                       <p style={{ color: 'var(--text-muted)' }}>
-                        Enabling media sync copies audio recordings and attached media files to the sync folder so other devices can access them. Files leave this device.
+                        {t.syncConfirmMediaDescription}
                       </p>
                       <div className="flex gap-2 pt-1">
                         <button
@@ -1780,7 +1897,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                             color: 'var(--text)',
                           }}
                         >
-                          Cancel
+                          {t.syncCancel}
                         </button>
                       </div>
                     </div>
@@ -1798,7 +1915,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                       className="text-[11px] font-medium px-2 py-0.5 rounded-full"
                       style={{ backgroundColor: 'var(--surface-muted, rgba(120, 120, 120, 0.15))', color: 'var(--text-muted)' }}
                     >
-                      Unavailable
+                      {t.syncUnavailable}
                     </span>
                   </div>
                   <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -1809,6 +1926,8 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
             </div>
           </section>
         )}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -9,12 +9,15 @@ import { HistoryPanel } from '../speech/HistoryPanel';
 import { PostProcessSettings } from '../speech/PostProcessSettings';
 import { SpeechDebug } from '../speech/SpeechDebug';
 import { SpeechOnboarding } from '../speech/SpeechOnboarding';
+import { HotkeyRecorder } from '../speech/HotkeyRecorder';
+import { ModelLibrary } from '../speech/ModelLibrary';
+import { I18nService } from '../../services/i18n';
 
 vi.mock('../../services/stt', () => ({
   listModels: vi.fn(),
   downloadModel: vi.fn(),
   cancelDownload: vi.fn(),
-  downloadProgress: vi.fn(),
+  downloadProgress: vi.fn().mockResolvedValue([]),
   startDictation: vi.fn(),
   stopDictation: vi.fn(),
   cancelDictation: vi.fn(),
@@ -29,6 +32,10 @@ vi.mock('../../services/stt', () => ({
   validateHotkey: vi.fn(),
   suspendShortcuts: vi.fn(),
   resumeShortcuts: vi.fn(),
+  freeDiskSpace: vi.fn(),
+  deleteModel: vi.fn(),
+  loadModel: vi.fn(),
+  importCustomModel: vi.fn(),
 }));
 
 vi.mock('../../services/sttEvents', () => ({
@@ -418,5 +425,153 @@ describe('SpeechOnboarding', () => {
     expect(onClose).toHaveBeenCalled();
     expect(onComplete).not.toHaveBeenCalled();
     expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ onboarded: true }));
+  });
+});
+
+describe('Speech components localization (ru/en)', () => {
+  beforeEach(() => {
+    vi.mocked(stt.modelsDir).mockResolvedValue('C:/AppData/Tempo/models');
+    vi.mocked(stt.freeDiskSpace).mockResolvedValue(10_000_000_000);
+    vi.mocked(stt.listModels).mockResolvedValue([
+      {
+        id: 'whisper-small',
+        name: 'Whisper Small',
+        bytes: 480_000_000,
+        languages: ['en', 'ru'],
+        installed: true,
+        recommended: true,
+        description: 'Recommended model',
+      },
+    ]);
+  });
+
+  it('renders speech components with Russian localized strings in ru locale', async () => {
+    I18nService.setLang('ru');
+
+    // 1. CustomWordsSettings: Clear all words, Clear, Add
+    const { unmount: unmountWords } = render(
+      <CustomWordsSettings
+        config={{ ...DEFAULT_SPEECH_CONFIG, customWords: ['test'] }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTitle('Удалить все слова')).toBeDefined();
+    expect(screen.getByText('Очистить')).toBeDefined();
+    expect(screen.getByText('Добавить')).toBeDefined();
+    unmountWords();
+
+    // 2. SpeechDebug: Show recording overlay indicator, hints, rerun setup
+    const { unmount: unmountDebug } = render(
+      <SpeechDebug
+        config={{ ...DEFAULT_SPEECH_CONFIG, overlayEnabled: true }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Показывать индикатор записи')).toBeDefined();
+    expect(screen.getByText('Уровень, режим и таймер во время диктовки (оверлей и пилюля)')).toBeDefined();
+    expect(screen.getByText('Сбросить состояние знакомства и запустить начальный мастер из 4 шагов')).toBeDefined();
+    expect(screen.getByText('Пройти мастер заново')).toBeDefined();
+    unmountDebug();
+
+    // 3. HistoryPanel: Saved filter button
+    const { unmount: unmountHistory } = render(
+      <HistoryPanel
+        config={{ ...DEFAULT_SPEECH_CONFIG, historyEnabled: true }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Сохранённые')).toBeDefined();
+    unmountHistory();
+
+    // 4. ModelLibrary: Multilingual (99+), English only options
+    const { unmount: unmountModels } = render(
+      <ModelLibrary activeModelId="whisper-small" onSelectModel={vi.fn()} />,
+    );
+    expect(screen.getByText('Многоязычные (99+)')).toBeDefined();
+    expect(screen.getByText('Только английский')).toBeDefined();
+    unmountModels();
+
+    // 5. SpeechOnboarding: Ready
+    const { unmount: unmountOnboarding } = render(
+      <SpeechOnboarding
+        open={true}
+        config={{ ...DEFAULT_SPEECH_CONFIG, modelId: 'whisper-small' }}
+        onChange={vi.fn()}
+        onClose={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    );
+    await waitFor(() => {
+      const nextBtn = screen.getByTestId('onboarding-next-btn');
+      fireEvent.click(nextBtn);
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Готово')).toBeDefined();
+    });
+    unmountOnboarding();
+
+    // 6. HotkeyRecorder: Clear shortcut
+    const { unmount: unmountHotkey } = render(
+      <HotkeyRecorder value="Ctrl+Shift+Space" onChange={vi.fn()} />,
+    );
+    expect(screen.getByTitle('Сбросить сочетание')).toBeDefined();
+    unmountHotkey();
+  });
+
+  it('renders speech components with English strings in en locale', async () => {
+    I18nService.setLang('en');
+
+    // 1. CustomWordsSettings
+    const { unmount: unmountWords } = render(
+      <CustomWordsSettings
+        config={{ ...DEFAULT_SPEECH_CONFIG, customWords: ['test'] }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTitle('Clear all words')).toBeDefined();
+    expect(screen.getByText('Clear')).toBeDefined();
+    expect(screen.getByText('Add')).toBeDefined();
+    unmountWords();
+
+    // 2. SpeechDebug
+    const { unmount: unmountDebug } = render(
+      <SpeechDebug
+        config={{ ...DEFAULT_SPEECH_CONFIG, overlayEnabled: true }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Show recording overlay indicator')).toBeDefined();
+    expect(screen.getByText('Display visual level meter, mode and timer while dictating (overlay and pill)')).toBeDefined();
+    expect(screen.getByText('Reset onboarding state to launch the initial 4-step setup wizard')).toBeDefined();
+    expect(screen.getByText('Rerun Setup')).toBeDefined();
+    unmountDebug();
+
+    // 3. HistoryPanel
+    const { unmount: unmountHistory } = render(
+      <HistoryPanel
+        config={{ ...DEFAULT_SPEECH_CONFIG, historyEnabled: true }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Saved')).toBeDefined();
+    unmountHistory();
+
+    // 4. ModelLibrary
+    const { unmount: unmountModels } = render(
+      <ModelLibrary activeModelId="whisper-small" onSelectModel={vi.fn()} />,
+    );
+    expect(screen.getByText('Multilingual (99+)')).toBeDefined();
+    expect(screen.getByText('English only')).toBeDefined();
+    unmountModels();
+
+    // 5. HotkeyRecorder
+    const { unmount: unmountHotkey } = render(
+      <HotkeyRecorder value="Ctrl+Shift+Space" onChange={vi.fn()} />,
+    );
+    expect(screen.getByTitle('Clear shortcut')).toBeDefined();
+    unmountHotkey();
+
+    // Reset back to default ru
+    I18nService.setLang('ru');
   });
 });

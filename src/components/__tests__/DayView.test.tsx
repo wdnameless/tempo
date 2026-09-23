@@ -332,7 +332,7 @@ describe('DayView component', () => {
       expect(screen.getByText('Actionable item')).toBeDefined();
     });
 
-    const toggleBtn = screen.getByRole('button', { name: /Mark as completed/i });
+    const toggleBtn = screen.getByRole('button', { name: new RegExp(t.dayMarkAsCompleted, 'i') });
     fireEvent.click(toggleBtn);
 
     await waitFor(() => {
@@ -401,7 +401,7 @@ describe('DayView component', () => {
       expect(screen.getByText('Actionable item')).toBeDefined();
     });
 
-    const toggleBtn = screen.getByRole('button', { name: /Mark as completed/i });
+    const toggleBtn = screen.getByRole('button', { name: new RegExp(t.dayMarkAsCompleted, 'i') });
     fireEvent.click(toggleBtn);
 
     await waitFor(() => {

@@ -25,6 +25,7 @@ import {
   getFocusAudioVolume,
   type FocusSoundId,
 } from '../services/focusAudio';
+import { I18nService } from '../services/i18n';
 
 interface WinterBottomPlayerProps {
   onToggleSidebar?: () => void;
@@ -53,6 +54,7 @@ export function WinterBottomPlayer({
   soundEnabled = true,
   onToggleSound,
 }: WinterBottomPlayerProps): React.ReactElement {
+  const t = I18nService.t();
   const [snapshot, setSnapshot] = useState<TimerSnapshot | null>(null);
 
   // Popover states
@@ -190,7 +192,7 @@ export function WinterBottomPlayer({
       {/* 1. Menu hamburger button */}
       <button
         type="button"
-        aria-label="Toggle navigation menu"
+        aria-label={t.playerToggleMenu}
         data-testid="bottom-player-menu"
         onClick={() => {
           if (onToggleSidebar) {
@@ -228,7 +230,7 @@ export function WinterBottomPlayer({
       <div className="relative">
         <button
           type="button"
-          aria-label="Phase selector"
+          aria-label={t.playerPhaseSelector}
           data-testid="bottom-player-phase"
           onClick={() => {
             setShowPhases(!showPhases);
@@ -279,7 +281,7 @@ export function WinterBottomPlayer({
       <div className="relative">
         <button
           type="button"
-          aria-label="Timer presets"
+          aria-label={t.playerTimerPresets}
           data-testid="bottom-player-time"
           onClick={() => {
             setShowPresets(!showPresets);
@@ -340,7 +342,7 @@ export function WinterBottomPlayer({
       {/* 4. Play / Pause */}
       <button
         type="button"
-        aria-label={running ? 'Pause timer' : 'Start timer'}
+        aria-label={running ? t.playerPauseTimer : t.playerStartTimer}
         data-testid="bottom-player-toggle"
         onClick={handleToggleTimer}
         className="p-1 rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors"
@@ -351,7 +353,7 @@ export function WinterBottomPlayer({
       {/* 5. Reset timer */}
       <button
         type="button"
-        aria-label="Reset timer"
+        aria-label={t.playerResetTimer}
         data-testid="bottom-player-reset"
         onClick={handleReset}
         className="p-1 rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors"
@@ -363,7 +365,7 @@ export function WinterBottomPlayer({
       {!isStopwatch && (
         <button
           type="button"
-          aria-label="Skip phase"
+          aria-label={t.playerSkipPhase}
           data-testid="bottom-player-skip"
           onClick={handleSkipPhase}
           className="p-1 rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors"
@@ -375,7 +377,7 @@ export function WinterBottomPlayer({
       <div className="relative">
         <button
           type="button"
-          aria-label={activeSound !== 'none' ? 'Focus audio active' : 'Focus audio'}
+          aria-label={activeSound !== 'none' ? t.playerFocusAudioActive : t.playerFocusAudio}
           data-testid="bottom-player-sound"
           onClick={() => {
             setShowSoundscapes(!showSoundscapes);

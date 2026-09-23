@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { EditorView } from '@codemirror/view';
 import { NotesEditor } from '../NotesEditor';
+import { I18nService } from '../../services/i18n';
 
 describe('NotesEditor', () => {
   it('renders initial value and allows text selection on root', () => {
@@ -75,6 +76,7 @@ Normal text`}
     const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
     expect(checkbox).not.toBeNull();
     expect(checkbox.checked).toBe(false);
+    expect(checkbox.getAttribute('aria-label')).toBe(I18nService.t().notesTaskIncomplete);
 
     fireEvent.click(checkbox);
     expect(onChange).toHaveBeenCalledWith('- [x] Buy milk');
@@ -87,9 +89,22 @@ Normal text`}
     const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
     expect(checkbox).not.toBeNull();
     expect(checkbox.checked).toBe(true);
+    expect(checkbox.getAttribute('aria-label')).toBe(I18nService.t().notesTaskCompleted);
 
     fireEvent.click(checkbox);
     expect(onChange).toHaveBeenCalledWith('- [ ] Done task');
+  });
+
+  it('respects custom task checkbox labels', () => {
+    render(
+      <NotesEditor
+        value="- [ ] Pending task"
+        onChange={vi.fn()}
+        taskIncompleteLabel="Custom incomplete"
+      />
+    );
+    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
+    expect(checkbox.getAttribute('aria-label')).toBe('Custom incomplete');
   });
 
   it('calls onSave on Ctrl+S with the current text', () => {

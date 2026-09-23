@@ -272,7 +272,7 @@ export function CalendarView() {
             <div className="flex items-center rounded-[8px] border border-[var(--border)] bg-[var(--surface)] p-0.5">
               <button
                 type="button"
-                aria-label="Previous"
+                aria-label={t.calendarPrevious}
                 onClick={handlePrev}
                 className="p-1 rounded-[6px] hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
               >
@@ -280,7 +280,7 @@ export function CalendarView() {
               </button>
               <button
                 type="button"
-                aria-label="Today"
+                aria-label={t.calendarToday}
                 onClick={handleToday}
                 className="px-2.5 py-0.5 text-xs font-medium rounded-[6px] hover:bg-[var(--elevated)] transition-colors text-[var(--text)] cursor-pointer"
               >
@@ -288,7 +288,7 @@ export function CalendarView() {
               </button>
               <button
                 type="button"
-                aria-label="Next"
+                aria-label={t.calendarNext}
                 onClick={handleNext}
                 className="p-1 rounded-[6px] hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
               >
@@ -418,7 +418,7 @@ export function CalendarView() {
                       </span>
                       <button
                         type="button"
-                        aria-label="Add event"
+                        aria-label={t.calendarAddEvent}
                         onClick={(e) => {
                           e.stopPropagation();
                           openCreateModal(day.dateKey);

@@ -45,4 +45,75 @@ describe('i18n completeness and Russian locale verification', () => {
     expect(TRANSLATIONS.ru.settingsSpeechActivationToggle).toContain('Переключение');
     expect(TRANSLATIONS.ru.settingsSpeechVadEnergy).toContain('энергии');
   });
+
+  it('all frozen keys from language-keys.md exist in both locales and ru values contain Cyrillic', () => {
+    const frozenKeys = [
+      'statsLoading',
+      'statsFocusActivity',
+      'statsCurrentStreak',
+      'statsLongest',
+      'statsDays',
+      'statsFocusedTime',
+      'statsLast14Days',
+      'statsLast12Weeks',
+      'speechOverlayIndicator',
+      'speechOverlayIndicatorHint',
+      'speechRerunSetupHint',
+      'speechRerunSetup',
+      'speechClearLog',
+      'speechClearAllWords',
+      'speechClear',
+      'speechAdd',
+      'speechModelMultilingual',
+      'speechModelEnglishOnly',
+      'speechSaved',
+      'speechReady',
+      'speechStopTestRecording',
+      'speechClearShortcut',
+      'playerToggleMenu',
+      'playerPhaseSelector',
+      'playerTimerPresets',
+      'playerStartTimer',
+      'playerPauseTimer',
+      'playerResetTimer',
+      'playerSkipPhase',
+      'playerFocusAudio',
+      'playerFocusAudioActive',
+      'dayPreviousDay',
+      'dayNextDay',
+      'dayMarkTaskDone',
+      'dayMarkAsActive',
+      'dayMarkAsCompleted',
+      'dayToggleTask',
+      'calendarPrevious',
+      'calendarToday',
+      'calendarNext',
+      'calendarAddEvent',
+      'listsRenameList',
+      'listsRenameItem',
+      'tasksMinutesPlaceholder',
+      'notesTaskCompleted',
+      'notesTaskIncomplete',
+      'recordingsPreviewAlt',
+      'overlayClose',
+      'timerPomodoroMode',
+      'timerStopwatchMode',
+      'paletteDialogLabel',
+    ] as const;
+
+    for (const key of frozenKeys) {
+      expect(TRANSLATIONS.en[key]).toBeDefined();
+      expect(TRANSLATIONS.en[key].length).toBeGreaterThan(0);
+
+      expect(TRANSLATIONS.ru[key]).toBeDefined();
+      expect(TRANSLATIONS.ru[key].length).toBeGreaterThan(0);
+      expect(/[а-яА-ЯёЁ]/.test(TRANSLATIONS.ru[key])).toBe(true);
+    }
+  });
+
+  it('locale parity: all keys defined in ru exist in en and vice versa', () => {
+    const ruKeys = Object.keys(TRANSLATIONS.ru).sort();
+    const enKeys = Object.keys(TRANSLATIONS.en).sort();
+    expect(ruKeys).toEqual(enKeys);
+  });
 });

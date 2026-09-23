@@ -203,7 +203,7 @@ export const Timer: React.FC<TimerProps> = ({
               : 'text-neutral-400 hover:text-neutral-200'
           }`}
           data-testid="mode-pomodoro-btn"
-          aria-label="Pomodoro mode"
+          aria-label={t.timerPomodoroMode}
         >
           <TimerIcon className="w-3.5 h-3.5" />
           <span>{t.pomodoroSettings}</span>
@@ -217,7 +217,7 @@ export const Timer: React.FC<TimerProps> = ({
               : 'text-neutral-400 hover:text-neutral-200'
           }`}
           data-testid="mode-stopwatch-btn"
-          aria-label="Stopwatch mode"
+          aria-label={t.timerStopwatchMode}
         >
           <Watch className="w-3.5 h-3.5" />
           <span>{t.pomodoroStopwatch}</span>

@@ -109,6 +109,19 @@ export interface Translations {
   syncMediaWarning: string;
   syncDriveBlocked: string;
   syncDriveTitle: string;
+  syncNow: string;
+  syncChangesPending: string;
+  syncOutcomeSent: string;
+  syncOutcomeReceived: string;
+  syncOutcomeApplied: string;
+  syncOutcomeMediaCopied: string;
+  syncOutcomeConflictSingle: string;
+  syncOutcomeConflictPlural: string;
+  syncConfirmMediaDescription: string;
+  syncSelectAiModel: string;
+  syncAiModelPlaceholder: string;
+  syncApiKeyPlaceholderStored: string;
+  syncApiKeyPlaceholderEmpty: string;
   settingsTitle: string;
   settingsSubtitle: string;
   settingsTimerFocus: string;
@@ -138,6 +151,36 @@ export interface Translations {
   settingsTimeZone: string;
   settingsMedia: string;
   settingsMediaHint: string;
+  settingsPruneMedia: string;
+  settingsMediaUsed: string;
+  settingsMediaLimit: string;
+  settingsCategoriesTracked: string;
+  settingsEnabled: string;
+  settingsDisabled: string;
+  settingsAutostart: string;
+  settingsAutostartHint: string;
+  settingsRecognitionStatus: string;
+  settingsWhisperInstalled: string;
+  settingsWhisperNotFound: string;
+  settingsWhisperNotFoundHint: string;
+  settingsStorageAndSystem: string;
+  settingsStorageAndSystemHint: string;
+  settingsDirectories: string;
+  settingsDirModels: string;
+  settingsDirEngine: string;
+  settingsDirLogs: string;
+  settingsOpenFolder: string;
+  settingsPortableDesc: string;
+  settingsCheckingUpdates: string;
+  settingsLatestVersionInstalled: string;
+  settingsCheckUpdateFailed: string;
+  settingsCheckUpdateHint: string;
+  settingsCheckUpdate: string;
+  settingsCheckAgain: string;
+  settingsChecking: string;
+  settingsUpdatesTitle: string;
+  settingsUpdatesSubtitle: string;
+  settingsExternalAccountsUnlinked: string;
   settingsRemove: string;
   settingsAssistant: string;
   settingsApiKey: string;
@@ -688,6 +731,65 @@ export interface Translations {
   chatSend: string;
   chatOnline: string;
   chatOffline: string;
+
+  // Stats (StatsView.tsx)
+  statsLoading: string;
+  statsFocusActivity: string;
+  statsCurrentStreak: string;
+  statsLongest: string;
+  statsDays: string;
+  statsFocusedTime: string;
+  statsLast14Days: string;
+  statsLast12Weeks: string;
+
+  // Speech (src/components/speech/)
+  speechOverlayIndicator: string;
+  speechOverlayIndicatorHint: string;
+  speechRerunSetupHint: string;
+  speechRerunSetup: string;
+  speechClearLog: string;
+  speechClearAllWords: string;
+  speechClear: string;
+  speechAdd: string;
+  speechModelMultilingual: string;
+  speechModelEnglishOnly: string;
+  speechSaved: string;
+  speechReady: string;
+  speechStopTestRecording: string;
+  speechClearShortcut: string;
+  speechOnboardingSelectModel: string;
+
+  // Bottom player (WinterBottomPlayer.tsx)
+  playerToggleMenu: string;
+  playerPhaseSelector: string;
+  playerTimerPresets: string;
+  playerStartTimer: string;
+  playerPauseTimer: string;
+  playerResetTimer: string;
+  playerSkipPhase: string;
+  playerFocusAudio: string;
+  playerFocusAudioActive: string;
+
+  // Views & tools (Day, Calendar, Lists, Tasks, Notes, Recordings, Overlay, Timer, Palette)
+  dayPreviousDay: string;
+  dayNextDay: string;
+  dayMarkTaskDone: string;
+  dayMarkAsActive: string;
+  dayMarkAsCompleted: string;
+  dayToggleTask: string;
+  calendarPrevious: string;
+  calendarNext: string;
+  calendarAddEvent: string;
+  listsRenameList: string;
+  listsRenameItem: string;
+  tasksMinutesPlaceholder: string;
+  notesTaskCompleted: string;
+  notesTaskIncomplete: string;
+  recordingsPreviewAlt: string;
+  overlayClose: string;
+  timerPomodoroMode: string;
+  timerStopwatchMode: string;
+  paletteDialogLabel: string;
 }
 
 export const TRANSLATIONS: Record<Language, Translations> = {
@@ -802,6 +904,19 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSubtitle: 'Поведение, горячие клавиши и интеграции',
     settingsTimerFocus: 'Таймер и фокус',
     settingsDefaultMode: 'Режим таймера по умолчанию',
+    syncNow: 'Синхронизировать сейчас',
+    syncChangesPending: 'Ожидает изменений: {count}',
+    syncOutcomeSent: 'Отправлено: {count}',
+    syncOutcomeReceived: 'Получено: {count}',
+    syncOutcomeApplied: 'Применено: {count}',
+    syncOutcomeMediaCopied: 'Медиа скопировано: {count}',
+    syncOutcomeConflictSingle: '1 изменение разрешено в пользу более поздней правки',
+    syncOutcomeConflictPlural: '{count} изменений разрешено в пользу более поздней правки',
+    syncConfirmMediaDescription: 'Включение синхронизации медиа копирует аудиозаписи и прикреплённые медиафайлы в общую папку для доступа с других устройств. Файлы покинут это устройство.',
+    syncSelectAiModel: 'Выберите модель ИИ',
+    syncAiModelPlaceholder: 'например, gpt-4o, claude-3-5-sonnet...',
+    syncApiKeyPlaceholderStored: '•••••••••••••••• (Сохранён безопасно)',
+    syncApiKeyPlaceholderEmpty: 'Введите ключ API...',
     settingsModePomodoro: 'Помодоро',
     settingsModeStopwatch: 'Секундомер',
     settingsBlockPreset: 'Пресет блоков',
@@ -828,6 +943,10 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsMedia: 'Медиа хранилище',
     settingsMediaHint: 'Рисунки, записи и превью в кэше',
     settingsAssistant: 'Ассистент',
+    settingsPruneMedia: 'Очистить медиа',
+    settingsMediaUsed: 'Занято медиа: {used}',
+    settingsMediaLimit: 'Лимит: {limit}',
+    settingsCategoriesTracked: 'Категорий отслеживается: {count}',
     settingsRemove: 'Убрать',
     settingsApiKey: 'Ключ API',
     settingsApiKeyAria: 'Поле ключа API',
@@ -844,6 +963,32 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsTestVoice: 'Проверить голос',
     settingsAiTab: 'ИИ',
     settingsFetchModels: 'Загрузить список моделей',
+    settingsEnabled: 'Включено',
+    settingsDisabled: 'Выключено',
+    settingsAutostart: 'Запускать свёрнутым в трей',
+    settingsAutostartHint: 'Окно не появляется при старте — приложение ждёт в трее.',
+    settingsRecognitionStatus: 'Состояние распознавания',
+    settingsWhisperInstalled: 'Модель Whisper установлена: {model} ({size} MB)',
+    settingsWhisperNotFound: 'Модель распознавания не найдена. Откройте «Настройки → Speech to Text» и скачайте подходящую.',
+    settingsWhisperNotFoundHint: 'Моделей пока нет — скачайте на странице «Speech to Text».',
+    settingsStorageAndSystem: 'Хранилище и система',
+    settingsStorageAndSystemHint: 'Расположение моделей, кэша и режим работы приложения',
+    settingsDirectories: 'Каталоги',
+    settingsDirModels: 'Модели',
+    settingsDirEngine: 'Движок',
+    settingsDirLogs: 'Логи',
+    settingsOpenFolder: 'Открыть папку',
+    settingsPortableDesc: 'Все файлы хранятся в одной папке рядом с приложением. Можно распаковать на флешку и переносить вместе с моделями.',
+    settingsCheckingUpdates: 'Проверка наличия обновлений...',
+    settingsLatestVersionInstalled: 'У вас установлена последняя версия ({version})',
+    settingsCheckUpdateFailed: 'Не удалось проверить обновления',
+    settingsCheckUpdateHint: 'Нажмите кнопку для проверки новых релизов',
+    settingsCheckAgain: 'Проверить снова',
+    settingsCheckUpdate: 'Проверить обновления',
+    settingsChecking: 'Проверка...',
+    settingsUpdatesTitle: 'Обновления',
+    settingsUpdatesSubtitle: 'Проверка наличия новых версий приложения Tempo',
+    settingsExternalAccountsUnlinked: 'Внешние облачные аккаунты не привязаны. Ожидается OAuth в Wave 8.',
     settingsFetchingModels: 'Загрузка моделей…',
     settingsModelsFetched: 'Модели загружены',
     settingsCustomModelHint: 'Или введите название модели вручную',
@@ -1370,6 +1515,65 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     chatSend: 'Отправить сообщение',
     chatOnline: 'Онлайн ИИ',
     chatOffline: 'Офлайн режим',
+
+    // Stats (StatsView.tsx)
+    statsLoading: 'Загружаем статистику…',
+    statsFocusActivity: 'Активность фокуса',
+    statsCurrentStreak: 'Текущая серия',
+    statsLongest: 'Рекорд: {n}',
+    statsDays: 'дней',
+    statsFocusedTime: 'Время в фокусе',
+    statsLast14Days: 'ПОСЛЕДНИЕ 14 ДНЕЙ',
+    statsLast12Weeks: 'ПОСЛЕДНИЕ 12 НЕДЕЛЬ',
+
+    // Speech (src/components/speech/)
+    speechOverlayIndicator: 'Показывать индикатор записи',
+    speechOverlayIndicatorHint: 'Уровень, режим и таймер во время диктовки (оверлей и пилюля)',
+    speechRerunSetupHint: 'Сбросить состояние знакомства и запустить начальный мастер из 4 шагов',
+    speechRerunSetup: 'Пройти мастер заново',
+    speechClearLog: 'Очистить журнал',
+    speechClearAllWords: 'Удалить все слова',
+    speechClear: 'Очистить',
+    speechAdd: 'Добавить',
+    speechModelMultilingual: 'Многоязычные (99+)',
+    speechModelEnglishOnly: 'Только английский',
+    speechSaved: 'Сохранённые',
+    speechReady: 'Готово',
+    speechStopTestRecording: 'Остановить пробную запись',
+    speechClearShortcut: 'Сбросить сочетание',
+    speechOnboardingSelectModel: 'Выберите локальную модель распознавания. Рекомендованные модели — разумный баланс скорости и точности.',
+
+    // Bottom player (WinterBottomPlayer.tsx)
+    playerToggleMenu: 'Меню навигации',
+    playerPhaseSelector: 'Выбор фазы',
+    playerTimerPresets: 'Наборы времени',
+    playerStartTimer: 'Запустить таймер',
+    playerPauseTimer: 'Пауза',
+    playerResetTimer: 'Сбросить таймер',
+    playerSkipPhase: 'Пропустить фазу',
+    playerFocusAudio: 'Звук фокуса',
+    playerFocusAudioActive: 'Звук фокуса включён',
+
+    // Views & tools (Day, Calendar, Lists, Tasks, Notes, Recordings, Overlay, Timer, Palette)
+    dayPreviousDay: 'Предыдущий день',
+    dayNextDay: 'Следующий день',
+    dayMarkTaskDone: 'Отметить задачу выполненной',
+    dayMarkAsActive: 'Вернуть в работу',
+    dayMarkAsCompleted: 'Отметить выполненной',
+    dayToggleTask: 'Переключить задачу',
+    calendarPrevious: 'Предыдущий месяц',
+    calendarNext: 'Следующий месяц',
+    calendarAddEvent: 'Добавить событие',
+    listsRenameList: 'Переименовать список',
+    listsRenameItem: 'Переименовать пункт',
+    tasksMinutesPlaceholder: 'мин',
+    notesTaskCompleted: 'Задача выполнена',
+    notesTaskIncomplete: 'Задача не выполнена',
+    recordingsPreviewAlt: 'Превью записи экрана',
+    overlayClose: 'Закрыть оверлей',
+    timerPomodoroMode: 'Режим «Помодоро»',
+    timerStopwatchMode: 'Режим секундомера',
+    paletteDialogLabel: 'Командная палитра',
   },
 
   en: {
@@ -1412,6 +1616,10 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsMedia: 'Media storage',
     settingsMediaHint: 'Stored drawings, recordings, and cached previews',
     settingsModePomodoro: 'Pomodoro',
+    settingsPruneMedia: 'Prune Media',
+    settingsMediaUsed: 'Media Used: {used}',
+    settingsMediaLimit: 'Limit: {limit}',
+    settingsCategoriesTracked: '{count} categories tracked',
     settingsModeStopwatch: 'Stopwatch',
     settingsModel: 'Model',
     settingsModelAria: 'AI Model',
@@ -1626,6 +1834,19 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     syncMediaWarning: 'With this enabled, audio and media files leave this device to the shared folder.',
     syncDriveBlocked: 'Google Drive sync requires your own Google Cloud project and OAuth Client ID. Direct Drive sync is currently not available; use a shared folder synced by Google Drive desktop instead.',
     syncDriveTitle: 'Google Drive',
+    syncNow: 'Sync Now',
+    syncChangesPending: '{count} {pendingText}',
+    syncOutcomeSent: 'Sent: {count}',
+    syncOutcomeReceived: 'Received: {count}',
+    syncOutcomeApplied: 'Applied: {count}',
+    syncOutcomeMediaCopied: 'Media copied: {count}',
+    syncOutcomeConflictSingle: '1 change was resolved in favour of the later edit',
+    syncOutcomeConflictPlural: '{count} changes were resolved in favour of the later edit',
+    syncConfirmMediaDescription: 'Enabling media sync copies audio recordings and attached media files to the sync folder so other devices can access them. Files leave this device.',
+    syncSelectAiModel: 'Select AI Model',
+    syncAiModelPlaceholder: 'e.g. gpt-4o, claude-3-5-sonnet...',
+    syncApiKeyPlaceholderStored: '•••••••••••••••• (Stored securely)',
+    syncApiKeyPlaceholderEmpty: 'Enter API Key...',
     settingsTitle: 'Settings',
     settingsUnlinked: 'Unlinked',
     settingsUpdate: 'Software Update',
@@ -1677,6 +1898,32 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     alarmsRepeatInterval: 'Interval',
     alarmsDate: 'Date',
     alarmsTime: 'Time',
+    settingsEnabled: 'Enabled',
+    settingsDisabled: 'Disabled',
+    settingsAutostart: 'Start minimized to tray',
+    settingsAutostartHint: 'Window does not appear on start — app stays in tray.',
+    settingsRecognitionStatus: 'Recognition Status',
+    settingsWhisperInstalled: 'Whisper model installed: {model} ({size} MB)',
+    settingsWhisperNotFound: 'Recognition model not found. Open "Settings → Speech to Text" and download one.',
+    settingsWhisperNotFoundHint: 'No models yet — download one on the "Speech to Text" page.',
+    settingsStorageAndSystem: 'Storage & System',
+    settingsStorageAndSystemHint: 'Model locations, cache, and application operating mode',
+    settingsDirectories: 'Directories',
+    settingsDirModels: 'Models',
+    settingsDirEngine: 'Engine',
+    settingsDirLogs: 'Logs',
+    settingsOpenFolder: 'Open folder',
+    settingsPortableDesc: 'All files are stored in a single folder next to the app. Can be unpacked onto a USB drive and transferred with models.',
+    settingsCheckingUpdates: 'Checking for updates...',
+    settingsLatestVersionInstalled: 'You have the latest version installed ({version})',
+    settingsCheckUpdateFailed: 'Failed to check for updates',
+    settingsCheckUpdateHint: 'Click the button to check for new releases',
+    settingsCheckAgain: 'Check again',
+    settingsChecking: 'Checking...',
+    settingsCheckUpdate: 'Check for updates',
+    settingsUpdatesTitle: 'Updates',
+    settingsUpdatesSubtitle: 'Check for new versions of Tempo app',
+    settingsExternalAccountsUnlinked: 'External cloud accounts are unlinked. Wave 8 OAuth pending.',
     alarmsLabel: 'Label',
     alarmsLabelPlaceholder: 'e.g. Workout',
     alarmsIntervalEvery: 'Every',
@@ -2051,6 +2298,65 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     chatSend: 'Send message',
     chatOnline: 'Online LLM',
     chatOffline: 'Offline Mode',
+
+    // Stats (StatsView.tsx)
+    statsLoading: 'Loading statistics...',
+    statsFocusActivity: 'Focus Activity',
+    statsCurrentStreak: 'Current Streak',
+    statsLongest: 'Longest: {n}',
+    statsDays: 'days',
+    statsFocusedTime: 'Focused Time',
+    statsLast14Days: 'LAST 14 DAYS',
+    statsLast12Weeks: 'LAST 12 WEEKS',
+
+    // Speech (src/components/speech/)
+    speechOverlayIndicator: 'Show recording overlay indicator',
+    speechOverlayIndicatorHint: 'Display visual level meter, mode and timer while dictating (overlay and pill)',
+    speechRerunSetupHint: 'Reset onboarding state to launch the initial 4-step setup wizard',
+    speechRerunSetup: 'Rerun Setup',
+    speechClearLog: 'Clear log',
+    speechClearAllWords: 'Clear all words',
+    speechClear: 'Clear',
+    speechAdd: 'Add',
+    speechModelMultilingual: 'Multilingual (99+)',
+    speechModelEnglishOnly: 'English only',
+    speechSaved: 'Saved',
+    speechReady: 'Ready',
+    speechStopTestRecording: 'Stop test recording',
+    speechClearShortcut: 'Clear shortcut',
+    speechOnboardingSelectModel: 'Select a local speech model. Recommended models balance speed and transcription accuracy.',
+
+    // Bottom player (WinterBottomPlayer.tsx)
+    playerToggleMenu: 'Toggle navigation menu',
+    playerPhaseSelector: 'Phase selector',
+    playerTimerPresets: 'Timer presets',
+    playerStartTimer: 'Start timer',
+    playerPauseTimer: 'Pause timer',
+    playerResetTimer: 'Reset timer',
+    playerSkipPhase: 'Skip phase',
+    playerFocusAudio: 'Focus audio',
+    playerFocusAudioActive: 'Focus audio active',
+
+    // Views & tools (Day, Calendar, Lists, Tasks, Notes, Recordings, Overlay, Timer, Palette)
+    dayPreviousDay: 'Previous day',
+    dayNextDay: 'Next day',
+    dayMarkTaskDone: 'Mark task done',
+    dayMarkAsActive: 'Mark as active',
+    dayMarkAsCompleted: 'Mark as completed',
+    dayToggleTask: 'Toggle task',
+    calendarPrevious: 'Previous',
+    calendarNext: 'Next',
+    calendarAddEvent: 'Add event',
+    listsRenameList: 'Rename list',
+    listsRenameItem: 'Rename item',
+    tasksMinutesPlaceholder: 'min',
+    notesTaskCompleted: 'Completed task',
+    notesTaskIncomplete: 'Incomplete task',
+    recordingsPreviewAlt: 'Preview',
+    overlayClose: 'Close overlay',
+    timerPomodoroMode: 'Pomodoro mode',
+    timerStopwatchMode: 'Stopwatch mode',
+    paletteDialogLabel: 'Command Palette',
   },
 };
 

@@ -4,6 +4,7 @@ import { ListsView } from '../ListsView';
 import * as tasksService from '../../services/tasks';
 import type { ListItem, TaskItem } from '../../types';
 import * as appEvents from '../../services/appEvents';
+import { I18nService } from '../../services/i18n';
 
 vi.mock('../../services/tasks', () => ({
   listLists: vi.fn(),
@@ -134,7 +135,8 @@ describe('ListsView', () => {
       render(<ListsView />);
     });
 
-    const renameBtn = screen.getAllByRole('button', { name: 'Rename item' })[0];
+    const t = I18nService.t();
+    const renameBtn = screen.getAllByRole('button', { name: t.listsRenameItem })[0];
     expect(renameBtn).toBeTruthy();
     fireEvent.click(renameBtn);
 

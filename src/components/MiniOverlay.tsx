@@ -102,7 +102,7 @@ export const MiniOverlay: React.FC = () => {
         <button
           type="button"
           onClick={handleClose}
-          aria-label="Close overlay"
+          aria-label={t.overlayClose}
           className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-white/10 text-neutral-400 hover:text-white transition-colors cursor-pointer"
         >
           &times;

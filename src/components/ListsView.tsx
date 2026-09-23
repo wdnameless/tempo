@@ -252,7 +252,7 @@ export function ListsView() {
                     {!isEditing && (
                       <IconButton
                         icon={<Edit2 size={12} />}
-                        label="Rename list"
+                        label={t.listsRenameList}
                         onClick={(e) => {
                           e.stopPropagation();
                           setEditingListId(list.id);
@@ -357,7 +357,7 @@ export function ListsView() {
                             {!isEditingItem && (
                               <IconButton
                                 icon={<Edit2 size={12} />}
-                                label="Rename item"
+                                label={t.listsRenameItem}
                                 onClick={() => {
                                   setEditingItemId(item.id);
                                   setEditItemTitleDraft(item.title);

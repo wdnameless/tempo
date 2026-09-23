@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import clsx from 'clsx';
-import { EditorState, Range, Compartment, Prec } from '@codemirror/state';
+import { EditorState, Range, Compartment, Prec, Facet } from '@codemirror/state';
 import {
   EditorView,
   ViewPlugin,
@@ -16,6 +16,21 @@ import { syntaxTree } from '@codemirror/language';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap } from '@codemirror/search';
+import { I18nService } from '../services/i18n';
+
+export interface TaskCheckboxLabels {
+  completed: string;
+  incomplete: string;
+}
+
+export const taskCheckboxLabelsFacet = Facet.define<TaskCheckboxLabels, TaskCheckboxLabels>({
+  combine(values) {
+    return values[values.length - 1] ?? {
+      completed: 'Completed task',
+      incomplete: 'Incomplete task',
+    };
+  },
+});
 
 export interface NotesEditorProps {
   value: string;
@@ -24,12 +39,15 @@ export interface NotesEditorProps {
   placeholder?: string;
   autoFocus?: boolean;
   className?: string;
+  taskCompletedLabel?: string;
+  taskIncompleteLabel?: string;
 }
 
 class CheckboxWidget extends WidgetType {
   constructor(
     readonly checked: boolean,
-    readonly pos: number
+    readonly pos: number,
+    readonly labels?: TaskCheckboxLabels
   ) {
     super();
   }
@@ -39,7 +57,10 @@ class CheckboxWidget extends WidgetType {
     input.type = 'checkbox';
     input.className = 'cm-task-checkbox';
     input.checked = this.checked;
-    input.setAttribute('aria-label', this.checked ? 'Completed task' : 'Incomplete task');
+    const label = this.checked
+      ? (this.labels?.completed ?? 'Completed task')
+      : (this.labels?.incomplete ?? 'Incomplete task');
+    input.setAttribute('aria-label', label);
 
     input.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -53,7 +74,12 @@ class CheckboxWidget extends WidgetType {
   }
 
   eq(other: CheckboxWidget): boolean {
-    return this.checked === other.checked && this.pos === other.pos;
+    return (
+      this.checked === other.checked &&
+      this.pos === other.pos &&
+      this.labels?.completed === other.labels?.completed &&
+      this.labels?.incomplete === other.labels?.incomplete
+    );
   }
 
   ignoreEvent(): boolean {
@@ -63,6 +89,7 @@ class CheckboxWidget extends WidgetType {
 
 function buildLivePreview(view: EditorView): DecorationSet {
   const { state } = view;
+  const labels = state.facet(taskCheckboxLabelsFacet);
   const items: Range<Decoration>[] = [];
 
   // Identify lines that contain the cursor / active selection
@@ -120,7 +147,7 @@ function buildLivePreview(view: EditorView): DecorationSet {
       const checked = taskMatch[2].toLowerCase() === 'x';
       items.push(
         Decoration.replace({
-          widget: new CheckboxWidget(checked, charPos),
+          widget: new CheckboxWidget(checked, charPos, labels),
         }).range(boxFrom, boxTo)
       );
     }
@@ -167,7 +194,12 @@ const livePreviewPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
+      if (
+        update.docChanged ||
+        update.selectionSet ||
+        update.viewportChanged ||
+        update.transactions.some((tr) => tr.reconfigured)
+      ) {
         this.decorations = buildLivePreview(update.view);
       }
     }
@@ -328,7 +360,12 @@ export function NotesEditor({
   placeholder,
   autoFocus,
   className,
+  taskCompletedLabel,
+  taskIncompleteLabel,
 }: NotesEditorProps): React.JSX.Element {
+  const t = I18nService.t();
+  const completedLabel = taskCompletedLabel ?? t.notesTaskCompleted;
+  const incompleteLabel = taskIncompleteLabel ?? t.notesTaskIncomplete;
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
@@ -336,6 +373,7 @@ export function NotesEditor({
   const lastValueRef = useRef(value);
 
   const placeholderCompartment = useMemo(() => new Compartment(), []);
+  const labelsCompartment = useMemo(() => new Compartment(), []);
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -389,6 +427,12 @@ export function NotesEditor({
         updateListener,
         domHandlers,
         placeholderCompartment.of(placeholder ? cmPlaceholder(placeholder) : []),
+        labelsCompartment.of(
+          taskCheckboxLabelsFacet.of({
+            completed: completedLabel,
+            incomplete: incompleteLabel,
+          })
+        ),
       ],
     });
 
@@ -433,6 +477,19 @@ export function NotesEditor({
       ),
     });
   }, [placeholder, placeholderCompartment]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: labelsCompartment.reconfigure(
+        taskCheckboxLabelsFacet.of({
+          completed: completedLabel,
+          incomplete: incompleteLabel,
+        })
+      ),
+    });
+  }, [completedLabel, incompleteLabel, labelsCompartment]);
 
   return (
     <div

@@ -29,8 +29,10 @@ export interface StatsViewProps {
 }
 
 export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
+  const [, setLangTick] = useState(0);
+  useEffect(() => I18nService.subscribe(() => setLangTick((prev) => prev + 1)), []);
   const t = I18nService.t();
-
+  const locale = I18nService.getLang() === 'ru' ? 'ru-RU' : 'en-US';
   const [period, setPeriod] = useState<'day' | 'week'>('day');
   const [sessions, setSessions] = useState<StoredSession[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>(tasksProp ?? []);
@@ -127,7 +129,7 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
     return (
       <div className="flex-1 flex items-center justify-center p-8 text-sm text-[var(--text-muted)] bg-[var(--bg)]">
         <Clock className="w-5 h-5 animate-spin mr-2 text-[var(--accent)]" />
-        <span>Loading statistics...</span>
+        <span>{t.statsLoading}</span>
       </div>
     );
   }
@@ -166,7 +168,7 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
     const isCurrent = period === 'day' ? b.date === todayKey : false;
     const label =
       period === 'day'
-        ? d.toLocaleDateString('en-US', { weekday: 'narrow' })
+        ? d.toLocaleDateString(locale, { weekday: 'narrow' })
         : `${parts[1]}/${parts[2]}`;
     const subLabel = period === 'day' ? String(d.getDate()) : '';
     return {
@@ -234,7 +236,7 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
         {/* Card 1: Focus Activity */}
         <Card variant="surface" padding="md" className="space-y-3">
           <div className="flex items-center justify-between text-xs font-semibold text-[var(--text)]">
-            <span>Focus Activity</span>
+            <span>{t.statsFocusActivity}</span>
             {/* 5-step legend squares */}
             <div className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-[1px] bg-[var(--text)] opacity-15" />
@@ -270,7 +272,7 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
         {/* Card 2: Current Streak */}
         <Card variant="surface" padding="md" className="flex items-center justify-between relative overflow-hidden">
           <div className="space-y-1 z-10">
-            <div className="text-xs font-semibold text-[var(--text)]">Current Streak</div>
+            <div className="text-xs font-semibold text-[var(--text)]">{t.statsCurrentStreak}</div>
             <div className="flex items-baseline gap-1.5">
               <span
                 data-testid="current-streak"
@@ -278,10 +280,10 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
               >
                 {streakCurrent}
               </span>
-              <span className="text-xs text-[var(--text-muted)]">days</span>
+              <span className="text-xs text-[var(--text-muted)]">{t.statsDays}</span>
             </div>
             <div className="text-[11px] text-[var(--text-faint)]">
-              Longest: {streakLongest}
+              {t.statsLongest.replace('{n}', String(streakLongest))}
             </div>
           </div>
 
@@ -312,9 +314,9 @@ export const StatsView: React.FC<StatsViewProps> = ({ tasks: tasksProp }) => {
         {/* Card 3: Focused Time */}
         <Card variant="surface" padding="md" className="space-y-3">
           <div className="flex items-center justify-between text-xs font-semibold text-[var(--text)]">
-            <span>Focused Time</span>
+            <span>{t.statsFocusedTime}</span>
             <span className="text-[10px] font-mono tracking-widest text-[var(--text-faint)] uppercase" data-testid="chart-period-subtitle">
-              {period === 'day' ? 'LAST 14 DAYS' : 'LAST 12 WEEKS'}
+              {period === 'day' ? t.statsLast14Days : t.statsLast12Weeks}
             </span>
           </div>
 

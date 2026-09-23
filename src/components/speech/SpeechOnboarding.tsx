@@ -224,7 +224,7 @@ export const SpeechOnboarding: React.FC<SpeechOnboardingProps> = ({
           {currentStep === 1 && (
             <div data-testid="onboarding-step-1" className="space-y-3">
               <div className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                Select a local speech model. Recommended models balance speed and transcription accuracy.
+                {t.speechOnboardingSelectModel}
               </div>
 
               {isLoadingModels ? (
@@ -306,7 +306,7 @@ export const SpeechOnboarding: React.FC<SpeechOnboardingProps> = ({
                     {selectedModel.installed && (
                       <span className="flex items-center gap-1 text-xs text-emerald-400 font-medium">
                         <CheckCircle className="w-4 h-4" />
-                        <span>Ready</span>
+                        <span>{t.speechReady}</span>
                       </span>
                     )}
                   </div>
@@ -387,7 +387,7 @@ export const SpeechOnboarding: React.FC<SpeechOnboardingProps> = ({
                     backgroundColor: isDictating ? '#ef4444' : 'var(--accent)',
                     color: 'var(--bg)',
                   }}
-                  title={isDictating ? 'Stop test recording' : t.settingsSpeechOnboardingStartTest}
+                  title={isDictating ? t.speechStopTestRecording : t.settingsSpeechOnboardingStartTest}
                 >
                   {isStoppingDictation ? (
                     <Loader2 className="w-6 h-6 animate-spin" />

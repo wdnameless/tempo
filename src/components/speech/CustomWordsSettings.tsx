@@ -81,10 +81,10 @@ export const CustomWordsSettings: React.FC<CustomWordsSettingsProps> = ({
               onClick={handleClearAll}
               data-testid="custom-words-clear-btn"
               className="flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-[var(--elevated)] transition-colors cursor-pointer text-red-400 hover:text-red-300"
-              title="Clear all words"
+              title={t.speechClearAllWords}
             >
               <Trash2 className="w-3 h-3" />
-              <span>Clear</span>
+              <span>{t.speechClear}</span>
             </button>
           )}
         </div>
@@ -118,7 +118,7 @@ export const CustomWordsSettings: React.FC<CustomWordsSettingsProps> = ({
             }}
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Add</span>
+            <span>{t.speechAdd}</span>
           </button>
         </div>
 

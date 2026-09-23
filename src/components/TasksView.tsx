@@ -31,6 +31,7 @@ import { Row, Segmented, IconButton } from './ui';
  * Priority marker indicator style based on phase palette intensity.
  */
 function PriorityBadge({ priority }: { priority?: number }) {
+  const t = I18nService.t();
   if (!priority || priority === 0) return null;
   const colors = [
     'transparent',
@@ -43,7 +44,7 @@ function PriorityBadge({ priority }: { priority?: number }) {
     <span
       className="inline-block w-2 h-2 rounded-full flex-shrink-0"
       style={{ backgroundColor: color }}
-      title={`Priority ${priority}`}
+      title={`${t.tasksPriority} ${priority}`}
       data-testid={`priority-dot-${priority}`}
     />
   );
@@ -390,7 +391,7 @@ export function TasksView() {
                   min="0"
                   step="5"
                   value={task.plannedMinutes ?? ''}
-                  placeholder="min"
+                  placeholder={t.tasksMinutesPlaceholder}
                   onChange={(e) =>
                     handleUpdate(task.id, {
                       plannedMinutes: e.target.value ? Number(e.target.value) : null,

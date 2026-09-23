@@ -601,7 +601,7 @@ export function RecordingsView(): React.ReactElement {
                 {previewDataUrl ? (
                   <img
                     src={previewDataUrl}
-                    alt="Preview"
+                    alt={t.recordingsPreviewAlt}
                     className="w-20 h-12 object-cover rounded border border-[var(--border)]"
                   />
                 ) : (

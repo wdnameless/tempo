@@ -80,8 +80,8 @@ export const SpeechDebug: React.FC<SpeechDebugProps> = ({
         style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
       >
         <Row
-          label="Show recording overlay indicator"
-          description="Display visual level meter, mode and timer while dictating (overlay and pill)"
+          label={t.speechOverlayIndicator}
+          description={t.speechOverlayIndicatorHint}
           control={
             <div data-testid="overlay-enabled-toggle">
               <Toggle
@@ -100,7 +100,7 @@ export const SpeechDebug: React.FC<SpeechDebugProps> = ({
               {t.settingsSpeechDebugRerunOnboarding}
             </span>
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              Reset onboarding state to launch the initial 4-step setup wizard
+              {t.speechRerunSetupHint}
             </span>
           </div>
           <button
@@ -116,7 +116,7 @@ export const SpeechDebug: React.FC<SpeechDebugProps> = ({
             }}
           >
             <RotateCcw className="w-3.5 h-3.5 text-[var(--accent)]" />
-            <span>Rerun Setup</span>
+            <span>{t.speechRerunSetup}</span>
           </button>
         </div>
       </div>
@@ -181,7 +181,7 @@ export const SpeechDebug: React.FC<SpeechDebugProps> = ({
               onClick={() => setErrors([])}
               className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
             >
-              Clear log
+              {t.speechClearLog}
             </button>
           )}
         </div>

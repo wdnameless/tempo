@@ -387,8 +387,8 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({
           }}
         >
           <option value="all">{t.settingsSpeechModelsFilterLanguages}</option>
-          <option value="multilingual">Multilingual (99+)</option>
-          <option value="en">English only</option>
+          <option value="multilingual">{t.speechModelMultilingual}</option>
+          <option value="en">{t.speechModelEnglishOnly}</option>
         </select>
       </div>
 

@@ -29,6 +29,7 @@ function escapeRegex(str: string): string {
 function translate(key: string): string {
   const t = I18nService.t();
   if (key in t) {
+    // SAFETY: Dynamic translation key lookup from command metadata
     const val = (t as unknown as Record<string, unknown>)[key];
     if (typeof val === 'string') {
       return val;
@@ -345,7 +346,7 @@ export function CommandPalette(): ReactElement | null {
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Command Palette"
+      aria-label={t.paletteDialogLabel}
       data-testid="command-palette-dialog"
       className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] px-4 pointer-events-auto select-none"
     >

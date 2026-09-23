@@ -290,7 +290,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
           title={filterSaved ? 'Showing saved only' : 'Filter saved'}
         >
           <BookmarkCheck className="w-3.5 h-3.5" />
-          <span>Saved</span>
+          <span>{t.speechSaved}</span>
         </button>
 
         {entries.length > 0 && !disabled && (

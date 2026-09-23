@@ -304,7 +304,7 @@ export function DayView() {
           <div className="flex items-center rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5">
             <button
               type="button"
-              aria-label="Previous day"
+              aria-label={t.dayPreviousDay}
               onClick={() => {
                 const d = new Date(currentDate);
                 d.setDate(d.getDate() - 1);
@@ -323,7 +323,7 @@ export function DayView() {
             </button>
             <button
               type="button"
-              aria-label="Next day"
+              aria-label={t.dayNextDay}
               onClick={() => {
                 const d = new Date(currentDate);
                 d.setDate(d.getDate() + 1);
@@ -700,7 +700,7 @@ export function DayView() {
                             <div className="flex items-center gap-2.5 flex-1 min-w-0">
                               <button
                                 type="button"
-                                aria-label="Mark task done"
+                                aria-label={t.dayMarkTaskDone}
                                 onClick={() => handleToggleTask(item.id, false)}
                                 className="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors flex-shrink-0"
                               >
@@ -883,7 +883,7 @@ function DayTimeline({
                         {isTask ? (
                           <button
                             type="button"
-                            aria-label={item.done ? 'Mark as active' : 'Mark as completed'}
+                            aria-label={item.done ? t.dayMarkAsActive : t.dayMarkAsCompleted}
                             onClick={() => onToggleTask(item.id, item.done)}
                             className="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors flex-shrink-0"
                           >
@@ -964,7 +964,7 @@ function DayTimeline({
                   <div className="flex items-center gap-2 truncate">
                     <button
                       type="button"
-                      aria-label="Toggle task"
+                      aria-label={t.dayToggleTask}
                       onClick={() => onToggleTask(task.id, task.done)}
                       className="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors flex-shrink-0"
                     >

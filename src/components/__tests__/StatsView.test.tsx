@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { StatsView } from '../StatsView';
+import { I18nService } from '../../services/i18n';
 import * as sessionStore from '../../services/sessionStore';
 import * as tasksService from '../../services/tasks';
 import type { StoredSession } from '../../services/sessionStore';
@@ -17,6 +18,7 @@ vi.mock('../../services/tasks', () => ({
 describe('StatsView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    I18nService.setLang('ru');
   });
 
   it('renders the empty state when there are no sessions and no tasks', async () => {
@@ -128,13 +130,14 @@ describe('StatsView', () => {
 
     // Period total label updates specifically via data-testid
     expect(screen.getByTestId('period-focus-label').textContent).toBe('Фокус (12 недель)');
-    expect(screen.getByTestId('chart-period-subtitle').textContent).toBe('LAST 12 WEEKS');
+    const t = I18nService.t();
+    expect(screen.getByTestId('chart-period-subtitle').textContent).toBe(t.statsLast12Weeks);
     expect(screen.getByTestId('chart-bars').children.length).toBe(12);
 
     const dayBtn = screen.getByTestId('toggle-period-day');
     fireEvent.click(dayBtn);
     expect(screen.getByTestId('period-focus-label').textContent).toBe('Фокус (14 дней)');
-    expect(screen.getByTestId('chart-period-subtitle').textContent).toBe('LAST 14 DAYS');
+    expect(screen.getByTestId('chart-period-subtitle').textContent).toBe(t.statsLast14Days);
     expect(screen.getByTestId('chart-bars').children.length).toBe(14);
   });
 
@@ -191,5 +194,88 @@ describe('StatsView', () => {
     // At least 83 cells should have 0 seconds (only 1 day has focus)
     const zeroCells = cells.filter((c) => c.getAttribute('data-seconds') === '0');
     expect(zeroCells.length).toBeGreaterThanOrEqual(83);
+  });
+
+  it('renders loading state with localized statsLoading text', () => {
+    const { promise: pendingSessions } = Promise.withResolvers<StoredSession[]>();
+    const { promise: pendingTasks } = Promise.withResolvers<TaskItem[]>();
+    vi.mocked(sessionStore.listSessions).mockReturnValue(pendingSessions);
+    vi.mocked(tasksService.listTasks).mockReturnValue(pendingTasks);
+
+    render(<StatsView />);
+  });
+
+  it('renders all card headers and labels in Russian by default', async () => {
+    const now = new Date();
+    const mockSessions: StoredSession[] = [
+      {
+        id: 's1',
+        kind: 'pomodoro',
+        duration_sec: 1200,
+        started_at: now.toISOString(),
+        ended_at: now.toISOString(),
+        completed: true,
+        task_id: null,
+      },
+    ];
+
+    vi.mocked(sessionStore.listSessions).mockResolvedValue(mockSessions);
+    vi.mocked(tasksService.listTasks).mockResolvedValue([]);
+
+    render(<StatsView />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-streak')).toBeDefined();
+    });
+
+    const t = I18nService.t();
+    expect(screen.getByText(t.statsFocusActivity)).toBeDefined();
+    expect(screen.getByText(t.statsCurrentStreak)).toBeDefined();
+    expect(screen.getByText(t.statsDays)).toBeDefined();
+    expect(screen.getByText(t.statsFocusedTime)).toBeDefined();
+    expect(screen.getByText(t.statsLast14Days)).toBeDefined();
+    expect(screen.getByText(t.statsLongest.replace('{n}', '1'))).toBeDefined();
+
+    // Weekday initials should match Russian narrow formatting
+    const expectedWeekday = now.toLocaleDateString('ru-RU', { weekday: 'narrow' });
+    const chartLabels = screen.getByTestId('chart-bars').parentElement;
+    expect(chartLabels?.textContent).toContain(expectedWeekday);
+  });
+
+  it('updates labels and weekday initials when switching to English', async () => {
+    I18nService.setLang('en');
+    const now = new Date();
+    const mockSessions: StoredSession[] = [
+      {
+        id: 's1',
+        kind: 'pomodoro',
+        duration_sec: 1200,
+        started_at: now.toISOString(),
+        ended_at: now.toISOString(),
+        completed: true,
+        task_id: null,
+      },
+    ];
+
+    vi.mocked(sessionStore.listSessions).mockResolvedValue(mockSessions);
+    vi.mocked(tasksService.listTasks).mockResolvedValue([]);
+
+    render(<StatsView />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-streak')).toBeDefined();
+    });
+
+    const t = I18nService.t();
+    expect(screen.getByText(t.statsFocusActivity)).toBeDefined();
+    expect(screen.getByText(t.statsCurrentStreak)).toBeDefined();
+    expect(screen.getByText(t.statsDays)).toBeDefined();
+    expect(screen.getByText(t.statsFocusedTime)).toBeDefined();
+    expect(screen.getByText(t.statsLast14Days)).toBeDefined();
+    expect(screen.getByText(t.statsLongest.replace('{n}', '1'))).toBeDefined();
+
+    const expectedWeekday = now.toLocaleDateString('en-US', { weekday: 'narrow' });
+    const chartLabels = screen.getByTestId('chart-bars').parentElement;
+    expect(chartLabels?.textContent).toContain(expectedWeekday);
   });
 });
