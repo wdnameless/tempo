@@ -13,6 +13,8 @@ import {
   RecordingError,
   recordingErrorKey,
   recorderErrorKey,
+  recorderChannels,
+  setRecorderChannels,
 } from '../recorder';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -211,6 +213,35 @@ describe('recorder service', () => {
     it('supports recorderErrorKey alias identically', () => {
       const err = new RecordingError('AccessDenied');
       expect(recorderErrorKey(err, 'audio')).toBe('recPermissionMic');
+    });
+  });
+
+  describe('recorderChannels and setRecorderChannels', () => {
+    it('queries recording_channels and returns 1 or 2', async () => {
+      mockInvoke.mockResolvedValueOnce(1);
+      expect(await recorderChannels()).toBe(1);
+      expect(mockInvoke).toHaveBeenCalledWith('recording_channels');
+
+      mockInvoke.mockResolvedValueOnce(2);
+      expect(await recorderChannels()).toBe(2);
+    });
+
+    it('defaults to 2 on invoke failure or unknown channel count', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('backend failed'));
+      expect(await recorderChannels()).toBe(2);
+
+      mockInvoke.mockResolvedValueOnce(4);
+      expect(await recorderChannels()).toBe(2);
+    });
+
+    it('calls recording_set_channels with normalized channels', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+      await setRecorderChannels(1);
+      expect(mockInvoke).toHaveBeenCalledWith('recording_set_channels', { channels: 1 });
+
+      mockInvoke.mockResolvedValueOnce(undefined);
+      await setRecorderChannels(2);
+      expect(mockInvoke).toHaveBeenCalledWith('recording_set_channels', { channels: 2 });
     });
   });
 });

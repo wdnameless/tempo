@@ -701,6 +701,8 @@ pub fn run() {
             recording::recording_state,
             recording::recording_level,
             recording::recording_preview,
+            recording::recording_channels,
+            recording::recording_set_channels,
             stt::stt_catalog,
             stt::stt_download,
             stt::stt_download_cancel,

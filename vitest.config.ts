@@ -17,6 +17,14 @@ export default defineConfig({
     // fail only in the coverage run, never alone. This is a ceiling for those
     // heavy mounts, not a blanket excuse: a genuinely hung test still reports.
     testTimeout: 20000,
+    // jsdom plus v8 instrumentation is heavy per file. Left unbounded, the suite
+    // saturates the machine and the few suites that render the whole shell blow
+    // past any reasonable timeout — they pass alone and in a quiet run, which is
+    // exactly the shape of flake that wastes an afternoon. Capping the workers
+    // costs a few seconds and makes the result the same everywhere, including
+    // the slower two-core CI runner.
+    maxWorkers: 4,
+    minWorkers: 1,
     coverage: {
       provider: 'v8',
       reporter: ['text-summary'],

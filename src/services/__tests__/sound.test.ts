@@ -59,7 +59,8 @@ describe('SoundService voice gate and sound toggles', () => {
   it('exports soundService and its public methods are functions', () => {
     expect(soundService).toBeDefined();
     expect(typeof soundService.playBeep).toBe('function');
-    expect(typeof soundService.playUiClick).toBe('function');
+    expect(typeof soundService.playHourglassFlip).toBe('function');
+    expect(typeof soundService.playFlip).toBe('function');
     expect(typeof soundService.playClockTick).toBe('function');
     expect(typeof soundService.playCountdownTick).toBe('function');
     expect(typeof soundService.playFinishAlarm).toBe('function');
@@ -92,34 +93,17 @@ describe('SoundService voice gate and sound toggles', () => {
     expect(speakSpy).toHaveBeenCalledWith('Тест', 'en-US-JennyNeural');
   });
 
-  it('leaves UI clicks silent when they are disabled', () => {
-    StoreService.setPreference('alarmer_ui_clicks', false);
-    const beepSpy = vi.spyOn(soundService, 'playBeep');
-
-    soundService.playUiClick();
-
-    expect(beepSpy).not.toHaveBeenCalled();
-    beepSpy.mockRestore();
-  });
-
-  it('plays a click when UI clicks are enabled', () => {
-    StoreService.setPreference('alarmer_ui_clicks', true);
-    const beepSpy = vi.spyOn(soundService, 'playBeep');
-
-    soundService.playUiClick();
-
-    expect(beepSpy).toHaveBeenCalled();
-    beepSpy.mockRestore();
-  });
-
-  it('leaves countdown ticks silent when they are disabled', () => {
+  it('does not throw when playing countdown ticks', () => {
     StoreService.setPreference('alarmer_countdown_ticks', false);
-    const clickSpy = vi.spyOn(soundService, 'playUiClick');
+    expect(() => soundService.playCountdownTick()).not.toThrow();
+    StoreService.setPreference('alarmer_countdown_ticks', true);
+    expect(() => soundService.playCountdownTick()).not.toThrow();
+  });
 
-    soundService.playCountdownTick();
-
-    expect(clickSpy).not.toHaveBeenCalled();
-    clickSpy.mockRestore();
+  it('plays hourglass flip cue without throwing', () => {
+    StoreService.setPreference('alarmer_click_volume', 0.5);
+    expect(() => soundService.playHourglassFlip()).not.toThrow();
+    expect(() => soundService.playFlip()).not.toThrow();
   });
 
   it('does not throw when playing alarm sounds outside a browser audio context', () => {
@@ -136,7 +120,7 @@ describe('SoundService voice gate and sound toggles', () => {
     StoreService.setPreference('alarmer_sound_profile', 'mechanical');
 
     expect(() => soundService.playFinishAlarm()).not.toThrow();
-    expect(() => soundService.playUiClick()).not.toThrow();
+    expect(() => soundService.playHourglassFlip()).not.toThrow();
   });
 
   it('stops speech through the edge TTS service', () => {

@@ -9,7 +9,6 @@ import {
   StickyNote,
 } from 'lucide-react';
 import type { ThemeColors, AlarmItem, AISettings, DynamicUIConfig } from '../types';
-import { soundService } from '../services/sound';
 import { I18nService, type Translations } from '../services/i18n';
 import {
   listAlarms,
@@ -219,7 +218,6 @@ export const Alarms: React.FC<AlarmsProps> = ({
   }, []);
 
   const toggleDay = (dayIndex: number) => {
-    soundService.playUiClick();
     setDays((prev) => {
       if (prev.includes(dayIndex)) {
         if (prev.length === 1) return prev; // Do not allow empty days
@@ -245,7 +243,6 @@ export const Alarms: React.FC<AlarmsProps> = ({
   };
 
   const handleEditClick = (alarm: Alarm) => {
-    soundService.playUiClick();
     setEditingId(alarm.id);
     setLabel(alarm.label);
     setTime(alarm.time);
@@ -260,7 +257,6 @@ export const Alarms: React.FC<AlarmsProps> = ({
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    soundService.playUiClick();
 
     const alarmData: Alarm = {
       id: editingId || `alarm_${Date.now()}`,
@@ -290,7 +286,6 @@ export const Alarms: React.FC<AlarmsProps> = ({
     resetForm();
   };
   const createQuickAlarm = async (labelVal: string, timeVal: string, repeatVal: AlarmRepeat) => {
-    soundService.playUiClick();
     const alarmData: Alarm = {
       id: `alarm_${Date.now()}`,
       label: labelVal,
@@ -328,7 +323,6 @@ export const Alarms: React.FC<AlarmsProps> = ({
   };
 
   const handleToggle = async (id: string, currentEnabled: boolean) => {
-    soundService.playUiClick();
     const updated = effectiveAlarms.map((a) =>
       a.id === id ? { ...a, enabled: !currentEnabled } : a
     );
@@ -339,7 +333,6 @@ export const Alarms: React.FC<AlarmsProps> = ({
   };
 
   const handleDelete = async (id: string) => {
-    soundService.playUiClick();
     const updated = effectiveAlarms.filter((a) => a.id !== id);
     setLocalAlarms(updated);
     onUpdateAlarms?.(updated.map(toAlarmItem));
@@ -360,7 +353,6 @@ export const Alarms: React.FC<AlarmsProps> = ({
   };
 
   const toggleAlarmDay = async (alarm: Alarm, dayIndex: number) => {
-    soundService.playUiClick();
     const curDays = alarm.days ?? [];
     let nextDays: number[];
     if (curDays.includes(dayIndex)) {

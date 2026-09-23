@@ -17,7 +17,6 @@ import {
   Check,
 } from 'lucide-react';
 import { TimerService, type TimerSnapshot, type TimerMode } from '../services/timer';
-import { soundService } from '../services/sound';
 import {
   startFocusAudio,
   stopFocusAudio,
@@ -100,7 +99,6 @@ export function WinterBottomPlayer({
 
   const handleToggleMode = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    soundService.playUiClick();
     const currentMode = snapshot?.mode ?? 'pomodoro';
     const nextMode: TimerMode = currentMode === 'pomodoro' ? 'stopwatch' : 'pomodoro';
     await TimerService.setMode(nextMode);
@@ -110,7 +108,6 @@ export function WinterBottomPlayer({
 
   const handleReset = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    soundService.playUiClick();
     await TimerService.reset();
     const updated = await TimerService.getState();
     setSnapshot(updated);
@@ -118,14 +115,12 @@ export function WinterBottomPlayer({
 
   const handleSkipPhase = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    soundService.playUiClick();
     await TimerService.skipPhase();
     const updated = await TimerService.getState();
     setSnapshot(updated);
   };
   const handleToggleTimer = (e: React.MouseEvent) => {
     e.stopPropagation();
-    soundService.playUiClick();
     if (running) {
       void TimerService.pause();
     } else {
@@ -134,7 +129,6 @@ export function WinterBottomPlayer({
   };
 
   const handleSelectPreset = async (m: number) => {
-    soundService.playUiClick();
     await TimerService.setDuration(m);
     await TimerService.reset();
     const updated = await TimerService.getState();
@@ -143,14 +137,12 @@ export function WinterBottomPlayer({
   };
 
   const handleShiftMinutes = async (delta: number) => {
-    soundService.playUiClick();
     await TimerService.shiftMinutes(delta);
     const updated = await TimerService.getState();
     setSnapshot(updated);
   };
 
   const handleSelectPhase = async (phase: 'focus' | 'short_rest' | 'long_rest') => {
-    soundService.playUiClick();
     // Arm duration based on target phase
     if (phase === 'focus') {
       await TimerService.setDuration(25);
@@ -166,7 +158,6 @@ export function WinterBottomPlayer({
   };
 
   const handleSelectSoundscape = (id: FocusSoundId) => {
-    soundService.playUiClick();
     setActiveSound(id);
     onToggleSound?.();
     if (id === 'none') {

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, ListTodo, NotebookPen, Plus, ChevronRight } from 'lucide-react';
 import { I18nService } from '../services/i18n';
-import { soundService } from '../services/sound';
 import { onDataChanged } from '../services/appEvents';
 import { listAlarms } from '../services/alarms';
 import { createTask, toggleTask } from '../services/tasks';
@@ -95,7 +94,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }, [onUpdateAlarms]);
 
   const handleToggleTask = async (id: string) => {
-    soundService.playUiClick();
     try {
       await toggleTask(id);
     } catch {
@@ -114,7 +112,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     e.preventDefault();
     const trimmed = quickTaskTitle.trim();
     if (!trimmed) return;
-    soundService.playUiClick();
 
     try {
       const created = await createTask({ title: trimmed });
@@ -134,28 +131,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   };
 
   const handleNavigateAlarms = () => {
-    soundService.playUiClick();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('tempo:navigate', { detail: 'alarms' }));
     }
   };
 
   const handleNavigateTasks = () => {
-    soundService.playUiClick();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('tempo:navigate', { detail: 'tasks' }));
     }
   };
 
   const handleNavigateNotes = () => {
-    soundService.playUiClick();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('tempo:navigate', { detail: 'notes' }));
     }
   };
 
   const handleOpenNote = () => {
-    soundService.playUiClick();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('tempo:navigate', { detail: 'notes' }));
     }

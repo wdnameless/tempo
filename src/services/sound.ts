@@ -1,4 +1,3 @@
-import type { SoundProfileId } from '../types';
 import { EdgeTtsService } from './edgeTts';
 import { ticking } from '../constants/defaults';
 import { StoreService } from '../services/store';
@@ -51,28 +50,6 @@ export class SoundService {
     }
   }
 
-  // UI click sound (tabs, buttons, presets) with volume regulation
-  playUiClick() {
-    const enabled = StoreService.getPreference('alarmer_ui_clicks', true);
-    if (!enabled) return;
-    const clickVol = StoreService.getPreference('alarmer_click_volume', 0.5);
-    const profile = StoreService.getPreference('alarmer_sound_profile', 'neon') as SoundProfileId;
-    switch (profile) {
-      case 'mechanical':
-        this.playBeep(220, 0.04, 0.5 * clickVol);
-        break;
-      case 'soft':
-        this.playBeep(440, 0.06, 0.25 * clickVol);
-        break;
-      case 'arcade':
-        this.playBeep(980, 0.05, 0.35 * clickVol);
-        break;
-      case 'neon':
-      default:
-        this.playBeep(600, 0.05, 0.3 * clickVol);
-        break;
-    }
-  }
 
   private tickingAudio: HTMLAudioElement | null = null;
 
@@ -95,7 +72,6 @@ export class SoundService {
   playCountdownTick() {
     const enabled = StoreService.getPreference('alarmer_countdown_ticks', true);
     if (!enabled) return;
-    this.playUiClick();
   }
 
   // Ambient hourglass flip sound (short, soft, low-key swoop of glass turning over)

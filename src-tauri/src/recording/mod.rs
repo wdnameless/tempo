@@ -37,13 +37,14 @@ pub struct SourceInfo {
 }
 
 /// Start options from JS/TS UI (matches interfaces.md §19)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StartOptions {
     pub kind: String, // "audio" | "screen"
     pub mic: Option<String>,
     pub system: Option<bool>,
     pub source_id: Option<String>,
     pub fps: Option<u32>,
+    pub channels: Option<u16>,
 }
 
 /// Start result returned by recording_start: { path, kind }
@@ -133,16 +134,41 @@ struct SessionRecord {
 /// Global managed state for recording
 pub struct RecordingManager {
     inner: Mutex<Option<SessionRecord>>,
+    channels: Mutex<Option<u16>>,
 }
 
 impl RecordingManager {
     pub fn new() -> Self {
         Self {
             inner: Mutex::new(None),
+            channels: Mutex::new(None),
         }
     }
 
+    pub fn set_channels(&self, channels: u16) {
+        let normalized = audio::normalize_channels(channels);
+        let mut guard = self.channels.lock().unwrap();
+        *guard = Some(normalized);
+    }
+
+    pub fn get_channels(&self) -> u16 {
+        self.channels
+            .lock()
+            .unwrap()
+            .unwrap_or(audio::DEFAULT_RECORDING_CHANNELS)
+    }
+
     pub fn start(&self, options: StartOptions, assets_dir: &Path) -> Result<StartResult, RecordingError> {
+        let ch = options.channels.unwrap_or_else(|| self.get_channels());
+        self.start_with_channels(options, assets_dir, ch)
+    }
+
+    pub fn start_with_channels(
+        &self,
+        options: StartOptions,
+        assets_dir: &Path,
+        channels: u16,
+    ) -> Result<StartResult, RecordingError> {
         let mut guard = self.inner.lock().unwrap();
         if guard.is_some() {
             return Err(RecordingError::AlreadyRecording);
@@ -165,7 +191,13 @@ impl RecordingManager {
                     None
                 };
 
-                let session = match audio::AudioRecordingSession::start(file_path.clone(), mic_id, sys_id) {
+                let target_channels = audio::normalize_channels(channels);
+                let session = match audio::AudioRecordingSession::start(
+                    file_path.clone(),
+                    mic_id,
+                    sys_id,
+                    target_channels,
+                ) {
                     Ok(s) => s,
                     Err(e) => {
                         if file_path.exists() {
@@ -370,6 +402,22 @@ pub fn recording_sources() -> Result<Vec<SourceInfo>, String> {
     screen::list_screen_sources().map_err(String::from)
 }
 
+pub fn read_channels_preference(app: &tauri::AppHandle) -> u16 {
+    let raw = crate::storage::with_db(app, |conn| {
+        crate::storage::repo::pref_get(conn, audio::PREF_RECORDING_CHANNELS)
+    })
+    .ok()
+    .flatten();
+    audio::parse_channel_preference(raw.as_deref())
+}
+
+pub fn write_channels_preference(app: &tauri::AppHandle, channels: u16) -> Result<(), String> {
+    let normalized = audio::normalize_channels(channels);
+    crate::storage::with_db(app, |conn| {
+        crate::storage::repo::pref_set(conn, audio::PREF_RECORDING_CHANNELS, &normalized.to_string())
+    })
+}
+
 #[tauri::command]
 pub fn recording_start(
     app: tauri::AppHandle,
@@ -377,7 +425,33 @@ pub fn recording_start(
     options: StartOptions,
 ) -> Result<StartResult, String> {
     let dir = get_assets_dir(&app)?;
-    state.start(options, &dir).map_err(String::from)
+    let channels = options
+        .channels
+        .unwrap_or_else(|| read_channels_preference(&app));
+    state
+        .start_with_channels(options, &dir, channels)
+        .map_err(String::from)
+}
+
+#[tauri::command]
+pub fn recording_channels(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, RecordingManager>,
+) -> Result<u16, String> {
+    let ch = read_channels_preference(&app);
+    state.set_channels(ch);
+    Ok(ch)
+}
+
+#[tauri::command]
+pub fn recording_set_channels(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, RecordingManager>,
+    channels: u16,
+) -> Result<(), String> {
+    let normalized = audio::normalize_channels(channels);
+    state.set_channels(normalized);
+    write_channels_preference(&app, normalized)
 }
 
 #[tauri::command]
@@ -567,5 +641,42 @@ mod tests {
         assert_eq!(parsed.system, Some(true));
         assert_eq!(parsed.source_id.as_deref(), Some("monitor:1"));
         assert_eq!(parsed.fps, Some(30));
+        assert_eq!(parsed.channels, None);
+    }
+
+    #[test]
+    fn test_recording_manager_channels_setting() {
+        let manager = RecordingManager::new();
+        assert_eq!(manager.get_channels(), 2);
+
+        manager.set_channels(1);
+        assert_eq!(manager.get_channels(), 1);
+
+        manager.set_channels(2);
+        assert_eq!(manager.get_channels(), 2);
+
+        // Unknown numbers are normalized to 2
+        manager.set_channels(5);
+        assert_eq!(manager.get_channels(), 2);
+    }
+
+    #[test]
+    fn test_sqlite_channels_preference_roundtrip_and_fallback() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::storage::migrations::migrate(&conn).unwrap();
+
+        // 1. Missing preference -> defaults to stereo (2)
+        let raw = crate::storage::repo::pref_get(&conn, audio::PREF_RECORDING_CHANNELS).unwrap();
+        assert_eq!(audio::parse_channel_preference(raw.as_deref()), 2);
+
+        // 2. Set mono "1"
+        crate::storage::repo::pref_set(&conn, audio::PREF_RECORDING_CHANNELS, "1").unwrap();
+        let raw = crate::storage::repo::pref_get(&conn, audio::PREF_RECORDING_CHANNELS).unwrap();
+        assert_eq!(audio::parse_channel_preference(raw.as_deref()), 1);
+
+        // 3. Unknown value -> falls back to stereo (2)
+        crate::storage::repo::pref_set(&conn, audio::PREF_RECORDING_CHANNELS, "surround").unwrap();
+        let raw = crate::storage::repo::pref_get(&conn, audio::PREF_RECORDING_CHANNELS).unwrap();
+        assert_eq!(audio::parse_channel_preference(raw.as_deref()), 2);
     }
 }

@@ -98,22 +98,18 @@ export const Timer: React.FC<TimerProps> = ({
   }, [initialMinutes, snapshot]);
 
   const handleToggle = useCallback(async () => {
-    soundService.playUiClick();
     await TimerService.toggle();
   }, []);
 
   const handleReset = useCallback(async () => {
-    soundService.playUiClick();
     await TimerService.reset();
   }, []);
 
   const handleSkip = useCallback(async () => {
-    soundService.playUiClick();
     await TimerService.skipPhase();
   }, []);
 
   const handleModeToggle = useCallback(async () => {
-    soundService.playUiClick();
     const nextMode = snapshot?.mode === 'pomodoro' ? 'stopwatch' : 'pomodoro';
     await TimerService.setMode(nextMode);
   }, [snapshot?.mode]);

@@ -200,3 +200,31 @@ export async function recordingLevel(): Promise<{ peak: number; rms: number }> {
     return { peak: 0, rms: 0 };
   }
 }
+
+export type RecorderChannels = 1 | 2;
+
+/**
+ * Returns the configured audio recording channel count (1 = mono, 2 = stereo).
+ * Defaults to 2 if the preference is absent or invoke fails.
+ */
+export async function recorderChannels(): Promise<RecorderChannels> {
+  try {
+    const channels = await invoke<number>('recording_channels');
+    return channels === 1 ? 1 : 2;
+  } catch {
+    return 2;
+  }
+}
+
+/**
+ * Sets the audio recording channel count preference (1 = mono, 2 = stereo).
+ * Applies to the next recording without restarting.
+ */
+export async function setRecorderChannels(channels: RecorderChannels): Promise<void> {
+  const target: RecorderChannels = channels === 1 ? 1 : 2;
+  try {
+    await invoke('recording_set_channels', { channels: target });
+  } catch (err) {
+    throw parseRecordingError(err);
+  }
+}

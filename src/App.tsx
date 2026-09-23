@@ -53,7 +53,6 @@ import {
 } from './types';
 import { BLOCK_PRESETS } from './types/focus';
 import { StoreService } from './services/store';
-import { soundService } from './services/sound';
 import { windowService } from './services/window';
 import {
   detectPortable,
@@ -283,7 +282,6 @@ function MainShell() {
   // Listen to window shortcut events
   useEffect(() => {
     const handleToggleSidebar = () => {
-      soundService.playUiClick();
       setSidebarCollapsed((prev) => {
         const next = !prev;
         StoreService.setPreference('tempo_sidebar_collapsed', next);
@@ -298,7 +296,6 @@ function MainShell() {
         target &&
         ['dashboard', 'day', 'calendar', 'alarms', 'tasks', 'lists', 'notes', 'drawings', 'recordings', 'stats', 'settings'].includes(target)
       ) {
-        soundService.playUiClick();
         setActiveTab(target as ScreenId);
       }
     };
@@ -405,7 +402,6 @@ function MainShell() {
   };
 
   const handleToggleSidebar = () => {
-    soundService.playUiClick();
     setSidebarCollapsed((prev) => {
       const next = !prev;
       StoreService.setPreference('tempo_sidebar_collapsed', next);
@@ -414,7 +410,6 @@ function MainShell() {
   };
 
   const handleNavigate = (tab: ScreenId) => {
-    soundService.playUiClick();
     setActiveTab(tab);
   };
 
@@ -437,7 +432,6 @@ function MainShell() {
   const currentSection = navSections.find((s) => s.tabs.includes(activeTab)) ?? navSections[0];
 
   const handleSectionClick = (section: NavSection) => {
-    soundService.playUiClick();
     setActiveTab(section.tabs[0]);
   };
 
@@ -547,7 +541,6 @@ function MainShell() {
               </button>
               <button
                 onClick={async () => {
-                  soundService.playUiClick();
                   await windowService.close();
                 }}
                 title={sidebarCollapsed ? t.sidebarExit : undefined}

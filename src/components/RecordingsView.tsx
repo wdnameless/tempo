@@ -19,7 +19,8 @@ import {
 } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { I18nService } from '../services/i18n';
-import { ScreenHeader, EmptyState, Card } from './ui';
+import { ScreenHeader, EmptyState, Card, Segmented } from './ui';
+import { AudioPlayer } from './AudioPlayer';
 import {
   listDevices,
   listSources,
@@ -30,9 +31,12 @@ import {
   recordingLevel,
   previewSource,
   recorderErrorKey,
+  recorderChannels,
+  setRecorderChannels,
   type DeviceInfo,
   type SourceInfo,
   type StartOptions,
+  type RecorderChannels,
 } from '../services/recorder';
 import {
   listRecordings,
@@ -88,6 +92,7 @@ export function RecordingsView(): React.ReactElement {
   // Audio configuration
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>('');
+  const [channels, setChannels] = useState<RecorderChannels>(2);
   const [includeSystem, setIncludeSystem] = useState<boolean>(false);
 
   // Screen configuration
@@ -151,6 +156,28 @@ export function RecordingsView(): React.ReactElement {
 
     return Promise.all([devices, sources]).then(() => undefined);
   }, []);
+  // Load microphone channel configuration (mono / stereo)
+  useEffect(() => {
+    let isMounted = true;
+    void recorderChannels()
+      .then((ch) => {
+        if (isMounted) setChannels(ch);
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleChannelsChange = async (newChannels: RecorderChannels) => {
+    setChannels(newChannels);
+    try {
+      await setRecorderChannels(newChannels);
+    } catch (err) {
+      console.error('Failed to update recorder channels:', err);
+    }
+  };
+
 
   // Load library recordings and fetch sizes
   const refreshLibrary = useCallback((): Promise<void> => {
@@ -460,28 +487,45 @@ export function RecordingsView(): React.ReactElement {
         {/* Tab Content: Audio Configuration */}
         {activeTab === 'audio' && (
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-            <div className="flex flex-col gap-2 w-full md:w-auto">
-              <label htmlFor="rec-device-select" className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
-                {t.recDevice}
-              </label>
-              {devices.length === 0 ? (
-                <div className="text-sm text-[var(--text-muted)]">{t.recNoDevices}</div>
-              ) : (
-                <select
-                  id="rec-device-select"
-                  aria-label={t.recDevice}
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+              <div className="flex flex-col gap-2 w-full md:w-auto">
+                <label htmlFor="rec-device-select" className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                  {t.recDevice}
+                </label>
+                {devices.length === 0 ? (
+                  <div className="text-sm text-[var(--text-muted)]">{t.recNoDevices}</div>
+                ) : (
+                  <select
+                    id="rec-device-select"
+                    aria-label={t.recDevice}
+                    disabled={isRecording}
+                    value={selectedDevice}
+                    onChange={(e) => setSelectedDevice(e.target.value)}
+                    className="px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-sm text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                  >
+                    {devices.map((dev) => (
+                      <option key={dev.id} value={dev.id}>
+                        {dev.name} {dev.is_default ? `(${t.recDefaultDevice})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2 w-full md:w-auto">
+                <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                  {t.recChannels}
+                </label>
+                <Segmented<RecorderChannels>
+                  value={channels}
                   disabled={isRecording}
-                  value={selectedDevice}
-                  onChange={(e) => setSelectedDevice(e.target.value)}
-                  className="px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-sm text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
-                >
-                  {devices.map((dev) => (
-                    <option key={dev.id} value={dev.id}>
-                      {dev.name} {dev.is_default ? `(${t.recDefaultDevice})` : ''}
-                    </option>
-                  ))}
-                </select>
-              )}
+                  onChange={(val) => void handleChannelsChange(val)}
+                  options={[
+                    { value: 1, label: t.recChannelsMono },
+                    { value: 2, label: t.recChannelsStereo },
+                  ]}
+                />
+              </div>
             </div>
 
             <div className="flex items-center gap-2 pt-2 md:pt-6">
@@ -844,10 +888,9 @@ export function RecordingsView(): React.ReactElement {
                   {/* Inline Playback */}
                   <div className="pt-2 border-t border-[var(--border)]">
                     {isAudio ? (
-                      <audio
-                        controls
+                      <AudioPlayer
                         src={fileSrc}
-                        className="w-full h-8"
+                        title={rec.title}
                         onPlay={() => setPlayingId(rec.id)}
                         onPause={() => {
                           if (playingId === rec.id) setPlayingId(null);

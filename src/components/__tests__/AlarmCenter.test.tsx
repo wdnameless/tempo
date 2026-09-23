@@ -27,7 +27,6 @@ vi.mock('../services/sound', () => ({
     startAlarmRamp: vi.fn(),
     stopAlarmRamp: vi.fn(),
     playCountdownTick: vi.fn(),
-    playUiClick: vi.fn(),
     speak: vi.fn(),
     stopSpeaking: vi.fn(),
   },

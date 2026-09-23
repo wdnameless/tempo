@@ -17,7 +17,6 @@ vi.mock('../../services/sound', () => ({
   soundService: {
     playHourglassFlip: vi.fn(),
     playFlip: vi.fn(),
-    playUiClick: vi.fn(),
   },
 }));
 describe('calculateSandLevel (pure sand level math)', () => {

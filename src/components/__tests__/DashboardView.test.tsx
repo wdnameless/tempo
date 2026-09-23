@@ -13,11 +13,6 @@ vi.mock('../WinterCanvas', () => ({
   ),
 }));
 
-vi.mock('../../services/sound', () => ({
-  soundService: {
-    playUiClick: vi.fn(),
-  },
-}));
 
 vi.mock('../../services/timer', () => ({
   TimerService: {

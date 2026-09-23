@@ -6,7 +6,6 @@ import { I18nService } from '../../services/i18n';
 
 vi.mock('../../services/sound', () => ({
   soundService: {
-    playUiClick: vi.fn(),
     playCountdownTick: vi.fn(),
     speak: vi.fn(),
     playBeep: vi.fn(),

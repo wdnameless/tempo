@@ -113,3 +113,11 @@ Object.defineProperty(window, '__TAURI_EVENT_PLUGIN_INTERNALS__', {
   writable: true,
   configurable: true,
 });
+
+// Testing Library waits one second by default for `waitFor`/`findBy*`. Several
+// suites render the whole application shell and then wait for a service chain to
+// resolve; with v8 coverage instrumenting every module that second is not enough,
+// and those tests failed only in the coverage run, never alone. Five seconds is
+// still a ceiling — a genuinely hung render keeps failing.
+import { configure } from '@testing-library/dom';
+configure({ asyncUtilTimeout: 5000 });

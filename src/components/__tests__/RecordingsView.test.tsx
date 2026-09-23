@@ -27,6 +27,8 @@ vi.mock('../../services/recorder', () => ({
   recordingState: vi.fn(),
   recordingLevel: vi.fn(),
   previewSource: vi.fn(),
+  recorderChannels: vi.fn(),
+  setRecorderChannels: vi.fn(),
   recorderErrorKey: vi.fn((err: unknown, kind?: 'audio' | 'screen') => {
     let variant: unknown;
     if (err && typeof err === 'object' && 'variant' in err) {
@@ -81,6 +83,8 @@ describe('RecordingsView', () => {
     vi.mocked(recorderService.recordingLevel).mockResolvedValue({ peak: 0.42, rms: 0.3 });
     vi.mocked(recordingsService.listRecordings).mockResolvedValue([]);
     vi.mocked(recordingsService.recordingBytes).mockResolvedValue(1048576); // 1 MB
+    vi.mocked(recorderService.recorderChannels).mockResolvedValue(2);
+    vi.mocked(recorderService.setRecorderChannels).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -544,5 +548,61 @@ describe('RecordingsView', () => {
     unmount();
 
     expect(assetsService.assetDelete).toHaveBeenCalledWith('C:/assets/screen/preview.png');
+  });
+  it('reads current channel mode on mount and writes new mode when switched', async () => {
+    vi.mocked(recorderService.recorderChannels).mockResolvedValue(2);
+    render(<RecordingsView />);
+
+    await waitFor(() => {
+      expect(recorderService.recorderChannels).toHaveBeenCalled();
+    });
+
+    const stereoOption = screen.getByRole('radio', { name: t.recChannelsStereo });
+    expect(stereoOption.getAttribute('aria-checked')).toBe('true');
+
+    const monoOption = screen.getByRole('radio', { name: t.recChannelsMono });
+    expect(monoOption.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.click(monoOption);
+
+    await waitFor(() => {
+      expect(recorderService.setRecorderChannels).toHaveBeenCalledWith(1);
+      expect(monoOption.getAttribute('aria-checked')).toBe('true');
+    });
+  });
+
+  it('renders custom AudioPlayer and ensures native audio controls element is gone', async () => {
+    vi.mocked(recordingsService.listRecordings).mockResolvedValue([
+      {
+        id: 'rec-player-test',
+        title: 'Voice Note For Player',
+        kind: 'audio',
+        file_path: 'audio/voice_note.wav',
+        duration_sec: 42,
+        transcript: null,
+        transcript_status: 'none',
+        updated_at: '2026-09-20T10:00:00Z',
+      },
+    ]);
+
+    const { container } = render(<RecordingsView />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Voice Note For Player')).toBeDefined();
+    });
+
+    // Native <audio controls> must NOT exist anywhere in the DOM
+    const nativeControlsAudio = container.querySelectorAll('audio[controls]');
+    expect(nativeControlsAudio.length).toBe(0);
+
+    // Audio element exists headless without controls attribute
+    const headlessAudio = container.querySelectorAll('audio');
+    expect(headlessAudio.length).toBe(1);
+    expect(headlessAudio[0].hasAttribute('controls')).toBe(false);
+
+    // Custom AudioPlayer controls are present (play button, seek input, volume input)
+    expect(screen.getByRole('button', { name: t.playerPlay })).toBeDefined();
+    expect(screen.getByLabelText(t.playerSeek)).toBeDefined();
+    expect(screen.getByLabelText(t.playerVolume)).toBeDefined();
   });
 });

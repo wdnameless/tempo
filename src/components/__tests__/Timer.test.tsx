@@ -12,7 +12,6 @@ vi.mock('canvas-confetti', () => ({
 
 vi.mock('../../services/sound', () => ({
   soundService: {
-    playUiClick: vi.fn(),
     playFinishAlarm: vi.fn(),
   },
 }));

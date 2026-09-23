@@ -554,6 +554,15 @@ export interface Translations {
   recPreviewHint: string;
   recConfirmScreen: string;
   recConfirmNeeded: string;
+  recChannels: string;
+  recChannelsMono: string;
+  recChannelsStereo: string;
+  playerPlay: string;
+  playerPause: string;
+  playerSeek: string;
+  playerVolume: string;
+  playerMute: string;
+  playerUnmute: string;
   navDrawings: string;
   drawingsNew: string;
   drawingsEmpty: string;
@@ -1231,6 +1240,15 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     recPreviewHint: 'Кадр источника сохранится в медиа и появится в списке.',
     recConfirmScreen: 'Подтверждаю, что записываю этот источник',
     recConfirmNeeded: 'Отметьте подтверждение под списком источников — запись экрана начинается только после него.',
+    recChannels: 'Каналы',
+    recChannelsMono: 'Моно',
+    recChannelsStereo: 'Стерео',
+    playerPlay: 'Воспроизвести',
+    playerPause: 'Пауза',
+    playerSeek: 'Перемотка',
+    playerVolume: 'Громкость',
+    playerMute: 'Выключить звук',
+    playerUnmute: 'Включить звук',
     navDrawings: 'Рисунки',
     drawingsNew: 'Новый рисунок',
     drawingsEmpty: 'Пока пусто. Создайте рисунок — холст бесконечный, рисуйте куда угодно.',
@@ -1903,6 +1921,15 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     recPreviewHint: 'A frame of the source is saved to media and shown in the list.',
     recConfirmScreen: 'I understand which source will be recorded',
     recConfirmNeeded: 'Tick the confirmation under the source list — screen capture starts only after it.',
+    recChannels: 'Channels',
+    recChannelsMono: 'Mono',
+    recChannelsStereo: 'Stereo',
+    playerPlay: 'Play',
+    playerPause: 'Pause',
+    playerSeek: 'Seek',
+    playerVolume: 'Volume',
+    playerMute: 'Mute',
+    playerUnmute: 'Unmute',
     navDrawings: 'Drawings',
     drawingsNew: 'New drawing',
     drawingsEmpty: 'Nothing yet. Create a drawing — the canvas is infinite, draw anywhere.',

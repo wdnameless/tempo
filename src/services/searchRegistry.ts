@@ -1,6 +1,5 @@
 import { Bell, CheckSquare, FileText, List, Mic, Timer } from 'lucide-react';
 import { registerSearchSource, type SearchHit } from './search';
-import { soundService } from './sound';
 /**
  * Registers everything the palette can act on.
  *
@@ -31,7 +30,6 @@ export function installSearchRegistry(): () => void {
       labelKey: 'searchGroupAlarms',
       icon: Bell,
       open: (hit: SearchHit) => {
-        soundService.playUiClick();
         navigateTo('alarms');
         // The alarm screen is rewritten in a later wave; until it can scroll to
         // a row, the hit is announced so that wave has something to hook into.
@@ -43,7 +41,6 @@ export function installSearchRegistry(): () => void {
       labelKey: 'searchGroupSessions',
       icon: Timer,
       open: (hit: SearchHit) => {
-        soundService.playUiClick();
         navigateTo('stats');
         window.dispatchEvent(new CustomEvent('tempo:reveal', { detail: hit }));
       },
@@ -53,7 +50,6 @@ export function installSearchRegistry(): () => void {
       labelKey: 'tabTasks',
       icon: CheckSquare,
       open: (hit: SearchHit) => {
-        soundService.playUiClick();
         navigateTo('tasks');
         window.dispatchEvent(new CustomEvent('tempo:reveal', { detail: hit }));
       },
@@ -63,7 +59,6 @@ export function installSearchRegistry(): () => void {
       labelKey: 'navLists',
       icon: List,
       open: (hit: SearchHit) => {
-        soundService.playUiClick();
         navigateTo('lists');
         window.dispatchEvent(new CustomEvent('tempo:reveal', { detail: hit }));
       },
@@ -73,7 +68,6 @@ export function installSearchRegistry(): () => void {
       labelKey: 'navNotes',
       icon: FileText,
       open: (hit: SearchHit) => {
-        soundService.playUiClick();
         navigateTo('notes');
         window.dispatchEvent(new CustomEvent('tempo:reveal', { detail: hit }));
       },
@@ -83,7 +77,6 @@ export function installSearchRegistry(): () => void {
       labelKey: 'navRecordings',
       icon: Mic,
       open: (hit: SearchHit) => {
-        soundService.playUiClick();
         navigateTo('recordings');
         window.dispatchEvent(new CustomEvent('tempo:reveal', { detail: hit }));
       },

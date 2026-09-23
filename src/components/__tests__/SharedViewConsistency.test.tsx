@@ -22,6 +22,10 @@ vi.mock('../../services/recorder', () => ({
   recordingLevel: vi.fn().mockResolvedValue({ peak: 0, rms: 0 }),
   previewSource: vi.fn().mockResolvedValue(null),
   recorderErrorKey: vi.fn(),
+  // Added with the mono/stereo switch: the view reads the current channel count
+  // on mount, so the mock has to answer it like the real service does.
+  recorderChannels: vi.fn().mockResolvedValue(2),
+  setRecorderChannels: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../services/recordings', () => ({
