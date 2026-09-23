@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { I18nService } from '../services/i18n';
+import { ScreenHeader, EmptyState, Card } from './ui';
 import {
   listDevices,
   listSources,
@@ -413,16 +414,14 @@ export function RecordingsView(): React.ReactElement {
   return (
     <div className="flex flex-col gap-6 max-w-5xl mx-auto w-full pb-12">
       {/* Header */}
-      <header className="flex items-start justify-between gap-4 pb-2 select-none">
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <h1 className="text-lg font-semibold tracking-tight truncate text-[var(--text)]">
-            {t.navRecordings}
-          </h1>
-        </div>
-      </header>
+      {/* Header */}
+      <ScreenHeader
+        title={t.navRecordings}
+        subtitle={t.recLibrary}
+      />
 
       {/* Top Half: The Recorder */}
-      <div className="p-6 rounded-[14px] bg-[var(--surface)] border border-[var(--border)] flex flex-col gap-5 shadow-sm">
+      <Card variant="surface" padding="lg" className="flex flex-col gap-5 shadow-sm">
         {/* Tabs: Audio vs Screen */}
         <div className="flex items-center gap-2 border-b border-[var(--border)] pb-3">
           <button
@@ -686,7 +685,7 @@ export function RecordingsView(): React.ReactElement {
             )}
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Bottom Half: The Library */}
       <div className="flex flex-col gap-4">
@@ -724,12 +723,11 @@ export function RecordingsView(): React.ReactElement {
         </div>
 
         {recordings.length === 0 ? (
-          <div className="flex flex-col items-center justify-center text-center py-10 px-4 rounded-[14px] border border-dashed border-[var(--border)]">
-            <FileAudio className="w-8 h-8 text-[var(--text-faint)] mb-3" />
-            <div className="text-xs leading-relaxed max-w-sm text-[var(--text-muted)]">
-              {t.recEmpty}
-            </div>
-          </div>
+          <EmptyState
+            icon={<FileAudio className="w-8 h-8" />}
+            title={t.recLibrary}
+            description={t.recEmpty}
+          />
         ) : (
           <div className="flex flex-col gap-3">
             {recordings.map((rec) => {
@@ -737,9 +735,11 @@ export function RecordingsView(): React.ReactElement {
               const isAudio = rec.kind === 'audio';
 
               return (
-                <div
+                <Card
                   key={rec.id}
-                  className="p-4 rounded-[14px] bg-[var(--surface)] border border-[var(--border)] flex flex-col gap-3 transition-colors"
+                  variant="surface"
+                  padding="md"
+                  className="flex flex-col gap-3"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -885,7 +885,7 @@ export function RecordingsView(): React.ReactElement {
                       </p>
                     </div>
                   ) : null}
-                </div>
+                </Card>
               );
             })}
           </div>

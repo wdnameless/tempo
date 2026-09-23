@@ -30,7 +30,6 @@ import { StatsView } from './components/StatsView';
 import { RecordingsView } from './components/RecordingsView';
 import { AlarmCenter, type MissedAlarm } from './components/AlarmCenter';
 import { listen } from '@tauri-apps/api/event';
-import { UpdateBanner } from './components/UpdateBanner';
 import { CommandPalette } from './components/CommandPalette';
 import { SectionTabs } from './components/SectionTabs';
 
@@ -59,8 +58,7 @@ import { windowService } from './services/window';
 import {
   detectPortable,
   checkForUpdate,
-  installUpdate,
-  UpdateInfo,
+  type UpdateInfo,
 } from './services/update';
 import { isTauri } from './services/platform';
 import { installShortcutLayer } from './services/shortcuts';
@@ -232,9 +230,8 @@ function MainShell() {
 
   const [blockSettings, setBlockSettings] = useState<BlockSettings>(BLOCK_PRESETS[0]);
 
-  // Update banner state
+  // Update state found by background check
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [isUpdating, setIsUpdating] = useState(false);
 
   const handleDisableAlarm = useCallback(
     (id: string) => {
@@ -399,16 +396,6 @@ function MainShell() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  const handleApplyUpdate = async () => {
-    if (!updateInfo) return;
-    setIsUpdating(true);
-    try {
-      await installUpdate(updateInfo);
-    } catch (err: unknown) {
-      setIsUpdating(false);
-      console.error('Update failed:', err);
-    }
-  };
 
   const handleSelectAccent = (accent: AccentId) => {
     if (!(accent in ACCENTS)) return;
@@ -506,18 +493,8 @@ function MainShell() {
             setIsCompact(next);
             void windowService.toggleCompactMode(next);
           }}
+          initialUpdateInfo={updateInfo}
         />
-
-        {updateInfo && (
-          <UpdateBanner
-            theme={theme}
-            version={updateInfo.version}
-            onOpenSettings={() => setActiveTab('settings')}
-            onInstall={handleApplyUpdate}
-            installing={isUpdating}
-            onDismiss={() => setUpdateInfo(null)}
-          />
-        )}
 
         <div className="flex flex-1 overflow-hidden relative">
           <aside
@@ -553,8 +530,8 @@ function MainShell() {
               <button
                 data-testid="sidebar-collapse-button"
                 onClick={handleToggleSidebar}
-                title={sidebarCollapsed ? 'Развернуть меню (Cmd+S)' : 'Свернуть меню (Cmd+S)'}
-                aria-label={sidebarCollapsed ? 'Развернуть меню' : 'Свернуть меню'}
+                title={sidebarCollapsed ? `${t.sidebarCollapse} (Cmd+S)` : `${t.sidebarCollapse} (Cmd+S)`}
+                aria-label={t.sidebarCollapse}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/50 hover:text-white hover:bg-white/5 transition-colors ${
                   sidebarCollapsed ? 'justify-center px-0' : ''
                 }`}
@@ -564,7 +541,7 @@ function MainShell() {
                 ) : (
                   <>
                     <PanelLeftClose size={18} className="shrink-0" />
-                    <span className="truncate">Свернуть</span>
+                    <span className="truncate">{t.sidebarCollapse}</span>
                   </>
                 )}
               </button>
@@ -573,14 +550,14 @@ function MainShell() {
                   soundService.playUiClick();
                   await windowService.close();
                 }}
-                title={sidebarCollapsed ? 'Выход из Tempo' : undefined}
-                aria-label="Выход из Tempo"
+                title={sidebarCollapsed ? t.sidebarExit : undefined}
+                aria-label={t.sidebarExit}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/40 hover:text-red-400 hover:bg-white/5 transition-colors ${
                   sidebarCollapsed ? 'justify-center px-0' : ''
                 }`}
               >
                 <Power size={18} className="shrink-0" />
-                {!sidebarCollapsed && <span className="truncate">Выход из Tempo</span>}
+                {!sidebarCollapsed && <span className="truncate">{t.sidebarExit}</span>}
               </button>
             </div>
           </aside>

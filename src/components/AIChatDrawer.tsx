@@ -134,6 +134,7 @@ export interface AIChatDrawerProps {
   onSendMessage: (msg: ChatMessage) => void;
   onResetChat?: (sessionId?: string) => void;
   initialSessionId?: string;
+  onOpenAISettings?: () => void;
 }
 
 export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
@@ -150,6 +151,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
   onSendMessage,
   onResetChat,
   initialSessionId,
+  onOpenAISettings,
 }) => {
   const [inputText, setInputText] = useState('');
   const [isCompiling, setIsCompiling] = useState(false);
@@ -183,6 +185,12 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
 
   const lang = I18nService.getLang();
   const t = I18nService.t();
+  const handleOpenAISettings = () => {
+    onOpenAISettings?.();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('tempo:navigate', { detail: 'settings' }));
+    }
+  };
 
   // Load available models from provider
   useEffect(() => {
@@ -806,7 +814,7 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
             <div className="w-2 h-2 rounded-full bg-[var(--accent)] animate-bounce" />
             <div className="w-2 h-2 rounded-full bg-[var(--accent)] animate-bounce [animation-delay:0.2s]" />
             <div className="w-2 h-2 rounded-full bg-[var(--accent)] animate-bounce [animation-delay:0.4s]" />
-            <span className="ml-2">Анализирую и применяю...</span>
+            <span className="ml-2">{t.chatCompiling}</span>
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -819,24 +827,36 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="Создать задачу, список, заметку, расписание..."
+            placeholder={t.chatInputPlaceholder}
             disabled={isCompiling}
             className="w-full bg-[var(--surface)] text-[var(--foreground)] placeholder-[var(--text-muted)] text-xs rounded-xl pl-3 pr-10 py-2.5 border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] transition-all shadow-inner"
           />
           <button
             type="submit"
-            disabled={!inputText.trim() || isCompiling}
-            className="absolute right-1.5 p-1.5 rounded-lg bg-[var(--accent)] text-white disabled:opacity-40 disabled:hover:bg-[var(--accent)] hover:opacity-90 transition-all"
-            aria-label="Отправить сообщение"
+            disabled={!hasRemoteKey || !inputText.trim() || isCompiling}
+            className="absolute right-1.5 p-1.5 rounded-lg bg-[var(--accent)] text-white disabled:opacity-40 disabled:hover:bg-[var(--accent)] hover:opacity-90 transition-all cursor-pointer disabled:cursor-not-allowed"
+            aria-label={t.chatSend}
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
             </svg>
           </button>
         </div>
+        {!hasRemoteKey && (
+          <div className="flex items-center gap-1.5 px-1 pt-2 text-xs text-[var(--text-muted)]" data-testid="chat-need-key">
+            <button
+              type="button"
+              onClick={handleOpenAISettings}
+              className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1 text-left cursor-pointer"
+              data-testid="chat-settings-link"
+            >
+              <span>{t.chatNeedKey}</span>
+            </button>
+          </div>
+        )}
         <div className="flex justify-between items-center px-1 mt-2 text-[10px] text-[var(--text-muted)] font-mono">
           <span className="truncate max-w-[200px]">{activeModel}</span>
-          <span>{hasRemoteKey ? 'Online LLM' : 'Offline Mode'}</span>
+          <span>{hasRemoteKey ? t.chatOnline : t.chatOffline}</span>
         </div>
       </form>
     </div>

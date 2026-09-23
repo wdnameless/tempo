@@ -646,6 +646,39 @@ export interface Translations {
   chatCustomModel: string;
   chatRecentSessions: string;
   chatUntitled: string;
+
+  // Window controls & sidebar (interfaces.md §2)
+  titleBarMinimize: string;
+  titleBarMaximize: string;
+  titleBarCloseToTray: string;
+  titleBarPin: string;
+  titleBarUnpin: string;
+  titleBarCompact: string;
+  sidebarCollapse: string;
+  sidebarExit: string;
+
+  // Update (interfaces.md §2)
+  updateIdle: string;
+  updateChecking: string;
+  updateUpToDate: string;
+  updateAvailable: string;
+  updateDownloading: string;
+  updateReady: string;
+  updateFailed: string;
+
+  // Chat and alarms (interfaces.md §2)
+  chatNeedKey: string;
+  chatNewChat: string;
+  alarmsQuickIn30: string;
+  alarmsQuickTomorrow8: string;
+  alarmsQuickDaily730: string;
+
+  // Swept component keys
+  chatInputPlaceholder: string;
+  chatCompiling: string;
+  chatSend: string;
+  chatOnline: string;
+  chatOffline: string;
 }
 
 export const TRANSLATIONS: Record<Language, Translations> = {
@@ -709,8 +742,8 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     navAlarms: 'Будильники',
     navTasks: 'Задачи',
     navNotes: 'Заметки',
-    sidebarAlarms: 'Alarms',
-    sidebarTasks: 'Tasks',
+    sidebarAlarms: 'Будильники',
+    sidebarTasks: 'Задачи',
     statsEmptyTitle: 'Статистика пока пуста',
     statsEmptyBody: 'Здесь появятся часы концентрации, тепловая карта активности за 12 недель, серии продуктивности и пиковые часы дня.',
     statsEmptyHint: 'Завершите сессию таймера для старта',
@@ -836,11 +869,11 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechCancelHotkey: 'Клавиша отмены',
     settingsSpeechCancelHotkeyPlaceholder: 'напр. Escape',
     settingsSpeechActivationMode: 'Режим активации',
-    settingsSpeechActivationHoldOrToggle: 'Hold or Toggle',
+    settingsSpeechActivationHoldOrToggle: 'Удержание или переключение',
     settingsSpeechActivationHoldOrToggleDesc: 'Короткое нажатие фиксирует запись, долгое — работает пока держите',
-    settingsSpeechActivationPushToTalk: 'Push to Talk',
+    settingsSpeechActivationPushToTalk: 'Рация (PTT)',
     settingsSpeechActivationPushToTalkDesc: 'Запись идёт только пока клавиша зажата',
-    settingsSpeechActivationToggle: 'Toggle',
+    settingsSpeechActivationToggle: 'Переключение',
     settingsSpeechActivationToggleDesc: 'Нажмите один раз для старта, второй раз для завершения',
     settingsSpeechHoldThreshold: 'Порог удержания',
     settingsSpeechHoldThresholdDesc: 'Время в миллисекундах для различения тапа и зажатия',
@@ -882,7 +915,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechInputChannel: 'Канал аудио',
     settingsSpeechInputChannelDefault: 'Все / Моно',
     settingsSpeechVadBackend: 'Детектор активности (VAD)',
-    settingsSpeechVadEnergy: 'Energy (RMS)',
+    settingsSpeechVadEnergy: 'По энергии (RMS)',
     settingsSpeechVadEarshot: 'Earshot (Нейросеть)',
     settingsSpeechVadThreshold: 'Порог чувствительности VAD',
     settingsSpeechTestMic: 'Проверить микрофон',
@@ -1286,6 +1319,39 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     chatCustomModel: 'Своя модель...',
     chatRecentSessions: 'Недавние чаты',
     chatUntitled: 'Новый чат',
+
+    // Window controls & sidebar (interfaces.md §2)
+    titleBarMinimize: 'Свернуть',
+    titleBarMaximize: 'Развернуть на весь экран',
+    titleBarCloseToTray: 'Скрыть в трей (фоновая работа)',
+    titleBarPin: 'Закрепить поверх всех окон',
+    titleBarUnpin: 'Открепить',
+    titleBarCompact: 'Свернуть в мини-виджет',
+    sidebarCollapse: 'Свернуть меню',
+    sidebarExit: 'Выход из Tempo',
+
+    // Update (interfaces.md §2)
+    updateIdle: 'Проверить обновления',
+    updateChecking: 'Проверяем…',
+    updateUpToDate: 'Версия актуальна',
+    updateAvailable: 'Обновить до {version}',
+    updateDownloading: 'Скачивание {percent}%',
+    updateReady: 'Перезапустить',
+    updateFailed: 'Не удалось обновить',
+
+    // Chat and alarms (interfaces.md §2)
+    chatNeedKey: 'Добавьте ключ в Настройки → ИИ',
+    chatNewChat: 'Новый чат',
+    alarmsQuickIn30: 'Через 30 минут',
+    alarmsQuickTomorrow8: 'Завтра в 8:00',
+    alarmsQuickDaily730: 'Каждый день в 7:30',
+
+    // Swept component keys
+    chatInputPlaceholder: 'Создать задачу, список, заметку, расписание…',
+    chatCompiling: 'Анализирую и применяю…',
+    chatSend: 'Отправить сообщение',
+    chatOnline: 'Онлайн ИИ',
+    chatOffline: 'Офлайн режим',
   },
 
   en: {
@@ -1925,6 +1991,39 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     chatCustomModel: 'Custom model...',
     chatRecentSessions: 'Recent chats',
     chatUntitled: 'New chat',
+
+    // Window controls & sidebar (interfaces.md §2)
+    titleBarMinimize: 'Minimize',
+    titleBarMaximize: 'Maximize',
+    titleBarCloseToTray: 'Hide to tray (keeps running)',
+    titleBarPin: 'Keep on top',
+    titleBarUnpin: 'Stop keeping on top',
+    titleBarCompact: 'Collapse to mini widget',
+    sidebarCollapse: 'Collapse menu',
+    sidebarExit: 'Quit Tempo',
+
+    // Update (interfaces.md §2)
+    updateIdle: 'Check for updates',
+    updateChecking: 'Checking…',
+    updateUpToDate: 'Up to date',
+    updateAvailable: 'Update to {version}',
+    updateDownloading: 'Downloading {percent}%',
+    updateReady: 'Restart',
+    updateFailed: 'Update failed',
+
+    // Chat and alarms (interfaces.md §2)
+    chatNeedKey: 'Add a key in Settings → AI',
+    chatNewChat: 'New chat',
+    alarmsQuickIn30: 'In 30 minutes',
+    alarmsQuickTomorrow8: 'Tomorrow at 8:00',
+    alarmsQuickDaily730: 'Every day at 7:30',
+
+    // Swept component keys
+    chatInputPlaceholder: 'Create a task, list, note, schedule…',
+    chatCompiling: 'Analyzing and applying…',
+    chatSend: 'Send message',
+    chatOnline: 'Online LLM',
+    chatOffline: 'Offline Mode',
   },
 };
 

@@ -3,6 +3,7 @@ import { render, screen, act, cleanup, fireEvent } from '@testing-library/react'
 import { useEffect, useState } from 'react';
 import type { AlarmItem } from '../../types';
 import { Alarms } from '../Alarms';
+import { I18nService } from '../../services/i18n';
 
 /**
  * Alarms had no way to pick weekdays and no way to change one after creating it:
@@ -107,7 +108,8 @@ describe('creating an alarm with specific weekdays', () => {
         screen.getByTitle(`Звонить в ${day}`).click();
       }
     });
-    fireEvent.change(screen.getByPlaceholderText('Название будильника...'), {
+    const t = I18nService.t();
+    fireEvent.change(screen.getByPlaceholderText(t.alarmsLabelPlaceholder), {
       target: { value: 'Выходной' },
     });
     act(() => {

@@ -156,12 +156,29 @@ export async function installUpdate(
 
   try {
     if (info.portable) {
-      await invoke('portable_stage_update');
-      await invoke('portable_apply_update');
-      // The process exits as the helper takes over; nothing after this runs.
-      return { ok: true };
+      let unlisten: (() => void) | undefined;
+      if (onProgress) {
+        try {
+          const { listen } = await import('@tauri-apps/api/event');
+          unlisten = await listen<{ downloaded: number; total: number; stage: string }>(
+            'update-progress',
+            (event) => {
+              onProgress(event.payload.downloaded, event.payload.total);
+            },
+          );
+        } catch {
+          // Progress listening is best-effort
+        }
+      }
+      try {
+        await invoke('portable_stage_update');
+        await invoke('portable_apply_update');
+        // The process exits as the helper takes over; nothing after this runs.
+        return { ok: true };
+      } finally {
+        unlisten?.();
+      }
     }
-
     const { check } = await import('@tauri-apps/plugin-updater');
     const { relaunch } = await import('@tauri-apps/plugin-process');
 

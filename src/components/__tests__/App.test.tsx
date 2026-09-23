@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup, act, within } from '@testing-library/react';
 import App from '../../App';
 import { StoreService } from '../../services/store';
+import { I18nService } from '../../services/i18n';
 
 vi.mock('../../services/sound', () => ({
   soundService: {
@@ -53,11 +54,13 @@ describe('App Shell', () => {
   beforeEach(() => {
     cleanup();
     StoreService.resetCache();
+    I18nService.setLang('ru');
   });
 
   it('renders a sidebar entry for every section', () => {
     render(<App />);
-    for (const label of ['Alarms', 'Tasks', 'Календарь', 'Заметки', 'Записи', 'Статистика', 'Настройки']) {
+    const t = I18nService.t();
+    for (const label of [t.sidebarAlarms, t.sidebarTasks, t.navCalendar, t.navNotes, t.navRecordings, t.navStats, t.tabSettings]) {
       expect(screen.getByRole('button', { name: label })).toBeDefined();
     }
   });
@@ -85,24 +88,26 @@ describe('App Shell', () => {
 
   it('navigates between sections from the sidebar', () => {
     render(<App />);
-    expect(activeScreen()).toBe('Alarms');
+    const t = I18nService.t();
+    expect(activeScreen()).toBe(t.sidebarAlarms);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Настройки' }));
-    expect(activeScreen()).toBe('Настройки');
+    fireEvent.click(screen.getByRole('button', { name: t.tabSettings }));
+    expect(activeScreen()).toBe(t.tabSettings);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
-    expect(activeScreen()).toBe('Tasks');
+    fireEvent.click(screen.getByRole('button', { name: t.sidebarTasks }));
+    expect(activeScreen()).toBe(t.sidebarTasks);
   });
 
   it('clicking a sidebar entry opens its first sub-tab', () => {
     render(<App />);
+    const t = I18nService.t();
     // Navigate to settings first
-    fireEvent.click(screen.getByRole('button', { name: 'Настройки' }));
-    expect(activeScreen()).toBe('Настройки');
+    fireEvent.click(screen.getByRole('button', { name: t.tabSettings }));
+    expect(activeScreen()).toBe(t.tabSettings);
 
     // Click 'Tasks' sidebar section (tabs: ['day', 'tasks', 'lists'])
-    fireEvent.click(screen.getByRole('button', { name: 'Tasks' }));
-    expect(activeScreen()).toBe('Tasks');
+    fireEvent.click(screen.getByRole('button', { name: t.sidebarTasks }));
+    expect(activeScreen()).toBe(t.sidebarTasks);
     // First sub-tab ('День') is selected
     const tabs = screen.getByTestId('section-tabs');
     const dayRadio = within(tabs).getByRole('radio', { name: 'День' });
@@ -111,6 +116,7 @@ describe('App Shell', () => {
 
   it('switching a sub-tab renders the other view', () => {
     render(<App />);
+    const t = I18nService.t();
     // In Pomodoro section, sub-tabs are [Помодоро, Будильники]
     const tabs = screen.getByTestId('section-tabs');
     const alarmsRadio = within(tabs).getByRole('radio', { name: 'Будильники' });
@@ -118,8 +124,8 @@ describe('App Shell', () => {
 
     fireEvent.click(alarmsRadio);
     expect(alarmsRadio.getAttribute('aria-checked')).toBe('true');
-    // Active sidebar section remains 'Alarms'
-    expect(activeScreen()).toBe('Alarms');
+    // Active sidebar section remains 'Будильники' (sidebarAlarms)
+    expect(activeScreen()).toBe(t.sidebarAlarms);
     // Alarms view is rendered
     expect(screen.getByText('Нет будильников')).toBeDefined();
 
@@ -132,16 +138,17 @@ describe('App Shell', () => {
 
   it('opens the Alarms section with Alarms sub-tab selected when navigating to alarms from outside', () => {
     render(<App />);
+    const t = I18nService.t();
     // Navigate to settings first
-    fireEvent.click(screen.getByRole('button', { name: 'Настройки' }));
-    expect(activeScreen()).toBe('Настройки');
+    fireEvent.click(screen.getByRole('button', { name: t.tabSettings }));
+    expect(activeScreen()).toBe(t.tabSettings);
 
     act(() => {
       window.dispatchEvent(new CustomEvent('tempo:navigate', { detail: 'alarms' }));
     });
 
-    // Active sidebar entry should be 'Alarms' (the section owning alarms)
-    expect(activeScreen()).toBe('Alarms');
+    // Active sidebar entry should be 'Будильники' (the section owning alarms)
+    expect(activeScreen()).toBe(t.sidebarAlarms);
     // Alarms sub-tab should be selected
     const tabs = screen.getByTestId('section-tabs');
     const alarmsRadio = within(tabs).getByRole('radio', { name: 'Будильники' });
@@ -188,5 +195,12 @@ describe('App Shell', () => {
       window.dispatchEvent(new CustomEvent('tempo:navigate', { detail: 'settings' }));
     });
     expect(screen.getByRole('button', { current: 'page' }).getAttribute('aria-label')).toBe('Настройки');
+  });
+
+  it('does not render the old UpdateBanner even when an update is available', async () => {
+    render(<App />);
+    // Old banner had role="status" and text "Доступна версия"
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.queryByText(/Доступна версия/i)).toBeNull();
   });
 });

@@ -13,6 +13,7 @@ import {
   type DrawingItem,
 } from '../services/drawings';
 import { I18nService } from '../services/i18n';
+import { EmptyState } from './ui';
 
 type ExcalidrawOnChange = NonNullable<React.ComponentProps<typeof Excalidraw>['onChange']>;
 type ExcalidrawElements = Parameters<ExcalidrawOnChange>[0];
@@ -229,7 +230,7 @@ export function DrawingsView(): React.JSX.Element {
         {loading ? (
           <div className="flex items-center justify-center h-full text-white/50 gap-2">
             <Loader2 className="w-5 h-5 animate-spin" />
-            <span className="text-xs">Загрузка...</span>
+            <span className="text-xs">{t.commonLoading}</span>
           </div>
         ) : sceneData ? (
           <div className="w-full h-full relative" style={{ height: '100%', width: '100%' }}>
@@ -244,16 +245,21 @@ export function DrawingsView(): React.JSX.Element {
             />
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-white/40 p-6 text-center">
-            <FileText className="w-12 h-12 mb-3 stroke-1 text-white/30" />
-            <p className="text-sm text-white/60 max-w-sm">{t.drawingsEmpty}</p>
-            <button
-              type="button"
-              onClick={handleCreateNew}
-              className="mt-4 px-4 py-2 rounded-xl bg-white text-black text-xs font-semibold hover:bg-white/90 transition-colors cursor-pointer"
-            >
-              {t.drawingsNew}
-            </button>
+          <div className="flex flex-col items-center justify-center h-full p-6">
+            <EmptyState
+              icon={<FileText className="w-8 h-8" />}
+              title={t.navDrawings}
+              description={t.drawingsEmpty}
+              action={
+                <button
+                  type="button"
+                  onClick={handleCreateNew}
+                  className="px-4 py-2 rounded-xl bg-white text-black text-xs font-semibold hover:bg-white/90 transition-colors cursor-pointer"
+                >
+                  {t.drawingsNew}
+                </button>
+              }
+            />
           </div>
         )}
       </main>

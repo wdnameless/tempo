@@ -335,4 +335,33 @@ describe('AIChatDrawer & formatChatTimestamp', () => {
       });
     });
   });
+
+  describe('5. Send button and chatNeedKey when no API key configured', () => {
+    it('shows chatNeedKey and its link when there is no key, and send button is disabled', () => {
+      const onOpenSettings = vi.fn();
+      render(
+        <AIChatDrawer
+          isOpen={true}
+          onClose={vi.fn()}
+          theme={mockTheme}
+          currentUi={mockUi}
+          aiSettings={{ ...mockAiSettings, apiKey: '' }}
+          messages={[]}
+          onSendMessage={vi.fn()}
+          onOpenAISettings={onOpenSettings}
+        />,
+      );
+
+      const sendBtn = screen.getByRole('button', { name: /Отправить сообщение|Send message/i });
+      expect(sendBtn.hasAttribute('disabled')).toBe(true);
+
+      const needKeyElem = screen.getByTestId('chat-need-key');
+      expect(needKeyElem).toBeDefined();
+      expect(needKeyElem.textContent).toContain('Настройки → ИИ');
+
+      const settingsLink = screen.getByTestId('chat-settings-link');
+      fireEvent.click(settingsLink);
+      expect(onOpenSettings).toHaveBeenCalledTimes(1);
+    });
+  });
 });

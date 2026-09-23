@@ -278,4 +278,51 @@ describe('Alarms Component Behavior', () => {
       expect(deleteSpy).toHaveBeenCalledWith('alarm_toggle_del');
     });
   });
+
+  describe('quick action alarms creation', () => {
+    it('creates "in 30 minutes" alarm on click', async () => {
+      const saveSpy = vi.spyOn(alarmsService, 'saveAlarm').mockResolvedValue(undefined);
+      render(<Harness initial={[]} />);
+
+      const btn = screen.getByTestId('quick-alarm-in-30');
+      await act(async () => {
+        fireEvent.click(btn);
+      });
+
+      expect(saveSpy).toHaveBeenCalledTimes(1);
+      const saved = saveSpy.mock.calls[0][0];
+      expect(saved.repeat).toBe('once');
+      expect(saved.time).toMatch(/^\d{2}:\d{2}$/);
+    });
+
+    it('creates "tomorrow at 8:00" alarm on click', async () => {
+      const saveSpy = vi.spyOn(alarmsService, 'saveAlarm').mockResolvedValue(undefined);
+      render(<Harness initial={[]} />);
+
+      const btn = screen.getByTestId('quick-alarm-tomorrow-8');
+      await act(async () => {
+        fireEvent.click(btn);
+      });
+
+      expect(saveSpy).toHaveBeenCalledTimes(1);
+      const saved = saveSpy.mock.calls[0][0];
+      expect(saved.repeat).toBe('once');
+      expect(saved.time).toBe('08:00');
+    });
+
+    it('creates "daily at 7:30" alarm on click', async () => {
+      const saveSpy = vi.spyOn(alarmsService, 'saveAlarm').mockResolvedValue(undefined);
+      render(<Harness initial={[]} />);
+
+      const btn = screen.getByTestId('quick-alarm-daily-730');
+      await act(async () => {
+        fireEvent.click(btn);
+      });
+
+      expect(saveSpy).toHaveBeenCalledTimes(1);
+      const saved = saveSpy.mock.calls[0][0];
+      expect(saved.repeat).toBe('daily');
+      expect(saved.time).toBe('07:30');
+    });
+  });
 });

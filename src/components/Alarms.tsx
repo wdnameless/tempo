@@ -289,6 +289,43 @@ export const Alarms: React.FC<AlarmsProps> = ({
     void fetchPreviews(updatedList);
     resetForm();
   };
+  const createQuickAlarm = async (labelVal: string, timeVal: string, repeatVal: AlarmRepeat) => {
+    soundService.playUiClick();
+    const alarmData: Alarm = {
+      id: `alarm_${Date.now()}`,
+      label: labelVal,
+      time: timeVal,
+      repeat: repeatVal,
+      days: [],
+      date: null,
+      intervalMinutes: null,
+      windowStart: null,
+      windowEnd: null,
+      enabled: true,
+      sound: 'gentle',
+      note: null,
+    };
+    const updatedList = [alarmData, ...effectiveAlarms];
+    setLocalAlarms(updatedList);
+    onUpdateAlarms?.(updatedList.map(toAlarmItem));
+    await saveAlarm(alarmData);
+    void fetchPreviews(updatedList);
+  };
+
+  const handleQuickIn30 = () => {
+    const d = new Date(Date.now() + 30 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    void createQuickAlarm(t.alarmsQuickIn30, timeStr, 'once');
+  };
+
+  const handleQuickTomorrow8 = () => {
+    void createQuickAlarm(t.alarmsQuickTomorrow8, '08:00', 'once');
+  };
+
+  const handleQuickDaily730 = () => {
+    void createQuickAlarm(t.alarmsQuickDaily730, '07:30', 'daily');
+  };
 
   const handleToggle = async (id: string, currentEnabled: boolean) => {
     soundService.playUiClick();
@@ -408,6 +445,36 @@ export const Alarms: React.FC<AlarmsProps> = ({
       {/* Alarm Sound Settings (R13 / Overhaul) */}
       <AlarmAudio />
 
+      {/* Quick Actions Row */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={handleQuickIn30}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[14px] text-xs font-medium bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--text)] transition-colors cursor-pointer"
+          data-testid="quick-alarm-in-30"
+        >
+          <Clock size={13} className="text-[var(--accent)]" />
+          <span>{t.alarmsQuickIn30}</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleQuickTomorrow8}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[14px] text-xs font-medium bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--text)] transition-colors cursor-pointer"
+          data-testid="quick-alarm-tomorrow-8"
+        >
+          <Bell size={13} className="text-[var(--accent)]" />
+          <span>{t.alarmsQuickTomorrow8}</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleQuickDaily730}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[14px] text-xs font-medium bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--text)] transition-colors cursor-pointer"
+          data-testid="quick-alarm-daily-730"
+        >
+          <Plus size={13} className="text-[var(--accent)]" />
+          <span>{t.alarmsQuickDaily730}</span>
+        </button>
+      </div>
 
       {/* Unified Create / Edit Form in ONE place (R09 / R10) */}
       <Card variant="surface" padding="md" className="space-y-3">
@@ -446,7 +513,7 @@ export const Alarms: React.FC<AlarmsProps> = ({
                 type="text"
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
-                placeholder="Название будильника..."
+                placeholder={t.alarmsLabelPlaceholder}
                 className="w-full bg-[var(--elevated)] text-sm px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
               />
             </Field>
