@@ -60,11 +60,32 @@ describe('calculateHourglassAngle (pure angle math)', () => {
   });
 });
 
+/**
+ * jsdom hands out a 2D context only when the optional native `canvas` package
+ * happens to be installed. The animation path must not depend on that, so the
+ * context is stubbed for every test in this file.
+ */
+function createMockContext() {
+  return {
+    setTransform: vi.fn(),
+    clearRect: vi.fn(),
+    fillRect: vi.fn(),
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    stroke: vi.fn(),
+    arc: vi.fn(),
+    fill: vi.fn(),
+    createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+  };
+}
+
 describe('WinterCanvas component', () => {
   let mockUnsubscribe: () => void;
   let subscriberCallback: ((state: TimerSnapshot) => void) | null = null;
   let rafCallback: FrameRequestCallback | null = null;
   let cancelRafSpy: MockInstance<(handle: number) => void>;
+  let rafSpy: MockInstance<(cb: FrameRequestCallback) => number>;
 
   beforeEach(() => {
     mockUnsubscribe = vi.fn();
@@ -80,10 +101,14 @@ describe('WinterCanvas component', () => {
       return mockUnsubscribe;
     });
 
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+    rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
       rafCallback = cb;
       return 123;
     });
+
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+      createMockContext() as never,
+    );
 
     cancelRafSpy = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
 
@@ -116,8 +141,14 @@ describe('WinterCanvas component', () => {
     expect(mockUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('cancels animation frame on unmount', () => {
+  it('cancels the animation frame it scheduled on unmount', () => {
     const { unmount } = render(<WinterCanvas />);
+
+    expect(
+      rafSpy,
+      'the loop must schedule a frame when the canvas has a size',
+    ).toHaveBeenCalled();
+
     unmount();
     expect(cancelRafSpy).toHaveBeenCalledWith(123);
   });
@@ -140,23 +171,6 @@ describe('WinterCanvas component', () => {
 
 
   it('does not call setState from the animation loop', async () => {
-    const mockCtx = {
-      setTransform: vi.fn(),
-      clearRect: vi.fn(),
-      fillRect: vi.fn(),
-      beginPath: vi.fn(),
-      moveTo: vi.fn(),
-      lineTo: vi.fn(),
-      stroke: vi.fn(),
-      arc: vi.fn(),
-      fill: vi.fn(),
-      createRadialGradient: vi.fn(() => ({
-        addColorStop: vi.fn(),
-      })),
-    };
-
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(mockCtx as never);
-
     let renderCount = 0;
     function Tracker() {
       renderCount++;
