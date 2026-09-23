@@ -138,6 +138,7 @@ static CHAT_MESSAGES_COLS: &[(&str, ColType)] = &[
     ("created_at", ColType::Text),
     ("updated_at", ColType::Text),
     ("deleted_at", ColType::Text),
+    ("session_id", ColType::Text),
 ];
 
 static PREFERENCES_COLS: &[(&str, ColType)] = &[

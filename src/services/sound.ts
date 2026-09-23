@@ -18,6 +18,7 @@ export class SoundService {
 
   private getContext(): AudioContext {
     if (!this.ctx) {
+      // SAFETY: webkitAudioContext is legacy Safari/WebKit fallback property on window
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new AudioCtx();
     }
@@ -95,6 +96,45 @@ export class SoundService {
     const enabled = StoreService.getPreference('alarmer_countdown_ticks', true);
     if (!enabled) return;
     this.playUiClick();
+  }
+
+  // Ambient hourglass flip sound (short, soft, low-key swoop of glass turning over)
+  playHourglassFlip() {
+    const enabled = StoreService.getPreference('alarmer_ui_clicks', true);
+    if (!enabled) return;
+    const clickVol = StoreService.getPreference('alarmer_click_volume', 0.5);
+    if (clickVol <= 0) return;
+
+    try {
+      const ctx = this.getContext();
+      const now = ctx.currentTime;
+      const duration = 0.22;
+
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      // Low-key pitch inflection: 260Hz gliding gently down to 170Hz (soft glass rotation)
+      osc.frequency.setValueAtTime(260, now);
+      osc.frequency.exponentialRampToValueAtTime(170, now + duration);
+
+      const targetVol = 0.22 * Math.max(0, Math.min(1, clickVol));
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(targetVol, now + 0.035);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + duration);
+    } catch (e) {
+      console.warn('Hourglass flip sound error:', e);
+    }
+  }
+
+  playFlip() {
+    this.playHourglassFlip();
   }
   // High pitch completion sound with alarm volume regulation
   private customAlarmAudio: HTMLAudioElement | null = null;

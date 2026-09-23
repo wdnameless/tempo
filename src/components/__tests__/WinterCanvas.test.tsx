@@ -8,9 +8,18 @@ import {
   DRAIN_DURATION_MS,
   FLIP_DURATION_MS,
 } from '../WinterCanvas';
+import { soundService } from '../../services/sound';
 import { TimerService, IDLE } from '../../services/timer';
 import type { TimerSnapshot } from '../../services/timer';
 
+
+vi.mock('../../services/sound', () => ({
+  soundService: {
+    playHourglassFlip: vi.fn(),
+    playFlip: vi.fn(),
+    playUiClick: vi.fn(),
+  },
+}));
 describe('calculateSandLevel (pure sand level math)', () => {
   it('returns 1 (full) at 0 ms', () => {
     expect(calculateSandLevel(0)).toBe(1);
@@ -122,6 +131,8 @@ describe('WinterCanvas component', () => {
   beforeEach(() => {
     mockUnsubscribe = vi.fn();
     subscriberCallback = null;
+    vi.mocked(soundService.playHourglassFlip).mockClear();
+    vi.mocked(soundService.playFlip).mockClear();
 
     vi.spyOn(TimerService, 'getState').mockResolvedValue({
       ...IDLE,
@@ -247,5 +258,68 @@ describe('WinterCanvas component', () => {
     const level2 = calculateSandLevel(frozenElapsed);
     expect(level1).toBe(level2);
     expect(level1).toBeCloseTo(1 - 30000 / DRAIN_DURATION_MS, 5);
+  });
+
+  it('fires flip sound exactly once per flip cycle while running and never when stopped', async () => {
+    render(<WinterCanvas />);
+
+    // Initially timer is stopped. Advancing frames across what would be flip boundaries produces no sound.
+    await act(async () => {
+      rafCallback?.(0);
+      rafCallback?.(DRAIN_DURATION_MS);
+      rafCallback?.(DRAIN_DURATION_MS + 500);
+      rafCallback?.(CYCLE_DURATION_MS + 100);
+    });
+
+    expect(soundService.playHourglassFlip).not.toHaveBeenCalled();
+
+    // Start timer via subscription update
+    await act(async () => {
+      subscriberCallback?.({ ...IDLE, running: true });
+    });
+
+    // First active frame sets baseline lastActiveTime
+    await act(async () => {
+      rafCallback?.(1000);
+    });
+    expect(soundService.playHourglassFlip).not.toHaveBeenCalled();
+
+    // Advance mid-drain (sand pouring, not flipping yet)
+    await act(async () => {
+      rafCallback?.(1000 + DRAIN_DURATION_MS / 2);
+    });
+    expect(soundService.playHourglassFlip).not.toHaveBeenCalled();
+
+    // Reaching flip threshold triggers the flip cue
+    await act(async () => {
+      rafCallback?.(1000 + DRAIN_DURATION_MS);
+    });
+    expect(soundService.playHourglassFlip).toHaveBeenCalledTimes(1);
+
+    // Subsequent frames during the flip do not fire duplicate sounds
+    await act(async () => {
+      rafCallback?.(1000 + DRAIN_DURATION_MS + 200);
+      rafCallback?.(1000 + DRAIN_DURATION_MS + 600);
+      rafCallback?.(1000 + CYCLE_DURATION_MS - 10);
+    });
+    expect(soundService.playHourglassFlip).toHaveBeenCalledTimes(1);
+
+    // Next cycle starts, sand drains, reaches second cycle flip threshold
+    await act(async () => {
+      rafCallback?.(1000 + CYCLE_DURATION_MS + DRAIN_DURATION_MS);
+    });
+    expect(soundService.playHourglassFlip).toHaveBeenCalledTimes(2);
+
+    // Stop timer
+    await act(async () => {
+      subscriberCallback?.({ ...IDLE, running: false });
+    });
+
+    // Even if time keeps passing, stopped timer never triggers flip sound
+    await act(async () => {
+      rafCallback?.(1000 + 2 * CYCLE_DURATION_MS + DRAIN_DURATION_MS);
+      rafCallback?.(1000 + 3 * CYCLE_DURATION_MS + DRAIN_DURATION_MS);
+    });
+    expect(soundService.playHourglassFlip).toHaveBeenCalledTimes(2);
   });
 });

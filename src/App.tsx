@@ -94,6 +94,11 @@ function mapStoredToChatMessage(msg: ChatMessage | StoredChatShape): ChatMessage
     sender,
     text,
     timestamp: msg.timestamp || new Date().toISOString(),
+    sessionId:
+      ('sessionId' in msg && msg.sessionId) ||
+      ('session_id' in msg && typeof (msg as Record<string, unknown>).session_id === 'string'
+        ? ((msg as Record<string, unknown>).session_id as string)
+        : 'default'),
   };
 }
 
@@ -674,47 +679,52 @@ function MainShell() {
 
           {/* AI Drawer */}
           {isAiOpen && (
-            <div className="absolute top-0 right-0 bottom-0 w-80 z-30 shadow-2xl bg-[var(--surface)] border-l border-[var(--border)] flex flex-col">
-              <AIChatDrawer
-                isOpen={isAiOpen}
-                onClose={() => setIsAiOpen(false)}
-                theme={theme}
-                currentUi={dynamicUi}
-                aiSettings={aiSettings}
-                onApplyUI={(cfg: DynamicUIConfig) => {
-                  setDynamicUi(cfg);
-                }}
-                onApplyAlarms={(newAlarms) => {
-                  setAlarms((prev) => {
-                    const existingIds = new Set(prev.map((a) => a.id));
-                    const uniqueNew = newAlarms.filter((a) => !existingIds.has(a.id));
-                    return [...prev, ...uniqueNew];
-                  });
-                }}
-                messages={chatMessages}
-                onSendMessage={(msg: ChatMessage) =>
-                  setChatMessages((prev) => {
-                    const next = [...prev, msg];
-                    void StoreService.persist({ chatMessages: next as never });
-                    return next;
-                  })
-                }
-                onResetChat={() => {
-                  const cleanChat: ChatMessage[] = [welcomeMessage()];
-                  setChatMessages(cleanChat);
-                  void StoreService.persist({ chatMessages: cleanChat as never });
-                }}
-                onSetTimerMinutes={(minutes: number) => {
-                  setTimerMinutes(minutes);
-                  void TimerService.setDuration(minutes);
-                  setActiveTab('dashboard');
-                }}
-                onNavigateToModule={(mod) => {
-                  if (mod === 'alarms') setActiveTab('alarms');
-                  else setActiveTab('dashboard');
-                }}
-              />
-            </div>
+            <AIChatDrawer
+              isOpen={isAiOpen}
+              onClose={() => setIsAiOpen(false)}
+              theme={theme}
+              currentUi={dynamicUi}
+              aiSettings={aiSettings}
+              onUpdateAISettings={(settings) => {
+                setAiSettings(settings);
+                void StoreService.persist({ aiSettings: settings });
+              }}
+              onApplyUI={(cfg: DynamicUIConfig) => {
+                setDynamicUi(cfg);
+              }}
+              onApplyAlarms={(newAlarms) => {
+                setAlarms((prev) => {
+                  const existingIds = new Set(prev.map((a) => a.id));
+                  const uniqueNew = newAlarms.filter((a) => !existingIds.has(a.id));
+                  return [...prev, ...uniqueNew];
+                });
+              }}
+              messages={chatMessages}
+              onSendMessage={(msg: ChatMessage) =>
+                setChatMessages((prev) => {
+                  const next = [...prev, msg];
+                  void StoreService.persist({ chatMessages: next as never });
+                  return next;
+                })
+              }
+              onResetChat={(sessionId?: string) => {
+                const targetSid = sessionId || 'default';
+                setChatMessages((prev) => {
+                  const filtered = prev.filter((m) => (m.sessionId || 'default') !== targetSid);
+                  void StoreService.persist({ chatMessages: filtered as never });
+                  return filtered;
+                });
+              }}
+              onSetTimerMinutes={(minutes: number) => {
+                setTimerMinutes(minutes);
+                void TimerService.setDuration(minutes);
+                setActiveTab('dashboard');
+              }}
+              onNavigateToModule={(mod) => {
+                if (mod === 'alarms') setActiveTab('alarms');
+                else setActiveTab('dashboard');
+              }}
+            />
           )}
 
           {/* Sleek Upright Side Toggle Button on Right Edge for AI */}

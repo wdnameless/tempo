@@ -96,11 +96,11 @@ static ALARMS_SQL: TableSql = TableSql {
 };
 
 static CHAT_MESSAGES_SQL: TableSql = TableSql {
-    list_active: "SELECT id, role, content, created_at, updated_at, deleted_at FROM chat_messages WHERE deleted_at IS NULL",
-    list_all: "SELECT id, role, content, created_at, updated_at, deleted_at FROM chat_messages",
-    get_by_id: "SELECT id, role, content, created_at, updated_at, deleted_at FROM chat_messages WHERE id = ?1",
+    list_active: "SELECT id, role, content, created_at, updated_at, deleted_at, session_id FROM chat_messages WHERE deleted_at IS NULL",
+    list_all: "SELECT id, role, content, created_at, updated_at, deleted_at, session_id FROM chat_messages",
+    get_by_id: "SELECT id, role, content, created_at, updated_at, deleted_at, session_id FROM chat_messages WHERE id = ?1",
     soft_delete: "UPDATE chat_messages SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
-    changed_since: "SELECT id, role, content, created_at, updated_at, deleted_at FROM chat_messages WHERE updated_at > ?1",
+    changed_since: "SELECT id, role, content, created_at, updated_at, deleted_at, session_id FROM chat_messages WHERE updated_at > ?1",
 };
 
 static PREFERENCES_SQL: TableSql = TableSql {

@@ -59,6 +59,7 @@ export interface ChatMessageRow extends EntityMeta {
   role: string;
   content: string;
   created_at?: string;
+  session_id?: string;
 }
 
 export interface PersistedState {
@@ -204,6 +205,7 @@ export function noteToRow(note: NoteItem): Omit<NoteRow, keyof EntityMeta> & { i
 }
 
 export function chatMessageFromRow(rawRow: Partial<ChatMessageRow> | Record<string, unknown>): ChatMessage {
+  // SAFETY: Dictionary row mapping
   const row = rawRow as unknown as Record<string, unknown>;
   const role = asString(row.role, 'user');
   const sender: 'user' | 'assistant' | 'system' =
@@ -213,6 +215,7 @@ export function chatMessageFromRow(rawRow: Partial<ChatMessageRow> | Record<stri
     sender,
     text: asString(row.content, asString(row.text, '')),
     timestamp: asString(row.created_at, asString(row.timestamp, new Date().toISOString())),
+    sessionId: asString(row.session_id, 'default'),
   };
 }
 
@@ -221,6 +224,7 @@ export function chatMessageToRow(msg: ChatMessage): Omit<ChatMessageRow, keyof E
     ...(msg.id ? { id: msg.id } : {}),
     role: msg.sender,
     content: msg.text,
+    session_id: msg.sessionId || 'default',
   };
 }
 
@@ -231,7 +235,7 @@ export function chatMessageToRow(msg: ChatMessage): Omit<ChatMessageRow, keyof E
  * casting: a missing or mistyped field becomes `undefined`, which the callers
  * already treat as "use the default".
  */
-function row(record: Record<string, unknown>, key: string): unknown {
+function row(record: Record<string, unknown>, key: string): Record<string, unknown>[string] {
   return record[key];
 }
 
@@ -379,6 +383,7 @@ export async function runLegacyMigration(): Promise<void> {
             sender: sender === 'assistant' ? 'assistant' : sender === 'system' ? 'system' : 'user',
             text,
             timestamp: asString(row(item, 'timestamp'), new Date().toISOString()),
+            sessionId: asString(row(item, 'sessionId'), 'default'),
           }),
         );
       }

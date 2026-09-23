@@ -141,6 +141,45 @@ pub async fn complete(
 
     ChatOutcome { content, error: None }
 }
+/// Queries an OpenAI-compatible endpoint for available models (`GET /models`).
+pub async fn list_models(base_url: &str, api_key: &str) -> Result<Vec<String>, String> {
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let key = api_key.trim();
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => return Err(format!("Не удалось создать HTTP-клиент: {e}")),
+    };
+
+    let mut req = client.get(&url).header("Content-Type", "application/json");
+    if !key.is_empty() {
+        req = req.bearer_auth(key);
+    }
+
+    let response = req.send().await.map_err(|e| format!("Ошибка сети: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("Статус ответа: {}", response.status()));
+    }
+
+    let parsed: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Ошибка парсинга списка моделей: {e}"))?;
+
+    let mut models = Vec::new();
+    if let Some(data) = parsed.get("data").and_then(|d| d.as_array()) {
+        for item in data {
+            if let Some(id) = item.get("id").and_then(|id| id.as_str()) {
+                models.push(id.to_string());
+            }
+        }
+    }
+    models.sort();
+    Ok(models)
+}
 
 #[cfg(test)]
 mod tests {
@@ -174,5 +213,11 @@ mod tests {
 
         assert!(json.contains("\"role\":\"user\""));
         assert!(json.contains("\"content\":\"привет\""));
+    }
+
+    #[tokio::test]
+    async fn list_models_unreachable_endpoint_fails_gracefully() {
+        let res = list_models("http://127.0.0.1:1", "sk-test").await;
+        assert!(res.is_err());
     }
 }

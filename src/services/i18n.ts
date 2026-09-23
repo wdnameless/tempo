@@ -619,6 +619,14 @@ export interface Translations {
   shortcutRecordings: string;
   shortcutChangeBackground: string;
   shortcutResetMusic: string;
+  chatYesterday: string;
+  chatNew: string;
+  chatClear: string;
+  chatClearTitle: string;
+  chatModel: string;
+  chatCustomModel: string;
+  chatRecentSessions: string;
+  chatUntitled: string;
 }
 
 export const TRANSLATIONS: Record<Language, Translations> = {
@@ -1232,6 +1240,14 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     shortcutRecordings: 'Аудиозаписи',
     shortcutChangeBackground: 'Сменить фон',
     shortcutResetMusic: 'Сбросить музыку',
+    chatYesterday: 'вчера',
+    chatNew: 'Новый чат',
+    chatClear: 'Очистить',
+    chatClearTitle: 'Очистить текущий чат',
+    chatModel: 'Модель',
+    chatCustomModel: 'Своя модель...',
+    chatRecentSessions: 'Недавние чаты',
+    chatUntitled: 'Новый чат',
   },
 
   en: {
@@ -1844,6 +1860,14 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     shortcutRecordings: 'Recordings',
     shortcutChangeBackground: 'Change Background',
     shortcutResetMusic: 'Reset Music',
+    chatYesterday: 'yesterday',
+    chatNew: 'New chat',
+    chatClear: 'Clear',
+    chatClearTitle: 'Clear current chat',
+    chatModel: 'Model',
+    chatCustomModel: 'Custom model...',
+    chatRecentSessions: 'Recent chats',
+    chatUntitled: 'New chat',
   },
 };
 

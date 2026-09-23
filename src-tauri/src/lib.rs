@@ -152,6 +152,13 @@ async fn ai_complete(
     let key = credentials::get().unwrap_or_default();
     Ok(ai::complete(&base_url, &key, &model, messages).await)
 }
+/// Lists models available from the provider's `/models` endpoint.
+#[tauri::command]
+async fn ai_list_models(base_url: String) -> Result<Vec<String>, String> {
+    let key = credentials::get().unwrap_or_default();
+    ai::list_models(&base_url, &key).await
+}
+
 
 /// Saves the API key to the OS credential store; an empty key clears it.
 #[tauri::command]
@@ -531,6 +538,7 @@ pub fn run() {
             ringing_alarm_id,
             set_alarm_audio_prefs,
             ai_complete,
+            ai_list_models,
             set_api_key,
             has_api_key,
             store_dir,

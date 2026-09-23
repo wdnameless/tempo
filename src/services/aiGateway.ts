@@ -37,20 +37,22 @@ export interface AIResult {
 }
 
 /** Strips a fenced code block, which models add despite a JSON-only request. */
-function unwrapJson(raw: string): unknown {
+function unwrapJson(raw: string): Record<string, unknown> | null {
   const cleaned = raw
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/i, '')
     .trim();
   try {
-    return JSON.parse(cleaned);
+    // SAFETY: unwrapJson parses object payload
+    return JSON.parse(cleaned) as Record<string, unknown>;
   } catch {
     // Some providers wrap the payload in prose; take the outermost object.
     const start = cleaned.indexOf('{');
     const end = cleaned.lastIndexOf('}');
     if (start >= 0 && end > start) {
       try {
-        return JSON.parse(cleaned.slice(start, end + 1));
+        // SAFETY: slice contains candidate JSON object
+        return JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>;
       } catch {
         return null;
       }
@@ -143,5 +145,21 @@ export class AIGateway {
     }
 
     return outcome.content;
+  }
+
+  /**
+   * Lists models available from the provider if supported.
+   */
+  static async listModels(baseUrl?: string): Promise<string[]> {
+    if (!isTauri()) {
+      return [];
+    }
+    try {
+      return await invoke<string[]>('ai_list_models', {
+        baseUrl: baseUrl || 'https://api.openai.com/v1',
+      });
+    } catch {
+      return [];
+    }
   }
 }

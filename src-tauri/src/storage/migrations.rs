@@ -3,7 +3,7 @@
 
 use rusqlite::{params, Connection};
 
-pub const SCHEMA_VERSION_LATEST: u32 = 5;
+pub const SCHEMA_VERSION_LATEST: u32 = 6;
 pub fn migrate(conn: &Connection) -> Result<u32, String> {
     // 1. Ensure schema_version table exists
     conn.execute_batch(
@@ -35,6 +35,9 @@ pub fn migrate(conn: &Connection) -> Result<u32, String> {
     }
     if current_version < 5 {
         apply_migration_0005(conn)?;
+    }
+    if current_version < 6 {
+        apply_migration_0006(conn)?;
     }
     // Return the latest applied version
     let latest_version: u32 = conn
@@ -408,6 +411,40 @@ fn apply_migration_0005(conn: &Connection) -> Result<(), String> {
 
     Ok(())
 }
+fn apply_migration_0006(conn: &Connection) -> Result<(), String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Failed to start transaction for migration 0006: {e}"))?;
+
+    let existing_cols = table_column_names(&tx, "chat_messages")?;
+
+    if !existing_cols.contains(&"session_id".to_string()) {
+        tx.execute("ALTER TABLE chat_messages ADD COLUMN session_id TEXT;", [])
+            .map_err(|e| format!("Migration 0006 ALTER TABLE session_id failed: {e}"))?;
+        tx.execute(
+            "UPDATE chat_messages SET session_id = 'default' WHERE session_id IS NULL;",
+            [],
+        )
+        .map_err(|e| format!("Migration 0006 backfill session_id failed: {e}"))?;
+        tx.execute(
+            "CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);",
+            [],
+        )
+        .map_err(|e| format!("Migration 0006 CREATE INDEX idx_chat_messages_session failed: {e}"))?;
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    tx.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (?1, ?2);",
+        params![6, now],
+    )
+    .map_err(|e| format!("Failed to record schema version 6: {e}"))?;
+
+    tx.commit()
+        .map_err(|e| format!("Failed to commit migration 0006: {e}"))?;
+
+    Ok(())
+}
 
 
 
@@ -430,6 +467,18 @@ mod tests {
         let version = migrate(&conn).unwrap();
         (conn, version)
     }
+    fn db_up_to(up_to: u32) -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);",
+        ).unwrap();
+        if up_to >= 1 { apply_migration_0001(&conn).unwrap(); }
+        if up_to >= 2 { apply_migration_0002(&conn).unwrap(); }
+        if up_to >= 3 { apply_migration_0003(&conn).unwrap(); }
+        if up_to >= 4 { apply_migration_0004(&conn).unwrap(); }
+        if up_to >= 5 { apply_migration_0005(&conn).unwrap(); }
+        conn
+    }
 
     #[test]
     fn test_migration_0002_adds_device_id_column() {
@@ -441,7 +490,7 @@ mod tests {
     #[test]
     fn test_migration_0003_creates_stt_history_table() {
         let (conn, version) = migrated_db();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         let cols = table_columns(&conn, "stt_history");
         assert!(cols.contains(&"id".to_string()));
         assert!(cols.contains(&"text".to_string()));
@@ -459,7 +508,7 @@ mod tests {
     #[test]
     fn test_migration_0004_adds_alarm_columns() {
         let (conn, version) = migrated_db();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         let cols = table_columns(&conn, "alarms");
         assert!(cols.contains(&"date".to_string()));
         assert!(cols.contains(&"interval_minutes".to_string()));
@@ -469,15 +518,7 @@ mod tests {
 
     #[test]
     fn test_migration_0004_preserves_old_alarms_and_reads_none() {
-        let conn = Connection::open_in_memory().unwrap();
-        // Run migration up to v3
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);",
-        ).unwrap();
-        apply_migration_0001(&conn).unwrap();
-        apply_migration_0002(&conn).unwrap();
-        apply_migration_0003(&conn).unwrap();
-
+        let conn = db_up_to(3);
         // Insert legacy alarm without new columns
         conn.execute(
             "INSERT INTO alarms (id, label, time, days, repeat, enabled, sound, voice_prompt, note, updated_at)
@@ -487,7 +528,7 @@ mod tests {
 
         // Migrate to v4
         let version = migrate(&conn).unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
 
         // Read back via repo
         let loaded = crate::storage::repo::get(&conn, "alarms", "old1").unwrap().expect("alarm exists");
@@ -503,8 +544,33 @@ mod tests {
     #[test]
     fn test_migration_0005_adds_notes_path_column() {
         let (conn, version) = migrated_db();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         let cols = table_columns(&conn, "notes");
         assert!(cols.contains(&"path".to_string()), "notes must contain path column");
+    }
+
+    #[test]
+    fn test_migration_0006_adds_session_id_column() {
+        let (conn, version) = migrated_db();
+        assert_eq!(version, 6);
+        let cols = table_columns(&conn, "chat_messages");
+        assert!(cols.contains(&"session_id".to_string()), "chat_messages must contain session_id column");
+    }
+
+    #[test]
+    fn test_migration_0006_preserves_old_messages_with_default_session() {
+        let conn = db_up_to(5);
+        conn.execute(
+            "INSERT INTO chat_messages (id, role, content, created_at, updated_at)
+             VALUES ('old_msg', 'user', 'Hello old world', '2026-09-01T10:00:00Z', '2026-09-01T10:00:00Z');",
+            [],
+        ).unwrap();
+
+        let version = migrate(&conn).unwrap();
+        assert_eq!(version, 6);
+
+        let loaded = crate::storage::repo::get(&conn, "chat_messages", "old_msg").unwrap().expect("msg exists");
+        assert_eq!(loaded["id"], "old_msg");
+        assert_eq!(loaded["session_id"], "default");
     }
 }

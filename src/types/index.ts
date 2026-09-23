@@ -20,6 +20,7 @@ export interface ChatMessage {
   sender: 'user' | 'assistant' | 'system';
   text: string;
   timestamp: string;
+  sessionId?: string;
   /** A change the assistant proposes to apply; absent for plain answers. */
   mutation?: AIPlatformMutation;
 }
