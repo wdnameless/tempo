@@ -3,7 +3,6 @@
 
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -32,21 +31,7 @@ pub fn resolve_vault_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         }
     }
 
-    let data_dir = if crate::is_portable_running() {
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(parent) = exe.parent() {
-                parent.join("data")
-            } else {
-                PathBuf::from("data")
-            }
-        } else {
-            PathBuf::from("data")
-        }
-    } else {
-        app.path()
-            .app_data_dir()
-            .map_err(|e| format!("Failed to get app_data_dir: {e}"))?
-    };
+    let data_dir = crate::app_data_root(app)?;
 
     let default_root = data_dir.join("vault");
     if !default_root.exists() {

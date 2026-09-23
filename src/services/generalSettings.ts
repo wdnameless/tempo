@@ -80,12 +80,12 @@ export const GENERAL_KEY_MIGRATIONS: readonly KeyMigration[] = [
   { tempoKey: 'tempo_media_limit_bytes', legacyKey: 'alarmer_media_limit_bytes' },
 ] as const;
 
-function readFallbackPref(tempoKey: string, legacyKey: string): unknown {
-  const tempoVal = getPref<unknown>(tempoKey, undefined);
+function readFallbackPref(tempoKey: string, legacyKey: string): string | number | boolean | null | undefined {
+  const tempoVal = getPref<string | number | boolean | null | undefined>(tempoKey, undefined);
   if (tempoVal !== undefined) {
     return tempoVal;
   }
-  return getPref<unknown>(legacyKey, undefined);
+  return getPref<string | number | boolean | null | undefined>(legacyKey, undefined);
 }
 
 function parsePositiveInt(val: unknown, fallback: number): number {
@@ -188,7 +188,6 @@ export function loadGeneralSettings(): GeneralSettings {
   const dashboardWidgetsRaw = readFallbackPref('tempo_dashboard_widgets', 'alarmer_dashboard_widgets');
   const backgroundRaw = readFallbackPref('tempo_background', 'tempo_dynamic_ui');
   const mediaLimitBytesRaw = readFallbackPref('tempo_media_limit_bytes', 'alarmer_media_limit_bytes');
-  const timezoneRaw = readFallbackPref('tempo_timezone', 'alarmer_timezone');
 
   return {
     timerMode: parseTimerMode(timerModeRaw, DEFAULT_GENERAL_SETTINGS.timerMode),
@@ -199,7 +198,7 @@ export function loadGeneralSettings(): GeneralSettings {
     endSound: typeof endSoundRaw === 'string' && endSoundRaw.trim() ? endSoundRaw.trim() : DEFAULT_GENERAL_SETTINGS.endSound,
     background: parseBackground(backgroundRaw, DEFAULT_GENERAL_SETTINGS.background),
     accent: parseAccent(accentRaw, DEFAULT_GENERAL_SETTINGS.accent),
-    timezone: typeof timezoneRaw === 'string' && timezoneRaw.trim() ? timezoneRaw.trim() : localTimeZone(),
+    timezone: localTimeZone(),
     rolloverHour: parseHour(rollover.afterHour, DEFAULT_GENERAL_SETTINGS.rolloverHour),
     mediaLimitBytes: parsePositiveInt(mediaLimitBytesRaw, DEFAULT_GENERAL_SETTINGS.mediaLimitBytes),
 
@@ -228,12 +227,6 @@ export async function saveGeneralSettings(patch: Partial<GeneralSettings>): Prom
 
   const writes: Promise<void>[] = [];
 
-  if (patch.timezone !== undefined) {
-    writes.push(setPref('tempo_timezone', patch.timezone.trim() || localTimeZone()));
-  }
-  if (patch.accent !== undefined) {
-    writes.push(setPref('tempo_accent', parseAccent(patch.accent, current.accent)));
-  }
   if (patch.alarmEnabled !== undefined) {
     writes.push(setPref('tempo_alarm_enabled', parseBoolean(patch.alarmEnabled, current.alarmEnabled)));
   }

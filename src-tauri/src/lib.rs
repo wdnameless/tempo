@@ -191,11 +191,58 @@ async fn ringing_alarm_id(app: tauri::AppHandle) -> Result<Option<String>, Strin
     Ok(id)
 }
 
-/// Pushes the user's alarm volume and mute state down to the backend.
+/// Pushes the user's alarm audio preferences down to the backend.
 #[tauri::command]
-async fn set_alarm_audio_prefs(volume: f32, enabled: bool) -> Result<(), String> {
-    scheduler::set_audio_prefs(volume, enabled);
+async fn set_alarm_audio_prefs(
+    app: tauri::AppHandle,
+    volume: Option<f32>,
+    enabled: Option<bool>,
+    profile: Option<String>,
+    custom_path: Option<String>,
+    #[allow(non_snake_case)]
+    customPath: Option<String>,
+) -> Result<(), String> {
+    let custom = custom_path.or(customPath);
+    alarm_sound::set_prefs_and_persist(&app, volume, enabled, profile, custom)?;
+    let p = alarm_sound::get_prefs(Some(&app));
+    scheduler::set_audio_prefs(p.volume, p.enabled);
     Ok(())
+}
+
+#[tauri::command]
+async fn get_alarm_audio_prefs(app: tauri::AppHandle) -> Result<alarm_sound::AlarmAudioPrefs, String> {
+    Ok(alarm_sound::get_prefs(Some(&app)))
+}
+
+#[tauri::command]
+async fn list_alarm_sound_profiles() -> Result<Vec<alarm_sound::AlarmSoundProfileDesc>, String> {
+    Ok(alarm_sound::list_profiles())
+}
+
+#[tauri::command]
+async fn preview_alarm_sound(
+    profile: Option<String>,
+    custom_path: Option<String>,
+    #[allow(non_snake_case)]
+    customPath: Option<String>,
+    volume: Option<f32>,
+) -> Result<(), String> {
+    let custom = custom_path.or(customPath);
+    alarm_sound::preview(profile.as_deref(), custom.as_deref(), volume)
+}
+
+#[tauri::command]
+async fn pick_alarm_sound_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter("Audio Files", &["mp3", "wav", "flac", "ogg", "m4a", "aac"])
+        .pick_file(move |file_path| {
+            let res = file_path.map(|p| p.to_string());
+            let _ = tx.send(res);
+        });
+    rx.await.map_err(|e| format!("dialog cancelled or failed: {e}"))
 }
 use msedge_tts::{tts::client::connect, tts::SpeechConfig, voice::{get_voices_list, Voice}};
 
@@ -432,39 +479,88 @@ async fn alarm_preview(
 /// either the `ALARMER_PORTABLE` environment variable or a `portable` marker
 /// file beside the binary, and then writes `alarmer.json` into a `data` folder
 /// there instead of the per-user application data directory.
+/// Checks if a directory contains a portable marker.
+pub fn has_portable_marker_in(dir: &std::path::Path) -> bool {
+    dir.join("portable").exists() || dir.join(".portable").exists()
+}
+
+/// Resolves the application data root based on portable state and directories.
+/// When portable is true, returns `<exe_dir>/data`.
+/// When portable is false, returns `<os_dir>`.
+pub fn resolve_data_root_dir(
+    exe_dir: &std::path::Path,
+    os_dir: &std::path::Path,
+    is_portable: bool,
+) -> std::path::PathBuf {
+    if is_portable {
+        exe_dir.join("data")
+    } else {
+        os_dir.to_path_buf()
+    }
+}
+
+/// Resolves the application data root given an explicit portable flag,
+/// an executable directory getter, and an OS app data directory getter.
+pub fn resolve_data_root_with<FExe, FOs>(
+    portable: bool,
+    get_exe_dir: FExe,
+    get_os_dir: FOs,
+) -> Result<std::path::PathBuf, String>
+where
+    FExe: FnOnce() -> Result<std::path::PathBuf, String>,
+    FOs: FnOnce() -> Result<std::path::PathBuf, String>,
+{
+    let dir = if portable {
+        let exe_dir = get_exe_dir()?;
+        exe_dir.join("data")
+    } else {
+        get_os_dir()?
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    Ok(dir)
+}
+
+/// The single function that resolves the application's data root:
+/// beside the executable when running portable, otherwise the OS app-data directory.
+pub fn app_data_root(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    resolve_data_root_with(
+        is_portable_running(),
+        || {
+            let exe = std::env::current_exe()
+                .map_err(|e| format!("cannot locate the running executable: {e}"))?;
+            let parent = exe
+                .parent()
+                .ok_or_else(|| "running executable has no parent directory".to_string())?;
+            Ok(parent.to_path_buf())
+        },
+        || {
+            app.path()
+                .app_data_dir()
+                .map_err(|e| format!("no app data dir: {e}"))
+        },
+    )
+}
+
 #[tauri::command]
 async fn store_dir(app: tauri::AppHandle) -> Result<String, String> {
-    if is_portable_running() {
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(dir) = exe.parent() {
-                let portable = dir.join("data");
-                std::fs::create_dir_all(&portable)
-                    .map_err(|e| format!("cannot create portable data dir: {e}"))?;
-                return Ok(portable.to_string_lossy().into_owned());
-            }
-        }
-    }
-
-    app.path()
-        .app_data_dir()
-        .map(|p| p.to_string_lossy().into_owned())
-        .map_err(|e| format!("no app data dir: {e}"))
+    app_data_root(&app).map(|p| p.to_string_lossy().into_owned())
 }
 
 /// True when this process is running as a standalone portable application.
 ///
 /// Returns true if:
-/// 1. `ALARMER_PORTABLE` environment variable is set, or
-/// 2. An explicit `portable` marker file exists beside the executable, or
+/// 1. `ALARMER_PORTABLE` or `TEMPO_PORTABLE` environment variable is set, or
+/// 2. An explicit `portable` or `.portable` marker file exists beside the executable, or
 /// 3. The executable is running outside standard system install directories
 ///    (not in `Program Files`, `Program Files (x86)`, or `AppData\Local\Programs`).
 pub fn is_portable_running() -> bool {
-    if std::env::var_os("ALARMER_PORTABLE").is_some() {
+    if std::env::var_os("ALARMER_PORTABLE").is_some() || std::env::var_os("TEMPO_PORTABLE").is_some() {
         return true;
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            if dir.join("portable").exists() {
+            if has_portable_marker_in(dir) {
                 return true;
             }
         }
@@ -537,6 +633,10 @@ pub fn run() {
             stop_alarm_sound,
             ringing_alarm_id,
             set_alarm_audio_prefs,
+            get_alarm_audio_prefs,
+            list_alarm_sound_profiles,
+            preview_alarm_sound,
+            pick_alarm_sound_file,
             ai_complete,
             ai_list_models,
             set_api_key,
@@ -774,4 +874,56 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod portable_resolver_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_portable_resolver_returns_exe_dir_when_marker_present_and_os_dir_otherwise() {
+        let tmp = tempdir().unwrap();
+        let exe_dir = tmp.path().join("bin");
+        let os_dir = tmp.path().join("os_appdata");
+        std::fs::create_dir_all(&exe_dir).unwrap();
+        std::fs::create_dir_all(&os_dir).unwrap();
+
+        // 1. Without marker and not portable -> returns OS dir
+        assert!(!has_portable_marker_in(&exe_dir));
+        let root_os = resolve_data_root_dir(&exe_dir, &os_dir, false);
+        assert_eq!(root_os, os_dir);
+
+        // Assets and models paths built from it
+        let assets_os = crate::storage::assets::assets_root_dir(&root_os);
+        let models_os = root_os.join("models");
+        let vault_os = root_os.join("vault");
+        assert_eq!(assets_os, os_dir.join("assets"));
+        assert_eq!(models_os, os_dir.join("models"));
+        assert_eq!(vault_os, os_dir.join("vault"));
+
+        // 2. With marker present in exe_dir -> returns exe_dir/data
+        let marker = exe_dir.join("portable");
+        std::fs::write(&marker, "").unwrap();
+        assert!(has_portable_marker_in(&exe_dir));
+
+        let is_portable = has_portable_marker_in(&exe_dir);
+        let root_portable = resolve_data_root_dir(&exe_dir, &os_dir, is_portable);
+        assert_eq!(root_portable, exe_dir.join("data"));
+
+        let assets_port = crate::storage::assets::assets_root_dir(&root_portable);
+        let models_port = root_portable.join("models");
+        let vault_port = root_portable.join("vault");
+        assert_eq!(assets_port, exe_dir.join("data").join("assets"));
+        assert_eq!(models_port, exe_dir.join("data").join("models"));
+        assert_eq!(vault_port, exe_dir.join("data").join("vault"));
+
+        // 3. With dot-marker .portable -> also recognised
+        std::fs::remove_file(&marker).unwrap();
+        let dot_marker = exe_dir.join(".portable");
+        std::fs::write(&dot_marker, "").unwrap();
+        assert!(has_portable_marker_in(&exe_dir));
+        let root_dot = resolve_data_root_dir(&exe_dir, &os_dir, has_portable_marker_in(&exe_dir));
+        assert_eq!(root_dot, exe_dir.join("data"));
+    }
 }

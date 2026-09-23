@@ -153,6 +153,25 @@ export interface Translations {
   settingsModelAria: string;
   settingsVoiceHint: string;
   settingsTestVoice: string;
+  settingsAiTab: string;
+  settingsFetchModels: string;
+  settingsFetchingModels: string;
+  settingsModelsFetched: string;
+  settingsCustomModelHint: string;
+  settingsModelsFailed: string;
+  settingsAlarmAudio: string;
+  settingsAlarmSoundEnabled: string;
+  settingsAlarmSoundDisabled: string;
+  settingsAlarmVolume: string;
+  settingsAlarmSoundProfile: string;
+  settingsAlarmCustomFile: string;
+  settingsAlarmCustomFileHint: string;
+  settingsAlarmChooseFile: string;
+  settingsAlarmResetToBuiltin: string;
+  settingsAlarmCustomActiveHint: string;
+  settingsAlarmPreview: string;
+  settingsAlarmPreviewCustom: string;
+  settingsAlarmClearCustom: string;
   settingsIntegrationsHint: string;
   settingsGoogleCalendar: string;
   settingsNotConnected: string;
@@ -760,14 +779,14 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsAccent: 'Акцентный цвет',
     settingsDynamicBackground: 'Динамический фон',
     settingsDynamicBackgroundHint: 'Фон следует за фазами таймера и состоянием',
-    settingsRollover: 'Начало дня и часовой пояс',
+    settingsRollover: 'Начало дня',
     settingsRolloverHour: 'Час начала дня',
     settingsRolloverHint: 'Определяет местные даты и интервалы',
     settingsTimeZone: 'Часовой пояс',
-    settingsMedia: 'Медиа и потолок хранилища',
+    settingsMedia: 'Медиа хранилище',
     settingsMediaHint: 'Рисунки, записи и превью в кэше',
+    settingsAssistant: 'Ассистент',
     settingsRemove: 'Убрать',
-    settingsAssistant: 'Настройка ассистента',
     settingsApiKey: 'Ключ API',
     settingsApiKeyAria: 'Поле ключа API',
     settingsSaveKey: 'Сохранить ключ',
@@ -781,6 +800,25 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsModelAria: 'Модель ассистента',
     settingsVoiceHint: 'Проверка облачного голоса Edge TTS',
     settingsTestVoice: 'Проверить голос',
+    settingsAiTab: 'ИИ',
+    settingsFetchModels: 'Загрузить список моделей',
+    settingsFetchingModels: 'Загрузка моделей…',
+    settingsModelsFetched: 'Модели загружены',
+    settingsCustomModelHint: 'Или введите название модели вручную',
+    settingsModelsFailed: 'Не удалось получить список моделей',
+    settingsAlarmAudio: 'Звук будильника',
+    settingsAlarmSoundEnabled: 'Включён',
+    settingsAlarmSoundDisabled: 'Выключен',
+    settingsAlarmVolume: 'Громкость будильника',
+    settingsAlarmSoundProfile: 'Встроенные звуки',
+    settingsAlarmCustomFile: 'Свой звук',
+    settingsAlarmCustomFileHint: 'Поддерживаются аудиофайлы (MP3, WAV, FLAC и др.)',
+    settingsAlarmChooseFile: 'Выбрать файл…',
+    settingsAlarmResetToBuiltin: 'Вернуть встроенный',
+    settingsAlarmCustomActiveHint: 'Используется свой аудиофайл',
+    settingsAlarmPreview: 'Прослушать',
+    settingsAlarmPreviewCustom: 'Прослушать свой звук',
+    settingsAlarmClearCustom: 'Очистить свой звук',
     settingsIntegrationsHint: 'Прямые интеграции с внешними сервисами',
     settingsGoogleCalendar: 'Google Календарь',
     settingsNotConnected: 'Не подключён',
@@ -1257,7 +1295,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsActive: 'Active',
     settingsApiKey: 'API Key',
     settingsApiKeyAria: 'API Key input',
-    settingsAssistant: 'AI Assistant Configuration',
+    settingsAssistant: 'Assistant',
     settingsBaseUrl: 'Base URL',
     settingsBaseUrlAria: 'AI Base URL',
     settingsBlockPreset: 'Block Preset',
@@ -1287,7 +1325,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsLongBreakAria: 'Long break duration',
     settingsLongBreakEvery: 'Long Break Every',
     settingsLongBreakEveryAria: 'Long break interval',
-    settingsMedia: 'Media Storage & Cap (R43)',
+    settingsMedia: 'Media storage',
     settingsMediaHint: 'Stored drawings, recordings, and cached previews',
     settingsModePomodoro: 'Pomodoro',
     settingsModeStopwatch: 'Stopwatch',
@@ -1296,9 +1334,9 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsNotConnected: 'Not Connected',
     settingsPortable: 'Portable Mode',
     settingsRemove: 'Remove',
-    settingsRollover: 'Day Rollover & Timezone (R40)',
+    settingsRollover: 'Day rollover',
     settingsRolloverHint: 'Calculates local dates and intervals',
-    settingsRolloverHour: 'Day Rollover Hour',
+    settingsRolloverHour: 'Day rollover hour',
     settingsSaveKey: 'Save Key',
     settingsSaved: 'Saved',
     settingsSaving: 'Saving...',
@@ -1311,6 +1349,25 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSoundBell: 'Bell',
     settingsSoundChime: 'Chime',
     settingsSoundDigital: 'Digital',
+    settingsAiTab: 'AI',
+    settingsFetchModels: 'Fetch models',
+    settingsFetchingModels: 'Fetching models...',
+    settingsModelsFetched: 'Models fetched',
+    settingsCustomModelHint: 'Or enter model name manually',
+    settingsModelsFailed: 'Failed to fetch model list',
+    settingsAlarmAudio: 'Alarm sound',
+    settingsAlarmSoundEnabled: 'Enabled',
+    settingsAlarmSoundDisabled: 'Disabled',
+    settingsAlarmVolume: 'Alarm volume',
+    settingsAlarmSoundProfile: 'Built-in sounds',
+    settingsAlarmCustomFile: 'Use my own file',
+    settingsAlarmCustomFileHint: 'Supports audio files (MP3, WAV, FLAC, etc.)',
+    settingsAlarmChooseFile: 'Choose file...',
+    settingsAlarmResetToBuiltin: 'Reset to built-in',
+    settingsAlarmCustomActiveHint: 'Custom audio file is active',
+    settingsAlarmPreview: 'Preview',
+    settingsAlarmPreviewCustom: 'Preview custom sound',
+    settingsAlarmClearCustom: 'Clear custom sound',
     settingsSpeech: 'Speech Recognition (Wave 11)',
     settingsSpeechEnable: 'Enable Speech to Text',
     settingsSpeechEnableHint: 'Allow pressing a global shortcut to record and transcribe audio',

@@ -225,9 +225,7 @@ impl SttState {
 }
 
 pub fn resolve_data_dir(app: &AppHandle) -> PathBuf {
-    app.path()
-        .app_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
+    crate::app_data_root(app).unwrap_or_else(|_| PathBuf::from("."))
 }
 
 // ----------------------------------------------------------------------------

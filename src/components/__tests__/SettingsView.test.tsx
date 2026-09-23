@@ -201,11 +201,15 @@ vi.mock('../../services/update', () => ({
   installUpdate: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../services/aiGateway', () => ({
-  AIGateway: {
+const { mockAIGateway } = vi.hoisted(() => ({
+  mockAIGateway: {
     hasKey: vi.fn().mockResolvedValue(true),
     setKey: vi.fn().mockResolvedValue(undefined),
+    listModels: vi.fn().mockResolvedValue(['gpt-4o', 'claude-3-5-sonnet', 'deepseek-chat']),
   },
+}));
+vi.mock('../../services/aiGateway', () => ({
+  AIGateway: mockAIGateway,
 }));
 
 vi.mock('../../services/sound', () => ({
@@ -557,33 +561,55 @@ describe('SettingsView Component', () => {
     });
   });
 
-  it('wires accent and alarm audio props', async () => {
-    const onSelectAccent = vi.fn();
-    const onAlarmAudioChange = vi.fn();
+  it('the timezone, data-storage and accent controls are gone from Settings', () => {
+    render(<SettingsView />);
+
+    expect(screen.queryByTestId('accent-picker')).toBeNull();
+    expect(screen.queryByTestId('slider-alarm-volume')).toBeNull();
+    expect(screen.queryByTestId('toggle-alarm-enabled')).toBeNull();
+    expect(screen.queryByLabelText(t.settingsTimeZone)).toBeNull();
+  });
+
+  it('the AI tab fetches and lists models and updates selection', async () => {
+    const onUpdateAISettings = vi.fn();
+    mockAIGateway.listModels.mockResolvedValue([
+      'gpt-4o',
+      'claude-3-5-sonnet',
+      'deepseek-chat',
+    ]);
 
     render(
       <SettingsView
-        accentKey="violet"
-        onSelectAccent={onSelectAccent}
-        alarmVolume={0.5}
-        alarmEnabled={true}
-        onAlarmAudioChange={onAlarmAudioChange}
+        aiSettings={{
+          apiKey: '',
+          baseUrl: 'https://api.openai.com/v1',
+          model: 'gpt-4o',
+        }}
+        onUpdateAISettings={onUpdateAISettings}
       />
     );
 
-    // Accent picker
-    const accentBtn = screen.getByTestId('accent-blue');
-    fireEvent.click(accentBtn);
-    expect(onSelectAccent).toHaveBeenCalledWith('blue');
+    // Switch to AI tab
+    const aiTabBtn = screen.getByRole('tab', { name: t.settingsAiTab });
+    fireEvent.click(aiTabBtn);
 
-    // Alarm volume slider
-    const volumeSlider = screen.getByTestId('slider-alarm-volume');
-    fireEvent.change(volumeSlider, { target: { value: '0.9' } });
-    expect(onAlarmAudioChange).toHaveBeenCalledWith(0.9, true);
+    // Fetch models action
+    const fetchBtn = screen.getByTestId('fetch-models-button');
+    fireEvent.click(fetchBtn);
 
-    // Alarm enabled toggle
-    const alarmToggle = screen.getByTestId('toggle-alarm-enabled');
-    fireEvent.click(alarmToggle);
-    expect(onAlarmAudioChange).toHaveBeenCalledWith(0.5, false);
+    await waitFor(() => {
+      expect(mockAIGateway.listModels).toHaveBeenCalledWith('https://api.openai.com/v1');
+      expect(screen.getByTestId('ai-model-select')).toBeDefined();
+    });
+
+    // Select model from dropdown
+    const select = screen.getByTestId('ai-model-select');
+    fireEvent.change(select, { target: { value: 'claude-3-5-sonnet' } });
+
+    expect(onUpdateAISettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'claude-3-5-sonnet',
+      })
+    );
   });
 });

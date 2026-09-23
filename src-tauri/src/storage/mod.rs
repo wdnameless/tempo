@@ -7,7 +7,6 @@ pub mod schema;
 use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 use serde_json::Value;
-use super::is_portable_running;
 
 pub fn db_path_in(base: &Path) -> PathBuf {
     base.join("data").join("tempo.db")
@@ -17,24 +16,8 @@ pub struct DbState(pub std::sync::Mutex<Option<rusqlite::Connection>>);
 
 #[tauri::command]
 pub fn db_path(app: tauri::AppHandle) -> Result<String, String> {
-    let p = if is_portable_running() {
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(parent) = exe.parent() {
-                db_path_in(parent)
-            } else {
-                db_path_in(Path::new("."))
-            }
-        } else {
-            db_path_in(Path::new("."))
-        }
-    } else {
-        use tauri::Manager;
-        let dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|e| e.to_string())?;
-        dir.join("tempo.db")
-    };
+    let root = crate::app_data_root(&app)?;
+    let p = root.join("tempo.db");
     Ok(p.to_string_lossy().to_string())
 }
 
@@ -218,10 +201,8 @@ pub fn db_note_by_path(
 
 /// Resolves the media root directory (`<data>/assets`).
 pub fn assets_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let p_str = db_path(app.clone())?;
-    let p = PathBuf::from(p_str);
-    let parent = p.parent().ok_or_else(|| "Failed to get database parent dir".to_string())?;
-    Ok(assets::assets_root_dir(parent))
+    let root = crate::app_data_root(app)?;
+    Ok(assets::assets_root_dir(&root))
 }
 
 #[tauri::command]

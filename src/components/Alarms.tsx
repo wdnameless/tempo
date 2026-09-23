@@ -24,6 +24,7 @@ import {
 } from '../services/alarms';
 import { onDataChanged } from '../services/appEvents';
 import { Card, EmptyState, Field, Toggle } from './ui';
+import { AlarmAudio } from './AlarmAudio';
 
 /** Short weekday labels, indexed 0 = Sunday to match stored format */
 export const WEEKDAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'] as const;
@@ -73,6 +74,7 @@ export function formatNextFiring(nextIso: string | undefined, disabled: boolean,
 }
 
 function toAlarmItem(alarm: Alarm): AlarmItem {
+  // SAFETY: AlarmItem and Alarm have compatible field shapes for alarm projection
   return {
     id: alarm.id,
     title: alarm.label,
@@ -403,6 +405,9 @@ export const Alarms: React.FC<AlarmsProps> = ({
           </div>
         )}
       </div>
+      {/* Alarm Sound Settings (R13 / Overhaul) */}
+      <AlarmAudio />
+
 
       {/* Unified Create / Edit Form in ONE place (R09 / R10) */}
       <Card variant="surface" padding="md" className="space-y-3">

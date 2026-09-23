@@ -59,17 +59,17 @@ describe('generalSettings', () => {
   });
 
   it('saving writes to canonical tempo_* keys and persists forward', async () => {
-    await setPref('alarmer_theme', 'green');
+    await setPref('alarmer_block_focus_min', 45);
 
     // Initial read finds legacy key
-    expect(loadGeneralSettings().accent).toBe('green');
-    expect(getPref('tempo_accent', undefined)).toBeUndefined();
+    expect(loadGeneralSettings().focusMinutes).toBe(45);
+    expect(getPref('tempo_focus_minutes', undefined)).toBeUndefined();
 
-    // Saving changes the key to a new one, saving forward to tempo_accent
-    await saveGeneralSettings({ accent: 'violet' });
+    // Saving changes the key to a new one, saving forward to tempo_focus_minutes
+    await saveGeneralSettings({ focusMinutes: 55 });
 
-    expect(getPref('tempo_accent', undefined)).toBe('violet');
-    expect(loadGeneralSettings().accent).toBe('violet');
+    expect(getPref('tempo_focus_minutes', undefined)).toBe(55);
+    expect(loadGeneralSettings().focusMinutes).toBe(55);
   });
 
   it('migrateLegacyPreferences moves legacy keys and does not touch existing tempo_* keys', async () => {
@@ -118,33 +118,32 @@ describe('generalSettings', () => {
     expect(settings.timerMode).toBe(DEFAULT_GENERAL_SETTINGS.timerMode);
   });
 
-  it('supports rolloverHour and timezone persistence through rollover.ts', async () => {
+  it('supports rolloverHour persistence through rollover.ts and local timezone', async () => {
     await saveGeneralSettings({
       rolloverHour: 5,
-      timezone: 'Europe/Paris',
     });
 
     const settings = loadGeneralSettings();
     expect(settings.rolloverHour).toBe(5);
-    expect(settings.timezone).toBe('Europe/Paris');
+    expect(typeof settings.timezone).toBe('string');
   });
 
   it('notifies subscribers when settings change', async () => {
     let notifiedCount = 0;
-    let latestAccent: string = '';
+    let latestMode: string = '';
 
     const unsubscribe = subscribeGeneralSettings((s) => {
       notifiedCount += 1;
-      latestAccent = s.accent;
+      latestMode = s.timerMode;
     });
 
-    await saveGeneralSettings({ accent: 'orange' });
+    await saveGeneralSettings({ timerMode: 'flowtime' });
 
     expect(notifiedCount).toBe(1);
-    expect(latestAccent).toBe('orange');
+    expect(latestMode).toBe('flowtime');
 
     unsubscribe();
-    await saveGeneralSettings({ accent: 'red' });
+    await saveGeneralSettings({ timerMode: 'stopwatch' });
     expect(notifiedCount).toBe(1);
   });
 });

@@ -39,7 +39,7 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   model: 'google/gemini-2.0-flash-001',
 };
 import { type BlockSettings } from '../types/focus';
-import { ACCENTS, type AccentId } from '../constants/design';
+import { type AccentId } from '../constants/design';
 import { rolloverSettings, setRolloverSettings } from '../services/rollover';
 import { EdgeTtsService } from '../services/edgeTts';
 import { I18nService, type Translations } from '../services/i18n';
@@ -92,7 +92,7 @@ export interface SettingsViewProps {
   [key: string]: unknown;
 }
 
-export type SettingsSection = 'general' | 'integrations' | 'speech' | 'shortcuts' | 'about';
+export type SettingsSection = 'general' | 'ai' | 'integrations' | 'speech' | 'shortcuts' | 'about';
 
 
 /**
@@ -101,21 +101,18 @@ export type SettingsSection = 'general' | 'integrations' | 'speech' | 'shortcuts
  */
 const SECTION_DEFS: Array<{ id: SettingsSection; labelKey: keyof Translations; icon: React.ReactNode }> = [
   { id: 'general', labelKey: 'settingsGeneral', icon: <Sliders className="w-4 h-4" /> },
+  { id: 'ai', labelKey: 'settingsAiTab', icon: <Sparkles className="w-4 h-4" /> },
   { id: 'integrations', labelKey: 'settingsIntegrationsTab', icon: <Calendar className="w-4 h-4" /> },
   { id: 'speech', labelKey: 'settingsSpeechToText', icon: <Mic className="w-4 h-4" /> },
   { id: 'shortcuts', labelKey: 'settingsShortcutsTab', icon: <Keyboard className="w-4 h-4" /> },
   { id: 'about', labelKey: 'settingsAboutTab', icon: <Info className="w-4 h-4" /> },
 ];
 
-export const SettingsView: React.FC<SettingsViewProps> = ({
-  accentKey,
-  onSelectAccent,
-  aiSettings,
-  onUpdateAISettings,
-  alarmVolume,
-  alarmEnabled,
-  onAlarmAudioChange,
-}) => {
+export const SettingsView: React.FC<SettingsViewProps> = (props) => {
+  const {
+    aiSettings,
+    onUpdateAISettings,
+  } = props;
   const t = I18nService.t();
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
   const [, startTransition] = useTransition();
@@ -160,6 +157,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [apiKeyInput, setApiKeyInput] = useState<string>('');
   const [isKeySaving, setIsKeySaving] = useState<boolean>(false);
   const [isPlayingVoice, setIsPlayingVoice] = useState<boolean>(false);
+  // AI Model list fetching state
+  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
+  const [isFetchingModels, setIsFetchingModels] = useState<boolean>(false);
+  const [fetchModelsError, setFetchModelsError] = useState<string | null>(null);
+  const [fetchModelsSuccess, setFetchModelsSuccess] = useState<boolean>(false);
   /** Spreading a partial prop would drop the fields the caller did not mention. */
   const ai = aiSettings ?? DEFAULT_AI_SETTINGS;
 
@@ -435,6 +437,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  const handleFetchModels = async () => {
+    setIsFetchingModels(true);
+    setFetchModelsError(null);
+    setFetchModelsSuccess(false);
+    try {
+      const list = await AIGateway.listModels(ai.baseUrl);
+      if (list && list.length > 0) {
+        setFetchedModels(list);
+        setFetchModelsSuccess(true);
+      } else {
+        setFetchModelsError(t.settingsModelsFailed);
+      }
+    } catch (err) {
+      setFetchModelsError(err instanceof Error ? err.message : t.settingsModelsFailed);
+    } finally {
+      setIsFetchingModels(false);
+    }
+  };
+
   const handleVoiceTest = async () => {
     setIsPlayingVoice(true);
     try {
@@ -580,7 +601,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               className="p-5 rounded-lg border space-y-4"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
             >
-              <h2 className="text-sm font-semibold tracking-wide uppercase" style={{ color: 'var(--text-muted)' }}>
+              <h2 className="text-sm font-semibold tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 {t.settingsTimerFocus}
               </h2>
 
@@ -725,113 +746,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             </div>
 
-
-            {/* Rollover & Timezone (R40) */}
-            {/* Appearance & Accent */}
-            <div
-              className="p-5 rounded-lg border space-y-4"
-              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
-            >
-              <h2 className="text-sm font-semibold tracking-wide uppercase" style={{ color: 'var(--text-muted)' }}>
-                {"Accent & Appearance"}
-              </h2>
-              <div className="space-y-2">
-                <label className="block text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                  Accent Color
-                </label>
-                <div className="flex flex-wrap items-center gap-2 pt-1" data-testid="accent-picker">
-                  {(Object.keys(ACCENTS) as AccentId[]).map((key) => {
-                    const color = ACCENTS[key];
-                    const isSelected = (accentKey ?? general.accent) === key;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        data-testid={`accent-${key}`}
-                        aria-label={`Accent ${key}`}
-                        onClick={() => {
-                          onSelectAccent?.(key);
-                          void handleSaveGeneral({ accent: key });
-                        }}
-                        className={`w-7 h-7 rounded-full transition-all flex items-center justify-center cursor-pointer ${
-                          isSelected ? 'ring-2 ring-offset-2 ring-white scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'
-                        }`}
-                        style={{
-                          backgroundColor: color,
-                        }}
-                      >
-                        {isSelected && <Check size={14} className="text-black/80" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Alarm Audio */}
+            {/* Day rollover */}
             <div
               className="p-5 rounded-lg border space-y-4"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-sm font-semibold tracking-wide uppercase" style={{ color: 'var(--text-muted)' }}>
-                    Alarm Audio
-                  </h2>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                    Enable or disable alarm sound and adjust volume
-                  </p>
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    data-testid="toggle-alarm-enabled"
-                    aria-label="Alarm Enabled"
-                    checked={alarmEnabled ?? general.alarmEnabled}
-                    onChange={(e) => {
-                      const en = e.target.checked;
-                      onAlarmAudioChange?.(alarmVolume ?? general.alarmVolume, en);
-                      void handleSaveGeneral({ alarmEnabled: en });
-                    }}
-                    className="w-4 h-4 rounded cursor-pointer"
-                  />
-                  <span className="text-xs font-medium" style={{ color: 'var(--text)' }}>
-                    {(alarmEnabled ?? general.alarmEnabled) ? 'Enabled' : 'Disabled'}
-                  </span>
-                </label>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
-                  <span>Alarm Volume</span>
-                  <span>{Math.round((alarmVolume ?? general.alarmVolume) * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  data-testid="slider-alarm-volume"
-                  aria-label="Alarm Volume"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={alarmVolume ?? general.alarmVolume}
-                  onChange={(e) => {
-                    const vol = parseFloat(e.target.value);
-                    onAlarmAudioChange?.(vol, alarmEnabled ?? general.alarmEnabled);
-                    void handleSaveGeneral({ alarmVolume: vol });
-                  }}
-                  className="w-full accent-[var(--accent)] cursor-pointer"
-                />
-              </div>
-            </div>
-
-            {/* Rollover & Timezone (R40) */}
-            <div
-              className="p-5 rounded-lg border space-y-4"
-              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold tracking-wide uppercase" style={{ color: 'var(--text-muted)' }}>
+                  <h2 className="text-sm font-semibold tracking-wide" style={{ color: 'var(--text-muted)' }}>
                     {t.settingsRollover}
                   </h2>
                   <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
@@ -852,55 +774,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </span>
                 </label>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
-                    {t.settingsRolloverHour}
-                  </label>
-                  <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
-                    The hour at which today's tasks roll over to yesterday
-                  </p>
-                  <select
-                    aria-label={t.settingsRolloverHour}
-                    value={general.rolloverHour}
-                    onChange={(e) =>
-                      handleSaveGeneral({ rolloverHour: parseInt(e.target.value, 10) })
-                    }
-                    className="w-full px-3 py-2 rounded-md border text-sm"
-                    style={{
-                      backgroundColor: 'var(--elevated)',
-                      borderColor: 'var(--border)',
-                      color: 'var(--text)',
-                    }}
-                  >
-                    {Array.from({ length: 24 }).map((_, h) => (
-                      <option key={h} value={h}>
-                        {String(h).padStart(2, '0')}:00 {h < 12 ? 'AM' : 'PM'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
-                    {t.settingsTimeZone}
-                  </label>
-                  <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
-                    {t.settingsRolloverHint}
-                  </p>
-                  <input
-                    aria-label={t.settingsTimeZone}
-                    type="text"
-                    value={general.timezone}
-                    onChange={(e) => handleSaveGeneral({ timezone: e.target.value })}
-                    className="w-full px-3 py-2 rounded-md border text-sm"
-                    style={{
-                      backgroundColor: 'var(--elevated)',
-                      borderColor: 'var(--border)',
-                      color: 'var(--text)',
-                    }}
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
+                  {t.settingsRolloverHour}
+                </label>
+                <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+                  The hour at which today's tasks roll over to yesterday
+                </p>
+                <select
+                  aria-label={t.settingsRolloverHour}
+                  value={general.rolloverHour}
+                  onChange={(e) =>
+                    handleSaveGeneral({ rolloverHour: parseInt(e.target.value, 10) })
+                  }
+                  className="w-full px-3 py-2 rounded-md border text-sm"
+                  style={{
+                    backgroundColor: 'var(--elevated)',
+                    borderColor: 'var(--border)',
+                    color: 'var(--text)',
+                  }}
+                >
+                  {Array.from({ length: 24 }).map((_, h) => (
+                    <option key={h} value={h}>
+                      {String(h).padStart(2, '0')}:00 {h < 12 ? 'AM' : 'PM'}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -911,7 +810,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-sm font-semibold tracking-wide uppercase" style={{ color: 'var(--text-muted)' }}>
+                  <h2 className="text-sm font-semibold tracking-wide" style={{ color: 'var(--text-muted)' }}>
                     {t.settingsMedia}
                   </h2>
                   <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
@@ -955,14 +854,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             </div>
 
-            {/* AI Assistant Configuration Block */}
+          </section>
+        )}
+        {/* ========================================================================= */}
+        {/* 2. AI SECTION                                                             */}
+        {/* ========================================================================= */}
+        {activeSection === 'ai' && (
+          <section id="section-ai" role="tabpanel" aria-label={t.settingsAiTab} className="space-y-6">
             <div
-              className="p-5 rounded-lg border space-y-4"
+              className="p-5 rounded-lg border space-y-5"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
             >
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4" style={{ color: 'var(--accent)' }} />
-                <h2 className="text-sm font-semibold tracking-wide uppercase" style={{ color: 'var(--text-muted)' }}>
+                <h2 className="text-sm font-semibold tracking-wide" style={{ color: 'var(--text-muted)' }}>
                   {t.settingsAssistant}
                 </h2>
               </div>
@@ -1020,44 +925,113 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   )}
                 </div>
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  {keyStored
-                    ? t.settingsKeyHidden
-                    : t.settingsKeyStored}
+                  {keyStored ? t.settingsKeyHidden : t.settingsKeyStored}
                 </p>
               </div>
 
-              {/* Base URL and Model */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              {/* Base URL and Fetch Models */}
+              <div className="space-y-3 pt-2 border-t border-[var(--border)]">
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
                     {t.settingsBaseUrl}
                   </label>
-                  <input
-                    aria-label={t.settingsBaseUrlAria}
-                    type="text"
-                    value={ai.baseUrl}
-                    onChange={(e) =>
-                      onUpdateAISettings?.({
-                        ...ai,
-                        baseUrl: e.target.value,
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-md border text-sm font-mono"
-                    style={{
-                      backgroundColor: 'var(--elevated)',
-                      borderColor: 'var(--border)',
-                      color: 'var(--text)',
-                    }}
-                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      aria-label={t.settingsBaseUrlAria}
+                      type="text"
+                      value={ai.baseUrl}
+                      onChange={(e) =>
+                        onUpdateAISettings?.({
+                          ...ai,
+                          baseUrl: e.target.value,
+                        })
+                      }
+                      className="flex-1 px-3 py-2 rounded-md border text-sm font-mono"
+                      style={{
+                        backgroundColor: 'var(--elevated)',
+                        borderColor: 'var(--border)',
+                        color: 'var(--text)',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      data-testid="fetch-models-button"
+                      onClick={handleFetchModels}
+                      disabled={isFetchingModels}
+                      className="px-3 py-2 rounded-md border text-xs font-medium inline-flex items-center gap-1.5 transition-colors shrink-0"
+                      style={{
+                        backgroundColor: 'var(--elevated)',
+                        borderColor: 'var(--border)',
+                        color: 'var(--text)',
+                      }}
+                    >
+                      {isFetchingModels ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      )}
+                      <span>{isFetchingModels ? t.settingsFetchingModels : t.settingsFetchModels}</span>
+                    </button>
+                  </div>
                 </div>
 
+                {/* Status or error of model fetch */}
+                {fetchModelsError && (
+                  <div className="p-2.5 rounded-md bg-red-500/10 border border-red-500/20 text-xs text-red-400" data-testid="fetch-models-error">
+                    {fetchModelsError}
+                  </div>
+                )}
+                {fetchModelsSuccess && (
+                  <div className="p-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 flex items-center gap-1.5">
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{t.settingsModelsFetched} ({fetchedModels.length})</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Model Picker & Free-text fallback */}
+              <div className="space-y-2 pt-2 border-t border-[var(--border)]">
+                <label className="block text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                  {t.settingsModel}
+                </label>
+
+                {fetchedModels.length > 0 && (
+                  <div>
+                    <select
+                      aria-label="Select AI Model"
+                      data-testid="ai-model-select"
+                      value={ai.model}
+                      onChange={(e) =>
+                        onUpdateAISettings?.({
+                          ...ai,
+                          model: e.target.value,
+                        })
+                      }
+                      className="w-full px-3 py-2 rounded-md border text-sm font-mono mb-2"
+                      style={{
+                        backgroundColor: 'var(--elevated)',
+                        borderColor: 'var(--border)',
+                        color: 'var(--text)',
+                      }}
+                    >
+                      {!fetchedModels.includes(ai.model) && (
+                        <option value={ai.model}>{ai.model} (current)</option>
+                      )}
+                      {fetchedModels.map((m) => (
+                        <option key={m} value={m}>
+                          {m} {m === ai.model ? '✓' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
-                    {t.settingsModel}
-                  </label>
                   <input
                     aria-label={t.settingsModelAria}
+                    data-testid="ai-model-input"
                     type="text"
+                    placeholder="e.g. gpt-4o, claude-3-5-sonnet..."
                     value={ai.model}
                     onChange={(e) =>
                       onUpdateAISettings?.({
@@ -1072,6 +1046,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       color: 'var(--text)',
                     }}
                   />
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                    {t.settingsCustomModelHint}
+                  </p>
                 </div>
               </div>
 
