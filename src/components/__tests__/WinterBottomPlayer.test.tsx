@@ -29,6 +29,7 @@ vi.mock('../../services/timer', () => ({
     setDuration: vi.fn(),
     shiftMinutes: vi.fn(),
     skipPhase: vi.fn(),
+    setMode: vi.fn(),
   },
 }));
 
@@ -121,5 +122,44 @@ describe('WinterBottomPlayer Component (R101, R102)', () => {
     // Start
     fireEvent.click(screen.getByTestId('bottom-player-toggle'));
     expect(TimerService.start).toHaveBeenCalled();
+  });
+
+  it('switches between pomodoro and stopwatch mode', async () => {
+    render(<WinterBottomPlayer />);
+    const modeBtn = screen.getByTestId('bottom-player-mode');
+    fireEvent.click(modeBtn);
+    expect(TimerService.setMode).toHaveBeenCalledWith('stopwatch');
+  });
+
+  it('resets timer when reset button is clicked', async () => {
+    render(<WinterBottomPlayer />);
+    const resetBtn = screen.getByTestId('bottom-player-reset');
+    fireEvent.click(resetBtn);
+    expect(TimerService.reset).toHaveBeenCalled();
+  });
+
+  it('skips phase when skip button is clicked', async () => {
+    render(<WinterBottomPlayer />);
+    const skipBtn = screen.getByTestId('bottom-player-skip');
+    fireEvent.click(skipBtn);
+    expect(TimerService.skipPhase).toHaveBeenCalled();
+  });
+
+  it('shifts minutes by -5 and +5 from presets popover', async () => {
+    render(<WinterBottomPlayer />);
+    fireEvent.click(screen.getByTestId('bottom-player-time'));
+
+    fireEvent.click(screen.getByText('-5'));
+    expect(TimerService.shiftMinutes).toHaveBeenCalledWith(-5);
+
+    fireEvent.click(screen.getByText('+5'));
+    expect(TimerService.shiftMinutes).toHaveBeenCalledWith(5);
+  });
+
+  it('calls onToggleSidebar when menu button is clicked', async () => {
+    const onToggle = vi.fn();
+    render(<WinterBottomPlayer onToggleSidebar={onToggle} />);
+    fireEvent.click(screen.getByTestId('bottom-player-menu'));
+    expect(onToggle).toHaveBeenCalled();
   });
 });

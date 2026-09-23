@@ -5,13 +5,42 @@ export interface WinterCanvasProps {
   className?: string;
 }
 
-export const FLIP_INTERVAL_MS = 5000;
-export const FLIP_DURATION_MS = 700;
+export const CYCLE_DURATION_MS = 60000;
+export const FLIP_DURATION_MS = 1200;
+export const DRAIN_DURATION_MS = CYCLE_DURATION_MS - FLIP_DURATION_MS; // 58800 ms
+
+/**
+ * Backward-compatible alias for existing imports / callers.
+ * The flip interval is driven by the sand cycle length.
+ */
+export const FLIP_INTERVAL_MS = CYCLE_DURATION_MS;
+
+/**
+ * Calculates the remaining sand level in the upper chamber as a ratio [0, 1].
+ * 1 = completely full (start of cycle), 0 = completely drained (end of drain).
+ * While flipping (the remaining time of the cycle), sand level stays 0 (empty).
+ *
+ * Pure function of elapsed time.
+ *
+ * @param elapsedMs - Milliseconds elapsed while timer has been active.
+ * @returns Ratio from 1 (full) down to 0 (empty).
+ */
+export function calculateSandLevel(elapsedMs: number): number {
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
+    return 1;
+  }
+  const timeIntoCycle = elapsedMs % CYCLE_DURATION_MS;
+  if (timeIntoCycle >= DRAIN_DURATION_MS) {
+    return 0;
+  }
+  return 1 - timeIntoCycle / DRAIN_DURATION_MS;
+}
 
 /**
  * Calculates the flip rotation angle of the hourglass in radians.
+ * The flip occurs at the end of each cycle when the sand has completely drained.
  *
- * @param elapsedMs - Milliseconds elapsed since the timer started running.
+ * @param elapsedMs - Milliseconds elapsed while timer has been active.
  * @param running - Whether the timer is currently running.
  * @returns Hourglass rotation angle in radians around the flip axis.
  */
@@ -20,20 +49,17 @@ export function calculateHourglassAngle(elapsedMs: number, running: boolean): nu
     return 0;
   }
 
-  const cycleIndex = Math.floor(elapsedMs / FLIP_INTERVAL_MS);
-  if (cycleIndex === 0) {
-    return 0;
+  const cycleIndex = Math.floor(elapsedMs / CYCLE_DURATION_MS);
+  const baseAngle = cycleIndex * Math.PI;
+  const timeIntoCycle = elapsedMs % CYCLE_DURATION_MS;
+
+  if (timeIntoCycle < DRAIN_DURATION_MS) {
+    return baseAngle;
   }
 
-  // Base rotation from all previously completed flips (each 180° = π rad)
-  const baseAngle = (cycleIndex - 1) * Math.PI;
-
-  const timeIntoCycle = elapsedMs % FLIP_INTERVAL_MS;
-  const progress = Math.min(1, timeIntoCycle / FLIP_DURATION_MS);
-
+  const flipProgress = Math.min(1, (timeIntoCycle - DRAIN_DURATION_MS) / FLIP_DURATION_MS);
   // Smooth ease-in-out curve (cosine ease)
-  const eased = 0.5 * (1 - Math.cos(progress * Math.PI));
-
+  const eased = 0.5 * (1 - Math.cos(flipProgress * Math.PI));
   return baseAngle + eased * Math.PI;
 }
 
@@ -101,8 +127,8 @@ export function WinterCanvas({ className = '' }: WinterCanvasProps): React.React
     let haloGrad: CanvasGradient | null = null;
     let lastTime = performance.now();
     let wasRunning = false;
-    let runStart = 0;
-
+    let accumulatedElapsed = 0;
+    let lastActiveTime = 0;
     // Fixed seeded star distribution across the canvas (matches reference)
     const stars: Star[] = [
       { xRatio: 0.11, yRatio: 0.33, radius: 2.0, baseAlpha: 0.9, phase: 0.2, speed: 0.8 },
@@ -137,7 +163,8 @@ export function WinterCanvas({ className = '' }: WinterCanvasProps): React.React
       rotX: number,
       rotY: number,
       rotZ: number,
-      strokeColor: string
+      strokeColor: string,
+      sandRatio: number
     ) => {
       const h = scale * 1.2;
       const w = h * 0.694;
@@ -165,6 +192,58 @@ export function WinterCanvas({ className = '' }: WinterCanvasProps): React.React
         pX = cx + x3 * scaleP;
         pY = cy + y3 * scaleP;
       };
+
+      const RIB_STEPS = 12;
+
+      const traceProfile = (startU: number, endU: number, sign: number) => {
+        for (let s = 0; s <= RIB_STEPS; s++) {
+          const u = startU + (endU - startU) * (s / RIB_STEPS);
+          const rad = rw + (w - rw) * (0.3 * Math.abs(u) + 0.7 * u * u);
+          project(sign * rad, u * h, 0);
+          if (s === 0 && sign > 0) ctx.moveTo(pX, pY);
+          else ctx.lineTo(pX, pY);
+        }
+      };
+
+      // Render ephemeral sand inside the glass chambers
+      if (sandRatio > 0.001 || sandRatio < 0.999) {
+        // Upper chamber sand: level drops as sandRatio decreases from 1 to 0
+        if (sandRatio > 0.01) {
+          const topU = -sandRatio; // -1 (full) to ~0 (empty)
+          ctx.beginPath();
+          traceProfile(topU, 0, 1);
+          traceProfile(0, topU, -1);
+          ctx.closePath();
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.055)';
+          ctx.fill();
+        }
+
+        // Lower chamber sand: level rises as lowerRatio (1 - sandRatio) increases from 0 to 1
+        const lowerRatio = 1 - sandRatio;
+        if (lowerRatio > 0.01) {
+          const fillU = 1 - lowerRatio; // 1 (empty) down to 0 (full)
+          ctx.beginPath();
+          traceProfile(fillU, 1, 1);
+          project(-w, h, 0);
+          ctx.lineTo(pX, pY);
+          traceProfile(1, fillU, -1);
+          ctx.closePath();
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.055)';
+          ctx.fill();
+        }
+
+        // Thin stream flowing through the neck while draining
+        if (sandRatio > 0.01 && sandRatio < 0.99) {
+          ctx.beginPath();
+          project(0, -0.05 * h, 0);
+          ctx.moveTo(pX, pY);
+          project(0, (1 - lowerRatio * 0.9) * h, 0);
+          ctx.lineTo(pX, pY);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
 
       ctx.lineWidth = 1;
       ctx.strokeStyle = strokeColor;
@@ -219,7 +298,6 @@ export function WinterCanvas({ className = '' }: WinterCanvasProps): React.React
       }
 
       // 6. Ribs (4 ribs at 0, 90, 180, 270 deg)
-      const RIB_STEPS = 12;
       for (let r = 0; r < 4; r++) {
         const theta = r * (Math.PI / 2);
         const cosT = Math.cos(theta);
@@ -249,19 +327,26 @@ export function WinterCanvas({ className = '' }: WinterCanvasProps): React.React
       // Slow ambient spin around vertical axis (~1 turn per 45s)
       angle += dt * 0.14;
 
-      // Track running duration without accumulating floating-point frame drift
+      // Track active running elapsed time so stopping freezes sand & angle,
+      // and starting continues smoothly from current progress.
       const isRunning = runningRef.current;
       if (isRunning) {
         if (!wasRunning) {
-          runStart = time;
+          lastActiveTime = time;
           wasRunning = true;
+        } else {
+          const activeDelta = time - lastActiveTime;
+          if (activeDelta > 0) {
+            accumulatedElapsed += activeDelta;
+            lastActiveTime = time;
+          }
         }
       } else {
         wasRunning = false;
       }
 
-      const elapsedMs = isRunning ? time - runStart : 0;
-      const flipAngle = calculateHourglassAngle(elapsedMs, isRunning);
+      const sandRatio = calculateSandLevel(accumulatedElapsed);
+      const flipAngle = calculateHourglassAngle(accumulatedElapsed, isRunning);
 
       // Subtle slow idle sway so the glass never feels frozen while stopped
       const idleSway = Math.sin(time * 0.0008) * 0.04;
@@ -330,13 +415,14 @@ export function WinterCanvas({ className = '' }: WinterCanvasProps): React.React
       const size1 = Math.min(width, height) * 0.16;
       const size2 = size1 * 0.78;
 
-      // Outer hourglass (brighter, ambient turn, flips every 5s when timer runs)
+      // Outer hourglass (brighter, ambient turn, flips with cycle)
       drawHourglass(
         size1,
         0.2,
         angle,
         flipAngle + idleSway,
-        'rgba(255, 255, 255, 0.18)'
+        'rgba(255, 255, 255, 0.18)',
+        sandRatio
       );
 
       // Inner hourglass (fainter, offset ambient rotation, flips together with outer)
@@ -345,9 +431,9 @@ export function WinterCanvas({ className = '' }: WinterCanvasProps): React.React
         0.2,
         -angle * 0.85 + 0.5,
         flipAngle + idleSway,
-        'rgba(255, 255, 255, 0.11)'
+        'rgba(255, 255, 255, 0.11)',
+        sandRatio
       );
-
       // 6. Center bright star particle & halo
       ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
       ctx.beginPath();

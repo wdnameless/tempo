@@ -62,6 +62,8 @@ export interface Translations {
   navAlarms: string;
   navTasks: string;
   navNotes: string;
+  sidebarAlarms: string;
+  sidebarTasks: string;
   statsEmptyTitle: string;
   statsEmptyBody: string;
   statsEmptyHint: string;
@@ -680,6 +682,8 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     navAlarms: 'Будильники',
     navTasks: 'Задачи',
     navNotes: 'Заметки',
+    sidebarAlarms: 'Alarms',
+    sidebarTasks: 'Tasks',
     statsEmptyTitle: 'Статистика пока пуста',
     statsEmptyBody: 'Здесь появятся часы концентрации, тепловая карта активности за 12 недель, серии продуктивности и пиковые часы дня.',
     statsEmptyHint: 'Завершите сессию таймера для старта',
@@ -1550,6 +1554,8 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     navAlarms: 'Alarms',
     navTasks: 'Tasks',
     navNotes: 'Notes',
+    sidebarAlarms: 'Alarms',
+    sidebarTasks: 'Tasks',
     statsEmptyTitle: 'No statistics yet',
     statsEmptyBody: 'Focus hours, a 12-week activity heat map, productive streaks, and peak hours will appear here.',
     recTranscribe: 'Transcribe',

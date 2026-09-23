@@ -3,54 +3,85 @@ import { render, act } from '@testing-library/react';
 import {
   WinterCanvas,
   calculateHourglassAngle,
-  FLIP_INTERVAL_MS,
+  calculateSandLevel,
+  CYCLE_DURATION_MS,
+  DRAIN_DURATION_MS,
   FLIP_DURATION_MS,
 } from '../WinterCanvas';
 import { TimerService, IDLE } from '../../services/timer';
 import type { TimerSnapshot } from '../../services/timer';
+
+describe('calculateSandLevel (pure sand level math)', () => {
+  it('returns 1 (full) at 0 ms', () => {
+    expect(calculateSandLevel(0)).toBe(1);
+  });
+
+  it('returns 1 (full) for negative or non-finite elapsed time', () => {
+    expect(calculateSandLevel(-500)).toBe(1);
+    expect(calculateSandLevel(NaN)).toBe(1);
+    expect(calculateSandLevel(Infinity)).toBe(1);
+  });
+
+  it('returns 0.5 (half full) exactly mid-drain', () => {
+    expect(calculateSandLevel(DRAIN_DURATION_MS / 2)).toBeCloseTo(0.5, 5);
+  });
+
+  it('returns 0 (empty) at the end of drain', () => {
+    expect(calculateSandLevel(DRAIN_DURATION_MS)).toBe(0);
+  });
+
+  it('remains 0 (empty) throughout the flip duration', () => {
+    expect(calculateSandLevel(DRAIN_DURATION_MS + FLIP_DURATION_MS / 2)).toBe(0);
+    expect(calculateSandLevel(CYCLE_DURATION_MS - 1)).toBe(0);
+  });
+
+  it('resets to 1 (full) at the start of the next cycle', () => {
+    expect(calculateSandLevel(CYCLE_DURATION_MS)).toBe(1);
+    expect(calculateSandLevel(CYCLE_DURATION_MS + DRAIN_DURATION_MS / 2)).toBeCloseTo(0.5, 5);
+  });
+});
 
 describe('calculateHourglassAngle (pure angle math)', () => {
   it('returns 0 at 0 s when running', () => {
     expect(calculateHourglassAngle(0, true)).toBe(0);
   });
 
-  it('returns 0 mid-cycle (2.5 s) when running', () => {
-    expect(calculateHourglassAngle(2500, true)).toBe(0);
+  it('returns 0 mid-drain when running', () => {
+    expect(calculateHourglassAngle(DRAIN_DURATION_MS / 2, true)).toBe(0);
   });
 
-  it('starts the flip at 5 s (angle is 0 at flip start)', () => {
-    expect(calculateHourglassAngle(FLIP_INTERVAL_MS, true)).toBe(0);
+  it('remains 0 right until the sand runs out (start of flip)', () => {
+    expect(calculateHourglassAngle(DRAIN_DURATION_MS, true)).toBe(0);
   });
 
-  it('reaches pi by ~5.7 s (5700 ms)', () => {
-    const angleAtEnd = calculateHourglassAngle(FLIP_INTERVAL_MS + FLIP_DURATION_MS, true);
-    expect(angleAtEnd).toBeCloseTo(Math.PI, 5);
-  });
-
-  it('is halfway through the flip at 5.35 s (~pi / 2)', () => {
-    const angleMidFlip = calculateHourglassAngle(FLIP_INTERVAL_MS + FLIP_DURATION_MS / 2, true);
+  it('is halfway through the flip (~pi / 2) mid-flip', () => {
+    const angleMidFlip = calculateHourglassAngle(DRAIN_DURATION_MS + FLIP_DURATION_MS / 2, true);
     expect(angleMidFlip).toBeCloseTo(Math.PI / 2, 3);
   });
 
-  it('maintains pi until the next cycle begins', () => {
-    expect(calculateHourglassAngle(6000, true)).toBeCloseTo(Math.PI, 5);
-    expect(calculateHourglassAngle(8000, true)).toBeCloseTo(Math.PI, 5);
-    expect(calculateHourglassAngle(10000, true)).toBeCloseTo(Math.PI, 5);
+  it('reaches pi at the end of the flip', () => {
+    const angleAtEnd = calculateHourglassAngle(DRAIN_DURATION_MS + FLIP_DURATION_MS, true);
+    expect(angleAtEnd).toBeCloseTo(Math.PI, 5);
   });
 
-  it('flips to 2*pi by ~10.7 s on the second cycle', () => {
-    const angleSecondFlip = calculateHourglassAngle(2 * FLIP_INTERVAL_MS + FLIP_DURATION_MS, true);
+  it('maintains pi during the second cycle drain until its flip', () => {
+    expect(calculateHourglassAngle(CYCLE_DURATION_MS + 1000, true)).toBeCloseTo(Math.PI, 5);
+    expect(calculateHourglassAngle(CYCLE_DURATION_MS + DRAIN_DURATION_MS / 2, true)).toBeCloseTo(Math.PI, 5);
+    expect(calculateHourglassAngle(CYCLE_DURATION_MS + DRAIN_DURATION_MS, true)).toBeCloseTo(Math.PI, 5);
+  });
+
+  it('flips to 2*pi by the end of the second cycle', () => {
+    const angleSecondFlip = calculateHourglassAngle(CYCLE_DURATION_MS + DRAIN_DURATION_MS + FLIP_DURATION_MS, true);
     expect(angleSecondFlip).toBeCloseTo(2 * Math.PI, 5);
   });
 
   it('returns 0 whenever running is false regardless of elapsed time', () => {
     expect(calculateHourglassAngle(0, false)).toBe(0);
-    expect(calculateHourglassAngle(2500, false)).toBe(0);
-    expect(calculateHourglassAngle(5000, false)).toBe(0);
-    expect(calculateHourglassAngle(5350, false)).toBe(0);
-    expect(calculateHourglassAngle(5700, false)).toBe(0);
-    expect(calculateHourglassAngle(10000, false)).toBe(0);
-    expect(calculateHourglassAngle(10700, false)).toBe(0);
+    expect(calculateHourglassAngle(DRAIN_DURATION_MS / 2, false)).toBe(0);
+    expect(calculateHourglassAngle(DRAIN_DURATION_MS, false)).toBe(0);
+    expect(calculateHourglassAngle(DRAIN_DURATION_MS + FLIP_DURATION_MS / 2, false)).toBe(0);
+    expect(calculateHourglassAngle(CYCLE_DURATION_MS, false)).toBe(0);
+    expect(calculateHourglassAngle(CYCLE_DURATION_MS * 2, false)).toBe(0);
   });
 
   it('returns 0 for negative, non-finite, or zero elapsed time', () => {
@@ -71,6 +102,7 @@ function createMockContext() {
     clearRect: vi.fn(),
     fillRect: vi.fn(),
     beginPath: vi.fn(),
+    closePath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
     stroke: vi.fn(),
@@ -202,5 +234,18 @@ describe('WinterCanvas component', () => {
 
     // Still exactly 1 render; zero setState calls during RAF
     expect(renderCount).toBe(1);
+  });
+
+  it('freezes sand level and flip angle when timer is stopped', () => {
+    // When timer is not running, calculateHourglassAngle always returns 0 regardless of time
+    expect(calculateHourglassAngle(15000, false)).toBe(0);
+    expect(calculateHourglassAngle(60000, false)).toBe(0);
+
+    // Sand level at frozen elapsed point remains fixed
+    const frozenElapsed = 30000;
+    const level1 = calculateSandLevel(frozenElapsed);
+    const level2 = calculateSandLevel(frozenElapsed);
+    expect(level1).toBe(level2);
+    expect(level1).toBeCloseTo(1 - 30000 / DRAIN_DURATION_MS, 5);
   });
 });

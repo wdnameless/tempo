@@ -433,8 +433,8 @@ function MainShell() {
   };
 
   const navSections: NavSection[] = [
-    { id: 'dashboard', label: t.navDashboard, icon: <Clock size={18} />, tabs: ['dashboard', 'alarms'] },
-    { id: 'day', label: t.navDay, icon: <CalendarDays size={18} />, tabs: ['day', 'tasks', 'lists'] },
+    { id: 'dashboard', label: t.sidebarAlarms, icon: <Clock size={18} />, tabs: ['dashboard', 'alarms'] },
+    { id: 'day', label: t.sidebarTasks, icon: <CalendarDays size={18} />, tabs: ['day', 'tasks', 'lists'] },
     { id: 'calendar', label: t.navCalendar, icon: <Calendar size={18} />, tabs: ['calendar'] },
     { id: 'notes', label: t.navNotes, icon: <FileText size={18} />, tabs: ['notes', 'drawings'] },
     { id: 'recordings', label: t.navRecordings, icon: <Mic size={18} />, tabs: ['recordings'] },

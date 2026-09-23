@@ -3,6 +3,10 @@ import {
   Menu,
   Play,
   Pause,
+  RotateCcw,
+  FastForward,
+  Timer as TimerIcon,
+  Watch,
   Volume2,
   VolumeX,
   Circle,
@@ -12,7 +16,7 @@ import {
   Coffee,
   Check,
 } from 'lucide-react';
-import { TimerService, type TimerSnapshot } from '../services/timer';
+import { TimerService, type TimerSnapshot, type TimerMode } from '../services/timer';
 import { soundService } from '../services/sound';
 import {
   startFocusAudio,
@@ -86,12 +90,39 @@ export function WinterBottomPlayer({
   const running = snapshot?.running ?? false;
   const remainingSec = snapshot?.remaining_secs ?? 1500;
   const currentPhase = snapshot?.phase ?? 'focus';
+  const isStopwatch = snapshot?.mode === 'stopwatch';
+  const displaySec = isStopwatch ? (snapshot?.elapsed_secs ?? 0) : remainingSec;
 
-  const mins = Math.floor(remainingSec / 60);
-  const secs = remainingSec % 60;
+  const mins = Math.floor(displaySec / 60);
+  const secs = displaySec % 60;
   // Format as "MM : SS" with spaces matching trywinter reference
   const timeFormatted = `${String(mins).padStart(2, '0')} : ${String(secs).padStart(2, '0')}`;
 
+  const handleToggleMode = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    soundService.playUiClick();
+    const currentMode = snapshot?.mode ?? 'pomodoro';
+    const nextMode: TimerMode = currentMode === 'pomodoro' ? 'stopwatch' : 'pomodoro';
+    await TimerService.setMode(nextMode);
+    const updated = await TimerService.getState();
+    setSnapshot(updated);
+  };
+
+  const handleReset = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    soundService.playUiClick();
+    await TimerService.reset();
+    const updated = await TimerService.getState();
+    setSnapshot(updated);
+  };
+
+  const handleSkipPhase = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    soundService.playUiClick();
+    await TimerService.skipPhase();
+    const updated = await TimerService.getState();
+    setSnapshot(updated);
+  };
   const handleToggleTimer = (e: React.MouseEvent) => {
     e.stopPropagation();
     soundService.playUiClick();
@@ -170,10 +201,33 @@ export function WinterBottomPlayer({
         type="button"
         aria-label="Toggle navigation menu"
         data-testid="bottom-player-menu"
-        onClick={onToggleSidebar}
+        onClick={() => {
+          if (onToggleSidebar) {
+            onToggleSidebar();
+          } else if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('tempo:toggle-sidebar'));
+          }
+        }}
         className="p-1 rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors"
       >
         <Menu className="w-4 h-4" />
+      </button>
+
+      {/* Vertical separator */}
+      <div className="h-3.5 w-[1px] bg-white/15" />
+
+      {/* Mode toggle (Pomodoro / Stopwatch) */}
+      <button
+        type="button"
+        aria-label={isStopwatch ? 'Режим: секундомер' : 'Режим: помодоро'}
+        title={isStopwatch ? 'Переключить в помодоро' : 'Переключить в секундомер'}
+        data-testid="bottom-player-mode"
+        onClick={handleToggleMode}
+        className={`p-1 rounded-md transition-colors ${
+          isStopwatch ? 'text-white bg-white/15' : 'text-white/70 hover:text-white hover:bg-white/10'
+        }`}
+      >
+        {isStopwatch ? <Watch className="w-4 h-4" /> : <TimerIcon className="w-4 h-4" />}
       </button>
 
       {/* Vertical separator */}
@@ -303,6 +357,29 @@ export function WinterBottomPlayer({
         {running ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
       </button>
 
+      {/* 5. Reset timer */}
+      <button
+        type="button"
+        aria-label="Reset timer"
+        data-testid="bottom-player-reset"
+        onClick={handleReset}
+        className="p-1 rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+      >
+        <RotateCcw className="w-4 h-4" />
+      </button>
+
+      {/* 6. Skip phase (in pomodoro mode) */}
+      {!isStopwatch && (
+        <button
+          type="button"
+          aria-label="Skip phase"
+          data-testid="bottom-player-skip"
+          onClick={handleSkipPhase}
+          className="p-1 rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          <FastForward className="w-4 h-4" />
+        </button>
+      )}
       {/* 5. Sound / Focus Audio */}
       <div className="relative">
         <button
