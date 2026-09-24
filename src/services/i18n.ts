@@ -314,6 +314,10 @@ export interface Translations {
   settingsSpeechModelsGroupRussian: string;
   settingsSpeechModelsGroupMultilingual: string;
   settingsSpeechModelsGroupEnglishOnly: string;
+  settingsSpeechModelsGroupDownloaded: string;
+  settingsSpeechModelsGroupAvailable: string;
+  settingsSpeechModelsDetectedFrom: string;
+  settingsSpeechModelsStreamingBadge: string;
   settingsSpeechModelsNoMatches: string;
   settingsSpeechPasteMethod: string;
   settingsSpeechPasteMethodCtrlV: string;
@@ -1137,6 +1141,10 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechModelsGroupRussian: 'Русские модели (GigaAM)',
     settingsSpeechModelsGroupMultilingual: 'Многоязычные модели',
     settingsSpeechModelsGroupEnglishOnly: 'Только английский',
+    settingsSpeechModelsGroupDownloaded: 'Загруженные',
+    settingsSpeechModelsGroupAvailable: 'Доступные для скачивания',
+    settingsSpeechModelsDetectedFrom: 'Обнаружена: {origin}',
+    settingsSpeechModelsStreamingBadge: 'Streaming',
     settingsSpeechModelsNoMatches: 'Нет моделей, соответствующих поиску или фильтрам.',
     settingsSpeechPasteMethod: 'Метод вставки',
     settingsSpeechPasteMethodCtrlV: 'Ctrl+V',
@@ -1815,6 +1823,10 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechModelsGroupRussian: 'Russian models (GigaAM)',
     settingsSpeechModelsGroupMultilingual: 'Multilingual models',
     settingsSpeechModelsGroupEnglishOnly: 'English only models',
+    settingsSpeechModelsGroupDownloaded: 'Downloaded models',
+    settingsSpeechModelsGroupAvailable: 'Available to download',
+    settingsSpeechModelsDetectedFrom: 'Detected: {origin}',
+    settingsSpeechModelsStreamingBadge: 'Streaming',
     settingsSpeechModelsNoMatches: 'No models match current search or filters.',
     settingsSpeechPasteMethod: 'Paste Method',
     settingsSpeechPasteMethodCtrlV: 'Ctrl+V',

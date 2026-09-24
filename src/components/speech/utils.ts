@@ -69,9 +69,18 @@ export function formatEngineName(engine?: string): string {
       return 'SenseVoice';
     case 'gigaam':
       return 'GigaAM';
+    case 'transcribecpp':
+      return 'transcribe-cpp';
     default:
       return engine.charAt(0).toUpperCase() + engine.slice(1);
   }
+}
+
+export function isStreamingModel(model: ModelInfo): boolean {
+  if (model.streaming === true) return true;
+  const id = model.id.toLowerCase();
+  const name = (model.name || '').toLowerCase();
+  return id.includes('streaming') || name.includes('streaming');
 }
 
 export function isRussianModel(model: ModelInfo): boolean {

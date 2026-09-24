@@ -631,39 +631,35 @@ describe('Speech Models - Grouping, Quants, Size and Installed Badge', () => {
     vi.mocked(stt.listModels).mockResolvedValue(sampleModels);
   });
 
-  it('ModelLibrary displays quant, size in MB, marks installed models, and groups multilingual before English-only', async () => {
+  it('ModelLibrary displays quant, size in MB, marks installed models, and separates into Downloaded and Available sections', async () => {
     render(<ModelLibrary activeModelId="whisper-small" onSelectModel={vi.fn()} />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('models-group-multilingual')).toBeDefined();
-      expect(screen.getByTestId('models-group-english-only')).toBeDefined();
+      expect(screen.getByTestId('models-section-downloaded')).toBeDefined();
+      expect(screen.getByTestId('models-section-available')).toBeDefined();
     });
 
-    const multiGroup = screen.getByTestId('models-group-multilingual');
-    const enGroup = screen.getByTestId('models-group-english-only');
+    const downloadedSection = screen.getByTestId('models-section-downloaded');
+    const availableSection = screen.getByTestId('models-section-available');
 
-    // Multilingual appears before English-only in DOM order
-    expect(multiGroup.compareDocumentPosition(enGroup)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    // Downloaded appears before Available in DOM order
+    expect(downloadedSection.compareDocumentPosition(availableSection)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 
-    // Multilingual group contains Whisper Small and Whisper Large v3
-    expect(multiGroup.textContent).toContain('Whisper Small');
-    expect(multiGroup.textContent).toContain('Whisper Large v3');
+    // Downloaded section contains installed models (large-v3 and tiny.en)
+    expect(downloadedSection.textContent).toContain('Whisper Large v3');
+    expect(downloadedSection.textContent).toContain('Whisper Tiny EN');
+    expect(downloadedSection.textContent).not.toContain('Whisper Small');
 
-    // Fast to accurate: Whisper Small (speed 0.8) before Whisper Large v3 (speed 0.25)
-    const smallIdx = multiGroup.textContent!.indexOf('Whisper Small');
-    const largeIdx = multiGroup.textContent!.indexOf('Whisper Large v3');
-    expect(smallIdx).toBeLessThan(largeIdx);
-
-    // English group: Tiny EN (speed 1.0) before Base EN (speed 0.9)
-    const tinyIdx = enGroup.textContent!.indexOf('Whisper Tiny EN');
-    const baseIdx = enGroup.textContent!.indexOf('Whisper Base EN');
-    expect(tinyIdx).toBeLessThan(baseIdx);
+    // Available section contains uninstalled models (small and base.en)
+    expect(availableSection.textContent).toContain('Whisper Small');
+    expect(availableSection.textContent).toContain('Whisper Base EN');
+    expect(availableSection.textContent).not.toContain('Whisper Large v3');
 
     // Check size in MB and quant for models
-    expect(multiGroup.textContent).toContain('Q8_0');
-    expect(multiGroup.textContent).toContain('465 MB');
-    expect(multiGroup.textContent).toContain('Q5_K_M');
-    expect(multiGroup.textContent).toContain('1469 MB');
+    expect(availableSection.textContent).toContain('Q8_0');
+    expect(availableSection.textContent).toContain('465 MB');
+    expect(downloadedSection.textContent).toContain('Q5_K_M');
+    expect(downloadedSection.textContent).toContain('1469 MB');
 
     // Installed badges: large-v3 is installed, small is not
     const largeCard = screen.getByTestId('model-card-whisper-large-v3');
@@ -787,23 +783,12 @@ describe('Handy STT Engines - Display, Grouping, Support, and Archives', () => {
     expect(gigaCard.querySelector('[data-testid="model-archive-badge"]')).toBeDefined();
   });
 
-  it('GigaAM is grouped and labelled as Russian', async () => {
+  it('GigaAM has Russian badge and card displays accuracy and speed scores', async () => {
     render(<ModelLibrary activeModelId="parakeet-v3" onSelectModel={vi.fn()} />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('models-group-russian')).toBeDefined();
-      expect(screen.getByTestId('models-group-multilingual')).toBeDefined();
-      expect(screen.getByTestId('models-group-english-only')).toBeDefined();
+      expect(screen.getByTestId('model-card-gigaam-v3')).toBeDefined();
     });
-
-    const ruGroup = screen.getByTestId('models-group-russian');
-    const multiGroup = screen.getByTestId('models-group-multilingual');
-
-    // Russian group appears first (findable, not buried)
-    expect(ruGroup.compareDocumentPosition(multiGroup)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-
-    // GigaAM is inside the Russian group
-    expect(ruGroup.textContent).toContain('GigaAM v3 (русский)');
 
     // GigaAM card has Russian badge
     const gigaCard = screen.getByTestId('model-card-gigaam-v3');
@@ -867,5 +852,207 @@ describe('Handy STT Engines - Display, Grouping, Support, and Archives', () => {
     const gigaItem = screen.getByTestId('onboarding-model-gigaam-v3');
     fireEvent.click(gigaItem);
     expect(onChange).toHaveBeenCalledWith({ modelId: 'gigaam-v3' });
+  });
+});
+describe('Handy STT Detected Models and Handy-style Model Library Layout', () => {
+  const customCatalog: stt.ModelInfo[] = [
+    {
+      id: 'nemotron-streaming',
+      name: 'Nemotron 3.5 ASR Streaming 0.6B',
+      engine: 'transcribecpp',
+      bytes: 750_000_000,
+      languages: ['ru'],
+      speedScore: 0.95,
+      accuracyScore: 0.88,
+      installed: true,
+      source: 'detected',
+      origin: 'Handy',
+      deletable: false,
+      streaming: true,
+      description: 'Russian streaming ASR model detected from Handy',
+    },
+    {
+      id: 'parakeet-detected',
+      name: 'Parakeet TDT 0.6B v3',
+      engine: 'transcribecpp',
+      bytes: 650_000_000,
+      languages: ['en'],
+      speedScore: 0.9,
+      accuracyScore: 0.92,
+      installed: true,
+      source: 'detected',
+      origin: 'HuggingFace cache',
+      deletable: false,
+      streaming: false,
+      description: 'Parakeet found in HF cache',
+    },
+    {
+      id: 'whisper-small-own',
+      name: 'Whisper Small Local',
+      engine: 'whisper',
+      bytes: 488_000_000,
+      languages: ['en', 'ru'],
+      speedScore: 0.8,
+      accuracyScore: 0.85,
+      installed: true,
+      source: 'catalog',
+      origin: 'Tempo',
+      deletable: true,
+      streaming: false,
+      description: 'Installed local whisper',
+    },
+    {
+      id: 'whisper-large-uninstalled',
+      name: 'Whisper Large v3',
+      engine: 'whisper',
+      bytes: 1_540_000_000,
+      languages: ['en', 'ru', 'fr'],
+      speedScore: 0.3,
+      accuracyScore: 0.96,
+      installed: false,
+      source: 'catalog',
+      streaming: false,
+      description: 'Available to download model',
+    },
+  ];
+
+  beforeEach(() => {
+    vi.mocked(stt.listModels).mockResolvedValue(customCatalog);
+    I18nService.setLang('ru');
+  });
+
+  it('splits models into Downloaded and Available to download sections', async () => {
+    render(<ModelLibrary activeModelId="nemotron-streaming" onSelectModel={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('models-section-downloaded')).toBeDefined();
+      expect(screen.getByTestId('models-section-available')).toBeDefined();
+    });
+
+    const downloaded = screen.getByTestId('models-section-downloaded');
+    const available = screen.getByTestId('models-section-available');
+
+    // Section headers
+    expect(downloaded.textContent).toContain('Загруженные');
+    expect(available.textContent).toContain('Доступные для скачивания');
+
+    // Installed models in downloaded section
+    expect(downloaded.textContent).toContain('Nemotron 3.5 ASR Streaming 0.6B');
+    expect(downloaded.textContent).toContain('Parakeet TDT 0.6B v3');
+    expect(downloaded.textContent).toContain('Whisper Small Local');
+    expect(downloaded.textContent).not.toContain('Whisper Large v3');
+
+    // Uninstalled models in available section
+    expect(available.textContent).toContain('Whisper Large v3');
+    expect(available.textContent).not.toContain('Nemotron 3.5 ASR Streaming 0.6B');
+  });
+
+  it('search box filters both Downloaded and Available sections', async () => {
+    render(<ModelLibrary activeModelId="nemotron-streaming" onSelectModel={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('models-section-downloaded')).toBeDefined();
+    });
+
+    const searchInput = screen.getByPlaceholderText(/Поиск моделей/i);
+
+    // Search for "Nemotron" -> only in downloaded
+    fireEvent.change(searchInput, { target: { value: 'Nemotron' } });
+
+    const downloaded = screen.getByTestId('models-section-downloaded');
+    const available = screen.getByTestId('models-section-available');
+
+    expect(downloaded.textContent).toContain('Nemotron 3.5 ASR Streaming 0.6B');
+    expect(downloaded.textContent).not.toContain('Whisper Small Local');
+    expect(available.textContent).toContain('Нет моделей');
+
+    // Search for "Whisper" -> matches Whisper Small Local (downloaded) and Whisper Large (available)
+    fireEvent.change(searchInput, { target: { value: 'Whisper' } });
+
+    expect(downloaded.textContent).toContain('Whisper Small Local');
+    expect(downloaded.textContent).not.toContain('Nemotron');
+    expect(available.textContent).toContain('Whisper Large v3');
+  });
+
+  it('detected model displays its origin and offers no delete button', async () => {
+    render(<ModelLibrary activeModelId="parakeet-detected" onSelectModel={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-card-nemotron-streaming')).toBeDefined();
+    });
+
+    const nemotronCard = screen.getByTestId('model-card-nemotron-streaming');
+    const parakeetCard = screen.getByTestId('model-card-parakeet-detected');
+
+    // Shows detected origin chip
+    const nemotronOrigin = nemotronCard.querySelector('[data-testid="model-detected-badge"]');
+    expect(nemotronOrigin).toBeDefined();
+    expect(nemotronOrigin?.textContent).toContain('Handy');
+
+    const parakeetOrigin = parakeetCard.querySelector('[data-testid="model-detected-badge"]');
+    expect(parakeetOrigin).toBeDefined();
+    expect(parakeetOrigin?.textContent).toContain('HuggingFace cache');
+
+    // Offers NO delete button
+    expect(nemotronCard.querySelector('[data-testid="model-delete-nemotron-streaming"]')).toBeNull();
+    expect(parakeetCard.querySelector('[data-testid="model-delete-parakeet-detected"]')).toBeNull();
+  });
+
+  it('own installed model offers delete button and handles deletion', async () => {
+    render(<ModelLibrary activeModelId="nemotron-streaming" onSelectModel={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-card-whisper-small-own')).toBeDefined();
+    });
+
+    const ownCard = screen.getByTestId('model-card-whisper-small-own');
+
+    // Offers delete button for own installed model
+    const deleteBtn = ownCard.querySelector('[data-testid="model-delete-whisper-small-own"]') as HTMLButtonElement;
+    expect(deleteBtn).toBeDefined();
+
+    // First click asks confirmation, second calls deleteModel
+    fireEvent.click(deleteBtn);
+    fireEvent.click(deleteBtn);
+    expect(stt.deleteModel).toHaveBeenCalledWith('whisper-small-own');
+  });
+
+  it('active model is marked with active badge and cannot be deleted', async () => {
+    render(<ModelLibrary activeModelId="whisper-small-own" onSelectModel={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-card-whisper-small-own')).toBeDefined();
+    });
+
+    const activeCard = screen.getByTestId('model-card-whisper-small-own');
+    expect(activeCard.textContent).toContain('Активная');
+
+    // Active model does not have a delete button even if it is our own
+    expect(activeCard.querySelector('[data-testid="model-delete-whisper-small-own"]')).toBeNull();
+  });
+
+  it('shows Streaming badge, Russian badge, accuracy/speed bars, and size', async () => {
+    render(<ModelLibrary activeModelId="parakeet-detected" onSelectModel={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-card-nemotron-streaming')).toBeDefined();
+    });
+
+    const nemotronCard = screen.getByTestId('model-card-nemotron-streaming');
+
+    // Streaming badge
+    expect(nemotronCard.querySelector('[data-testid="model-streaming-badge"]')?.textContent).toContain('Streaming');
+
+    // Russian badge
+    expect(nemotronCard.querySelector('[data-testid="model-russian-badge"]')?.textContent).toContain('Русский');
+
+    // Size
+    expect(nemotronCard.textContent).toContain('715 MB');
+
+    // Speed & Accuracy metrics
+    expect(nemotronCard.textContent).toContain('Скорость');
+    expect(nemotronCard.textContent).toContain('95%');
+    expect(nemotronCard.textContent).toContain('Точность');
+    expect(nemotronCard.textContent).toContain('88%');
   });
 });

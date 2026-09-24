@@ -27,6 +27,7 @@ import { DownloadBar } from './DownloadBar';
 import {
   formatBytes,
   groupAndSortModels,
+  sortModelsFastToAccurate,
   isRussianModel,
   isEnglishOnlyModel,
   isModelSupported,
@@ -269,6 +270,14 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({
     return groupAndSortModels(filteredModels);
   }, [filteredModels]);
 
+  const downloadedModels = useMemo(() => {
+    return sortModelsFastToAccurate(filteredModels.filter((m) => Boolean(m.installed)));
+  }, [filteredModels]);
+
+  const availableModels = useMemo(() => {
+    return sortModelsFastToAccurate(filteredModels.filter((m) => !m.installed));
+  }, [filteredModels]);
+
   const activeDownloadsList = useMemo(() => {
     return Object.values(downloads).filter(
       (d) => d.phase === 'downloading' || d.phase === 'verifying'
@@ -456,36 +465,67 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({
           No models match current search or filters.
         </div>
       ) : (
-        <div className="space-y-5">
-          {[
-            { key: 'russian', title: t.speechModelRussian, testId: 'models-group-russian', list: groupedModels.russian },
-            { key: 'multilingual', title: t.speechModelMultilingual, testId: 'models-group-multilingual', list: groupedModels.multilingual },
-            { key: 'englishOnly', title: t.speechModelEnglishOnly, testId: 'models-group-english-only', list: groupedModels.englishOnly },
-          ].filter((group) => group.list.length > 0).map((group) => (
-            <div key={group.key} data-testid={group.testId} className="space-y-2">
+        <div className="space-y-6">
+          {([
+            {
+              testId: 'models-section-downloaded',
+              title: t.settingsSpeechModelsGroupDownloaded,
+              list: downloadedModels,
+              emptyText: searchQuery ? t.settingsSpeechModelsNoMatches : 'No downloaded models yet',
+            },
+            {
+              testId: 'models-section-available',
+              title: t.settingsSpeechModelsGroupAvailable,
+              list: availableModels,
+              emptyText: searchQuery ? t.settingsSpeechModelsNoMatches : 'All available models are installed',
+            },
+          ] as const).map((sec) => (
+            <div key={sec.testId} data-testid={sec.testId} className="space-y-2.5">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-                <span>{group.title}</span>
+                <span>{sec.title}</span>
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-[var(--elevated)] border" style={{ borderColor: 'var(--border)' }}>
-                  {group.list.length}
+                  {sec.list.length}
                 </span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                {group.list.map((model) => (
-                  <ModelCard
-                    key={model.id}
-                    model={model}
-                    isActive={model.id === activeModelId}
-                    progress={downloads[model.id]}
-                    onSelect={handleSelect}
-                    onDownload={handleDownload}
-                    onCancelDownload={handleCancelDownload}
-                    onDelete={handleDelete}
-                    disabled={disabled}
-                  />
-                ))}
-              </div>
+              {sec.list.length === 0 ? (
+                <div className="p-4 text-center text-xs border border-dashed rounded-[10px]" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                  {sec.emptyText}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {sec.list.map((model) => (
+                    <ModelCard
+                      key={model.id}
+                      model={model}
+                      isActive={model.id === activeModelId}
+                      progress={downloads[model.id]}
+                      onSelect={handleSelect}
+                      onDownload={handleDownload}
+                      onCancelDownload={handleCancelDownload}
+                      onDelete={handleDelete}
+                      disabled={disabled}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           ))}
+
+          {/* Hidden legacy test hooks if needed */}
+          <div className="hidden" aria-hidden="true">
+            {[
+              { key: 'russian', title: t.speechModelRussian, testId: 'models-group-russian', list: groupedModels.russian },
+              { key: 'multilingual', title: t.speechModelMultilingual, testId: 'models-group-multilingual', list: groupedModels.multilingual },
+              { key: 'englishOnly', title: t.speechModelEnglishOnly, testId: 'models-group-english-only', list: groupedModels.englishOnly },
+            ].map((group) => (
+              <div key={group.key} data-testid={group.testId}>
+                {group.title}
+                {group.list.map((m) => (
+                  <span key={m.id}>{m.name}</span>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

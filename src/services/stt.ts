@@ -13,7 +13,8 @@ export type SttModelEngine =
   | 'cohere'
   | 'moonshine'
   | 'sensevoice'
-  | 'gigaam';
+  | 'gigaam'
+  | 'transcribecpp';
 
 export interface ModelInfo {
   id: string;
@@ -53,7 +54,10 @@ export interface ModelInfo {
   partial_bytes?: number;
   isCustom?: boolean;
   is_custom?: boolean;
-  source?: 'catalog' | 'custom' | string;
+  source?: 'catalog' | 'custom' | 'detected' | string;
+  origin?: string;
+  deletable?: boolean;
+  streaming?: boolean;
   wer?: number;
 }
 

@@ -11,6 +11,7 @@ import {
   Sparkles,
   AlertCircle,
   Cpu,
+  Radio,
 } from 'lucide-react';
 import type { ModelInfo, DownloadProgress } from '../../services/stt';
 import { I18nService } from '../../services/i18n';
@@ -22,6 +23,7 @@ import {
   isModelSupported,
   getUnsupportedReason,
   formatLanguages,
+  isStreamingModel,
 } from './utils';
 
 export interface ModelCardProps {
@@ -61,7 +63,9 @@ export const ModelCard: React.FC<ModelCardProps> = ({
   const isSupported = isModelSupported(model);
   const unsupportedReason = getUnsupportedReason(model, t.settingsSpeechModelEngineUnsupported);
   const isRussian = isRussianModel(model);
-
+  const isStreaming = isStreamingModel(model);
+  const isDetected = model.source === 'detected';
+  const canDelete = isInstalled && (model.deletable !== false) && !isDetected;
   const speedScore = model.speedScore ?? model.speed_score ?? 0.5;
   const accuracyScore = model.accuracyScore ?? model.accuracy_score ?? 0.5;
 
@@ -134,6 +138,23 @@ export const ModelCard: React.FC<ModelCardProps> = ({
                 className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30"
               >
                 {t.settingsSpeechModelRussianBadge}
+              </span>
+            )}
+            {isStreaming && (
+              <span
+                data-testid="model-streaming-badge"
+                className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+              >
+                <Radio className="w-3 h-3" />
+                {t.settingsSpeechModelsStreamingBadge}
+              </span>
+            )}
+            {isDetected && (
+              <span
+                data-testid="model-detected-badge"
+                className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/30"
+              >
+                {t.settingsSpeechModelsDetectedFrom.replace('{origin}', model.origin || 'disk')}
               </span>
             )}
             {model.archive && (
@@ -360,11 +381,12 @@ export const ModelCard: React.FC<ModelCardProps> = ({
               </button>
             )}
 
-            {!isActive && (
+            {!isActive && canDelete && (
               <button
                 type="button"
                 onClick={handleDeleteClick}
                 disabled={disabled}
+                data-testid={`model-delete-${model.id}`}
                 className={`p-1.5 rounded-[6px] transition-colors cursor-pointer ${
                   confirmDelete
                     ? 'bg-red-500/20 text-red-400 border border-red-500/40'

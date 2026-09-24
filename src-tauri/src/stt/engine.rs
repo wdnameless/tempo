@@ -141,24 +141,37 @@ impl EngineManager {
     ) -> Result<String, String> {
         let norm_engine = engine.trim().to_ascii_lowercase();
         if norm_engine == "whisper" {
-            self.transcribe_whisper(model_path, pcm, options).await
+            self.transcribe_transcribe_cpp("whisper", model_path, pcm, options).await
+        } else if norm_engine == "transcribecpp" || norm_engine == "transcribe-cpp" {
+            self.transcribe_transcribe_cpp("transcribecpp", model_path, pcm, options).await
         } else {
             self.transcribe_onnx(&norm_engine, model_path, pcm, options).await
         }
     }
 
-    async fn transcribe_whisper(
+    async fn transcribe_transcribe_cpp(
         &self,
+        engine_name: &str,
         model_path: PathBuf,
         pcm: &[f32],
         options: &RunOptions,
     ) -> Result<String, String> {
-        let (cancel_token, session) = {
+        let label = if engine_name == "whisper" {
+            "Whisper"
+        } else {
+            "transcribe-cpp"
+        };
+
+        if engine_name != "whisper" && !model_path.is_file() {
+            return Err(format!("Model file not found: {}", model_path.display()));
+        }
+
+        let (cancel_token, session, model_arch) = {
             let mut state = self.inner.lock().await;
 
             // Check if model path changed or needs load
             let need_reload = match (&state.loaded_model_path, &state.loaded_engine) {
-                (Some(p), Some(e)) => p != &model_path || e != "whisper",
+                (Some(p), Some(e)) => p != &model_path || e != engine_name,
                 _ => true,
             };
 
@@ -182,30 +195,60 @@ impl EngineManager {
 
                 let model_options = ModelOptions { backend, device };
                 let model = Model::load_with(path_str, &model_options)
-                    .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
+                    .map_err(|e| format!("Failed to load {label} model: {e}"))?;
                 let arc_model = Arc::new(model);
                 let session = arc_model
                     .session()
-                    .map_err(|e| format!("Failed to create Whisper session: {e}"))?;
+                    .map_err(|e| format!("Failed to create {label} session: {e}"))?;
 
                 state.model = Some(arc_model);
                 state.session = Some(session);
                 state.loaded_model_path = Some(model_path.clone());
-                state.loaded_engine = Some("whisper".to_string());
+                state.loaded_engine = Some(engine_name.to_string());
             }
 
             state.last_used = Instant::now();
             let cancel = CancelToken::new();
             state.active_cancel = Some(cancel.clone());
 
+            let arch = state.model.as_ref().map(|m| m.arch()).unwrap_or_default();
+
             // Take session out temporarily for run
             let session = state.session.take().ok_or_else(|| "Session missing".to_string())?;
-            (cancel, session)
+            (cancel, session, arch)
         };
 
         let pcm_vec = pcm.to_vec();
         let cancel_clone = cancel_token.clone();
-        let run_options = options.clone();
+        let mut run_options = options.clone();
+        if model_arch != "whisper" {
+            if let Some(RunExtension::Whisper(_)) = &run_options.family {
+                run_options.family = None;
+            }
+        }
+
+        // Reconcile language with model capabilities if specified
+        if let Some(lang) = &run_options.language {
+            let caps = session.model().capabilities();
+            if !caps.languages.is_empty() {
+                let trimmed = lang.trim();
+                let exact = caps.languages.iter().find(|l| l.eq_ignore_ascii_case(trimmed));
+                if let Some(matched) = exact {
+                    run_options.language = Some(matched.clone());
+                } else {
+                    let base = trimmed.split(&['-', '_'][..]).next().unwrap_or(trimmed);
+                    let prefix_match = caps.languages.iter().find(|l| {
+                        let l_base = l.split(&['-', '_'][..]).next().unwrap_or(l.as_str());
+                        l_base.eq_ignore_ascii_case(base)
+                    });
+                    if let Some(matched) = prefix_match {
+                        run_options.language = Some(matched.clone());
+                    } else if caps.supports_language_detect {
+                        run_options.language = None;
+                    }
+                }
+            }
+        }
 
         // Run transcription on blocking thread pool
         let run_res = tokio::task::spawn_blocking(move || {
@@ -605,6 +648,17 @@ mod tests {
             giga_err.contains("GigaAM"),
             "Expected gigaam loader error, got: {giga_err}"
         );
+
+        // transcribecpp dispatch: routes to transcribe-cpp loader and gives clear error on missing file
+        let tcpp_res = engine
+            .transcribe_samples("transcribecpp", PathBuf::from("nonexistent-model.gguf"), &samples, &options)
+            .await;
+        assert!(tcpp_res.is_err());
+        let tcpp_err = tcpp_res.unwrap_err();
+        assert!(
+            tcpp_err.contains("Model file not found"),
+            "Expected clear missing file error, got: {tcpp_err}"
+        );
     }
 
     #[tokio::test]
@@ -689,5 +743,55 @@ mod tests {
             hound::SampleFormat::Float => reader.samples::<f32>().map(|s| s.expect("sample")).collect(),
         };
         samples
+    }
+
+    #[test]
+    fn test_transcribecpp_engine_name_roundtrips_through_settings() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::storage::migrations::migrate(&conn).expect("migration must succeed");
+        crate::stt::pref_write(&conn, "tempo_speech_engine", &"transcribecpp".to_string()).unwrap();
+        let read_engine = crate::stt::pref_read_string(
+            &conn,
+            "tempo_speech_engine",
+            Some("alarmer_speech_engine"),
+            "local",
+        );
+        assert_eq!(read_engine, "transcribecpp");
+    }
+
+    #[tokio::test]
+    async fn test_real_nemotron_transcription() {
+        let nemotron_path = PathBuf::from(r"C:\Users\Administrator\.cache\huggingface\hub\models--handy-computer--nemotron-3.5-asr-streaming-0.6b-gguf\snapshots\6d44e540bc31b0de1dbe174a3cea87f53a7f22fb\nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf");
+        if !nemotron_path.is_file() {
+            eprintln!("Skipping test_real_nemotron_transcription: model file not found");
+            return;
+        }
+
+        let wav_path = PathBuf::from(r"D:\WORK\Alarmer\.tmp\ru16k.wav");
+        if !wav_path.is_file() {
+            eprintln!("Skipping test_real_nemotron_transcription: ru16k.wav not found");
+            return;
+        }
+
+        let pcm = read_wav_as_f32_mono(&wav_path);
+        let raw_m = Model::load(&nemotron_path).expect("load raw model");
+        println!("Nemotron arch: {:?}", raw_m.arch());
+        println!("Nemotron variant: {:?}", raw_m.variant());
+        let caps = raw_m.capabilities();
+        println!("Nemotron caps: {:?}", caps);
+
+        let engine = EngineManager::new();
+        let opts = RunOptions {
+            language: Some("ru".to_string()),
+            ..Default::default()
+        };
+        let res = engine
+            .transcribe_samples("transcribecpp", nemotron_path, &pcm, &opts)
+            .await;
+        println!("Nemotron transcription result: {res:?}");
+        assert!(res.is_ok(), "Nemotron transcription failed: {res:?}");
+        let text = res.unwrap();
+        println!("Nemotron text: {text:?}");
+        assert!(!text.trim().is_empty(), "Transcribed text should not be empty");
     }
 }

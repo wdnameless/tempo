@@ -4,7 +4,7 @@
 //! streaming sha256 verification in 64 KiB chunks, disk space safety checks,
 //! and unified listing across catalog, disk-cached, and custom GGUF models.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -61,7 +61,13 @@ pub struct ModelInfo {
     pub is_downloading: bool,
     pub partial_bytes: u64,
     pub is_custom: bool,
-    pub source: String, // "catalog" | "custom"
+    pub source: String, // "catalog" | "custom" | "detected"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deletable: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub streaming: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -93,6 +99,7 @@ pub struct ModelManager {
     models_dir: PathBuf,
     app_handle: Arc<Mutex<Option<AppHandle>>>,
     active_downloads: Arc<Mutex<HashMap<String, Arc<ActiveDownload>>>>,
+    extra_cache_dirs: Vec<PathBuf>,
 }
 
 impl ModelManager {
@@ -105,7 +112,17 @@ impl ModelManager {
             models_dir,
             app_handle: Arc::new(Mutex::new(app)),
             active_downloads: Arc::new(Mutex::new(HashMap::new())),
+            extra_cache_dirs: Vec::new(),
         }
+    }
+
+    pub fn with_extra_caches(mut self, extra_caches: Vec<PathBuf>) -> Self {
+        self.extra_cache_dirs = extra_caches;
+        self
+    }
+
+    pub fn add_extra_cache_dir(&mut self, dir: PathBuf) {
+        self.extra_cache_dirs.push(dir);
     }
 
     pub fn set_app_handle(&self, app: AppHandle) {
@@ -131,7 +148,7 @@ impl ModelManager {
         let _ = fs::create_dir_all(&self.models_dir);
         let mut results = Vec::new();
         let mut seen_filenames = HashMap::new();
-
+        let mut seen_paths = HashSet::new();
         let active = self.active_downloads.lock().await;
 
         // 1. Process catalog models
@@ -198,6 +215,13 @@ impl ModelManager {
             };
 
             let effective_downloading = is_downloading || (partial_bytes > 0 && !installed);
+            let is_streaming = cat.id.to_lowercase().contains("streaming")
+                || cat.name.to_lowercase().contains("streaming");
+
+            if let Some(p_str) = &path_str {
+                let p = PathBuf::from(p_str);
+                seen_paths.insert(fs::canonicalize(&p).unwrap_or(p));
+            }
 
             results.push(ModelInfo {
                 id: cat.id.clone(),
@@ -224,11 +248,17 @@ impl ModelManager {
                 partial_bytes,
                 is_custom: false,
                 source: "catalog".to_string(),
+                origin: Some("Tempo".to_string()),
+                deletable: Some(true),
+                streaming: Some(is_streaming),
             });
         }
         // Silero VAD catalog entry
         let silero_installed_path = self.installed_path(SILERO_VAD_MODEL_ID);
         let silero_installed = silero_installed_path.is_some();
+        if let Some(p) = &silero_installed_path {
+            seen_paths.insert(fs::canonicalize(p).unwrap_or_else(|_| p.clone()));
+        }
         // `active` is the guard taken at the top of this function: taking the
         // same mutex again here deadlocks, because a tokio Mutex is not reentrant.
         let (silero_is_downloading, silero_partial_bytes) = {
@@ -267,6 +297,9 @@ impl ModelManager {
             partial_bytes: silero_partial_bytes,
             is_custom: false,
             source: "catalog".to_string(),
+            origin: Some("Tempo".to_string()),
+            deletable: Some(true),
+            streaming: Some(false),
         });
         // Both spellings the Silero file has shipped under; discovery must not
         // report them as custom models.
@@ -297,6 +330,11 @@ impl ModelManager {
                     continue;
                 }
 
+                let canonical = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+                if seen_paths.contains(&canonical) {
+                    continue;
+                }
+                seen_paths.insert(canonical);
                 let size = path.metadata().map(|m| m.len()).unwrap_or(0);
                 let stem = path
                     .file_stem()
@@ -306,6 +344,7 @@ impl ModelManager {
                 let id = stem.to_string();
                 let name = clean_custom_name(stem);
                 let quant = extract_quant(stem);
+                let is_streaming = stem.to_lowercase().contains("streaming");
 
                 results.push(ModelInfo {
                     id,
@@ -332,11 +371,101 @@ impl ModelManager {
                     partial_bytes: 0,
                     is_custom: true,
                     source: "custom".to_string(),
+                    origin: Some("Tempo".to_string()),
+                    deletable: Some(true),
+                    streaming: Some(is_streaming),
                 });
             }
         }
 
+        // 3. Scan external caches: HF cache in priority order, then Handy models dir
+        self.scan_detected_models(&mut results, &mut seen_paths, &seen_filenames);
+
         results
+    }
+
+    fn scan_detected_models(
+        &self,
+        results: &mut Vec<ModelInfo>,
+        seen_paths: &mut HashSet<PathBuf>,
+        seen_filenames: &HashMap<String, String>,
+    ) {
+        let hf_caches = get_hf_cache_dirs(&self.extra_cache_dirs);
+        for cache_dir in hf_caches {
+            scan_hf_cache(&cache_dir, results, seen_paths, seen_filenames);
+        }
+
+        let handy_dirs = get_handy_models_dirs();
+        for handy_dir in handy_dirs {
+            scan_handy_dir(&handy_dir, results, seen_paths, seen_filenames);
+        }
+    }
+
+    fn find_in_detected_caches(&self, target: &str) -> Option<PathBuf> {
+        let trimmed = target.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        let cat_opt = catalog::find(trimmed);
+
+        // 1. Scan HF caches
+        let hf_caches = get_hf_cache_dirs(&self.extra_cache_dirs);
+        for cache_dir in hf_caches {
+            if !cache_dir.is_dir() {
+                continue;
+            }
+            let Ok(entries) = fs::read_dir(&cache_dir) else { continue; };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() { continue; }
+                let folder_name = entry.file_name().to_string_lossy().to_string();
+                let repo_id = if let Some(rest) = folder_name.strip_prefix("models--") {
+                    rest.replace("--", "/")
+                } else if path.join("snapshots").is_dir() {
+                    folder_name.replace("--", "/")
+                } else {
+                    continue;
+                };
+
+                let snapshots_dir = path.join("snapshots");
+                if !snapshots_dir.is_dir() { continue; }
+                let Ok(snap_entries) = fs::read_dir(&snapshots_dir) else { continue; };
+                for snap_entry in snap_entries.flatten() {
+                    let rev_path = snap_entry.path();
+                    if !rev_path.is_dir() { continue; }
+                    let Ok(files) = fs::read_dir(&rev_path) else { continue; };
+                    for file_entry in files.flatten() {
+                        let file_path = file_entry.path();
+                        if !file_path.is_file() { continue; }
+                        let fname = file_entry.file_name().to_string_lossy().to_string();
+                        if !fname.ends_with(".gguf") { continue; }
+
+                        if matches_model_target(&file_path, &fname, Some(&repo_id), trimmed, cat_opt) {
+                            return Some(file_path);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Scan Handy directory
+        let handy_dirs = get_handy_models_dirs();
+        for handy_dir in handy_dirs {
+            if !handy_dir.is_dir() { continue; }
+            let Ok(entries) = fs::read_dir(&handy_dir) else { continue; };
+            for entry in entries.flatten() {
+                let file_path = entry.path();
+                if !file_path.is_file() { continue; }
+                let fname = entry.file_name().to_string_lossy().to_string();
+
+                if matches_model_target(&file_path, &fname, None, trimmed, cat_opt) {
+                    return Some(file_path);
+                }
+            }
+        }
+
+        None
     }
 
     /// Resolves the on-disk file path for an installed model.
@@ -407,6 +536,10 @@ impl ModelManager {
                     }
                 }
             }
+        }
+        // 4. Scan detected caches
+        if let Some(p) = self.find_in_detected_caches(trimmed) {
+            return Some(p);
         }
 
         None
@@ -804,8 +937,10 @@ impl ModelManager {
             partial_bytes: 0,
             is_custom: true,
             source: "custom".to_string(),
+            origin: Some("Tempo".to_string()),
+            deletable: Some(true),
+            streaming: Some(stem.to_lowercase().contains("streaming")),
         };
-
         self.emit_event("stt://models-updated", serde_json::json!({}));
         Ok(info)
     }
@@ -1120,6 +1255,415 @@ async fn download_one_url(
     Ok(DownloadOutcome::Completed)
 }
 
+fn matches_model_target(
+    file_path: &Path,
+    fname: &str,
+    repo_id: Option<&str>,
+    trimmed: &str,
+    cat_opt: Option<&catalog::CatalogModel>,
+) -> bool {
+    let stem = file_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    if fname.eq_ignore_ascii_case(trimmed)
+        || stem.eq_ignore_ascii_case(trimmed)
+        || trimmed.ends_with(fname)
+    {
+        return true;
+    }
+    if let Some(repo) = repo_id {
+        if format!("{repo}/{fname}").eq_ignore_ascii_case(trimmed) {
+            return true;
+        }
+    }
+    if let Some(cat) = cat_opt {
+        if cat.files.iter().any(|f| f.filename.eq_ignore_ascii_case(fname)) {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn get_hf_cache_dirs(extra_dirs: &[PathBuf]) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    // 1. %HF_HOME% (and %HF_HOME%/hub)
+    if let Ok(hf_home) = std::env::var("HF_HOME") {
+        let p = PathBuf::from(&hf_home);
+        let hub = p.join("hub");
+        if hub.is_dir() {
+            dirs.push(hub);
+        }
+        if p.is_dir() {
+            dirs.push(p);
+        }
+    }
+
+    // 2. %HUGGINGFACE_HUB_CACHE%
+    if let Ok(hub_cache) = std::env::var("HUGGINGFACE_HUB_CACHE") {
+        let p = PathBuf::from(hub_cache);
+        if p.is_dir() {
+            dirs.push(p);
+        }
+    }
+
+    // 3. %USERPROFILE%\.cache\huggingface\hub or $HOME/.cache/huggingface/hub
+    if let Ok(profile) = std::env::var("USERPROFILE") {
+        let p = PathBuf::from(profile).join(".cache").join("huggingface").join("hub");
+        if p.is_dir() {
+            dirs.push(p);
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let p = PathBuf::from(home).join(".cache").join("huggingface").join("hub");
+        if p.is_dir() {
+            dirs.push(p);
+        }
+    }
+
+    // 4. Non-standard install caches:
+    for env_var in &["BUN_INSTALL_CACHE_DIR", "UV_CACHE_DIR"] {
+        if let Ok(val) = std::env::var(env_var) {
+            let p = PathBuf::from(val);
+            if let Some(parent) = p.parent() {
+                let hf = parent.join(".cache").join("huggingface").join("hub");
+                if hf.is_dir() {
+                    dirs.push(hf);
+                }
+            }
+        }
+    }
+
+    let non_standard = [
+        PathBuf::from(r"D:\npm-global\.cache\huggingface\hub"),
+        PathBuf::from(r"C:\npm-global\.cache\huggingface\hub"),
+    ];
+    for p in non_standard {
+        if p.is_dir() {
+            dirs.push(p);
+        }
+    }
+
+    // 5. Extra dirs (from struct or testing)
+    for p in extra_dirs {
+        dirs.push(p.clone());
+    }
+
+    // Deduplicate cache directory paths
+    let mut unique = Vec::new();
+    let mut seen = HashSet::new();
+    for d in dirs {
+        let key = fs::canonicalize(&d).unwrap_or_else(|_| d.clone());
+        if seen.insert(key) {
+            unique.push(d);
+        }
+    }
+
+    unique
+}
+
+pub fn get_handy_models_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let p = PathBuf::from(appdata).join("com.pais.handy").join("models");
+        if p.is_dir() {
+            dirs.push(p);
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let p1 = PathBuf::from(&home).join(".config").join("com.pais.handy").join("models");
+        if p1.is_dir() {
+            dirs.push(p1);
+        }
+        let p2 = PathBuf::from(&home).join("Library").join("Application Support").join("com.pais.handy").join("models");
+        if p2.is_dir() {
+            dirs.push(p2);
+        }
+    }
+    dirs
+}
+
+pub fn scan_hf_cache(
+    cache_root: &Path,
+    results: &mut Vec<ModelInfo>,
+    seen_paths: &mut HashSet<PathBuf>,
+    seen_filenames: &HashMap<String, String>,
+) {
+    if !cache_root.is_dir() {
+        return;
+    }
+
+    let entries = match fs::read_dir(cache_root) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let folder_name = entry.file_name().to_string_lossy().to_string();
+        let repo_id = if let Some(rest) = folder_name.strip_prefix("models--") {
+            rest.replace("--", "/")
+        } else if path.join("snapshots").is_dir() {
+            folder_name.replace("--", "/")
+        } else {
+            continue;
+        };
+
+        let is_handy = repo_id.starts_with("handy-computer/") || repo_id.contains("handy");
+        let origin = if is_handy { "Handy" } else { "HuggingFace cache" };
+
+        let snapshots_dir = path.join("snapshots");
+        if !snapshots_dir.is_dir() {
+            continue;
+        }
+
+        let snap_entries = match fs::read_dir(&snapshots_dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        for snap_entry in snap_entries.flatten() {
+            let rev_path = snap_entry.path();
+            if !rev_path.is_dir() {
+                continue;
+            }
+            let rev = snap_entry.file_name().to_string_lossy().to_string();
+
+            let files = match fs::read_dir(&rev_path) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            for file_entry in files.flatten() {
+                let file_path = file_entry.path();
+                let filename = file_entry.file_name().to_string_lossy().to_string();
+
+                if !filename.ends_with(".gguf") || filename.ends_with(".part") {
+                    continue;
+                }
+
+                if !file_path.is_file() {
+                    continue;
+                }
+
+                let canonical = fs::canonicalize(&file_path).unwrap_or_else(|_| file_path.clone());
+                if seen_paths.contains(&canonical) {
+                    continue;
+                }
+
+                // If catalog already accounts for this file:
+                if let Some(cat_id) = seen_filenames.get(&filename) {
+                    seen_paths.insert(canonical);
+                    if let Some(cat_model) = results.iter_mut().find(|m| m.id == *cat_id) {
+                        if !cat_model.installed {
+                            cat_model.installed = true;
+                            cat_model.path = Some(file_path.to_string_lossy().to_string());
+                            cat_model.deletable = Some(false);
+                            cat_model.origin = Some(origin.to_string());
+                        }
+                    }
+                    continue;
+                }
+
+                // Avoid duplicate listing if already discovered
+                if results.iter().any(|m| (m.filename == filename && m.source == "detected") || m.path.as_deref() == Some(file_path.to_str().unwrap_or(""))) {
+                    seen_paths.insert(canonical);
+                    continue;
+                }
+
+                seen_paths.insert(canonical);
+
+                let size = file_path.metadata().map(|m| m.len()).unwrap_or(0);
+                let stem = file_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&filename);
+
+                let id = if results.iter().any(|m| m.id == stem) {
+                    format!("{}/{}", repo_id, filename)
+                } else {
+                    stem.to_string()
+                };
+
+                let name = clean_custom_name(stem);
+                let quant = extract_quant(stem);
+                let stem_lower = stem.to_lowercase();
+                let is_streaming = stem_lower.contains("streaming") || filename.to_lowercase().contains("streaming");
+
+                let languages = if stem_lower.contains("nemotron") {
+                    vec!["ru".to_string(), "en".to_string()]
+                } else if stem_lower.contains("parakeet") {
+                    vec!["en".to_string(), "ru".to_string()]
+                } else if stem_lower.contains(".en") || stem_lower.contains("-en") {
+                    vec!["en".to_string()]
+                } else {
+                    vec!["multilingual".to_string()]
+                };
+                let language_count = languages.len() as u32;
+
+                let (speed_score, accuracy_score) = if stem_lower.contains("nemotron") {
+                    (0.90, 0.92)
+                } else if stem_lower.contains("parakeet") {
+                    (0.95, 0.90)
+                } else {
+                    (0.70, 0.70)
+                };
+
+                let parameters = if stem.contains("0.6b") || stem.contains("0.6B") {
+                    "0.6B".to_string()
+                } else if stem.contains("0.5b") || stem.contains("0.5B") {
+                    "0.5B".to_string()
+                } else if stem.contains("1.5b") || stem.contains("1.5B") {
+                    "1.5B".to_string()
+                } else if stem.contains("tiny") {
+                    "39M".to_string()
+                } else if stem.contains("base") {
+                    "74M".to_string()
+                } else if stem.contains("small") {
+                    "244M".to_string()
+                } else if stem.contains("medium") {
+                    "769M".to_string()
+                } else if stem.contains("large") {
+                    "1550M".to_string()
+                } else {
+                    "Unknown".to_string()
+                };
+
+                results.push(ModelInfo {
+                    id,
+                    name,
+                    engine: "transcribecpp".to_string(),
+                    description: format!("From HuggingFace cache: {}", repo_id),
+                    filename: filename.clone(),
+                    quant: quant.clone(),
+                    quants: vec![quant],
+                    bytes: size,
+                    sha256: None,
+                    revision: Some(rev.clone()),
+                    languages,
+                    language_count,
+                    speed_score,
+                    accuracy_score,
+                    parameters,
+                    recommended: false,
+                    supports_translation: true,
+                    supports_language_detect: true,
+                    installed: true,
+                    path: Some(file_path.to_string_lossy().to_string()),
+                    is_downloading: false,
+                    partial_bytes: 0,
+                    is_custom: false,
+                    source: "detected".to_string(),
+                    origin: Some(origin.to_string()),
+                    deletable: Some(false),
+                    streaming: Some(is_streaming),
+                });
+            }
+        }
+    }
+}
+
+pub fn scan_handy_dir(
+    handy_dir: &Path,
+    results: &mut Vec<ModelInfo>,
+    seen_paths: &mut HashSet<PathBuf>,
+    seen_filenames: &HashMap<String, String>,
+) {
+    if !handy_dir.is_dir() {
+        return;
+    }
+
+    let entries = match fs::read_dir(handy_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let file_path = entry.path();
+        if !file_path.is_file() {
+            continue;
+        }
+
+        let filename = entry.file_name().to_string_lossy().to_string();
+        if (!filename.ends_with(".gguf") && !filename.ends_with(".bin")) || filename.ends_with(".part") {
+            continue;
+        }
+
+        let canonical = fs::canonicalize(&file_path).unwrap_or_else(|_| file_path.clone());
+        if seen_paths.contains(&canonical) {
+            continue;
+        }
+
+        if let Some(cat_id) = seen_filenames.get(&filename) {
+            seen_paths.insert(canonical);
+            if let Some(cat_model) = results.iter_mut().find(|m| m.id == *cat_id) {
+                if !cat_model.installed {
+                    cat_model.installed = true;
+                    cat_model.path = Some(file_path.to_string_lossy().to_string());
+                    cat_model.deletable = Some(false);
+                    cat_model.origin = Some("Handy".to_string());
+                }
+            }
+            continue;
+        }
+
+        if results.iter().any(|m| (m.filename == filename && m.source == "detected") || m.path.as_deref() == Some(file_path.to_str().unwrap_or(""))) {
+            seen_paths.insert(canonical);
+            continue;
+        }
+
+        seen_paths.insert(canonical);
+
+        let size = file_path.metadata().map(|m| m.len()).unwrap_or(0);
+        let stem = file_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&filename);
+
+        let id = if results.iter().any(|m| m.id == stem) {
+            format!("handy/{}", filename)
+        } else {
+            stem.to_string()
+        };
+
+        let name = clean_custom_name(stem);
+        let quant = extract_quant(stem);
+        let stem_lower = stem.to_lowercase();
+        let is_streaming = stem_lower.contains("streaming") || filename.to_lowercase().contains("streaming");
+
+        results.push(ModelInfo {
+            id,
+            name,
+            engine: "transcribecpp".to_string(),
+            description: "From Handy models directory".to_string(),
+            filename: filename.clone(),
+            quant: quant.clone(),
+            quants: vec![quant],
+            bytes: size,
+            sha256: None,
+            revision: None,
+            languages: vec!["multilingual".to_string()],
+            language_count: 0,
+            speed_score: 0.70,
+            accuracy_score: 0.70,
+            parameters: "Custom".to_string(),
+            recommended: false,
+            supports_translation: true,
+            supports_language_detect: true,
+            installed: true,
+            path: Some(file_path.to_string_lossy().to_string()),
+            is_downloading: false,
+            partial_bytes: 0,
+            is_custom: false,
+            source: "detected".to_string(),
+            origin: Some("Handy".to_string()),
+            deletable: Some(false),
+            streaming: Some(is_streaming),
+        });
+    }
+}
+
 fn clean_custom_name(stem: &str) -> String {
     let clean = stem.replace(['-', '_'], " ");
     let mut words = Vec::new();
@@ -1430,5 +1974,151 @@ mod tests {
         let res = mgr.start_download("gigaam-v3", None).await;
         assert!(res.is_ok());
         assert!(!models_dir.join("giga-am-v3-int8.part").exists(), "Should not create .part file for installed model");
+    }
+
+    #[tokio::test]
+    async fn fake_hf_cache_discovered_with_origin_and_deletable_false() {
+        let dir = tempdir().unwrap();
+        let models_dir = dir.path().join("models");
+        let fake_cache = dir.path().join("hf_cache");
+
+        let repo = fake_cache.join("models--handy-computer--nemotron-test-streaming-0.6b-gguf");
+        let snap = repo.join("snapshots").join("rev123");
+        fs::create_dir_all(&snap).unwrap();
+        let model_file = snap.join("nemotron-test-streaming-0.6b-Q8_0.gguf");
+        fs::write(&model_file, b"fake nemotron model content").unwrap();
+
+        let mgr = ModelManager::new(models_dir)
+            .with_extra_caches(vec![fake_cache]);
+        let list = mgr.list().await;
+
+        let detected = list
+            .iter()
+            .find(|m| m.filename == "nemotron-test-streaming-0.6b-Q8_0.gguf")
+            .expect("detected nemotron model not found");
+
+        assert_eq!(detected.source, "detected");
+        assert_eq!(detected.origin, Some("Handy".to_string()));
+        assert_eq!(detected.deletable, Some(false));
+        assert_eq!(detected.engine, "transcribecpp");
+        assert!(detected.installed);
+        assert_eq!(detected.streaming, Some(true));
+        assert_eq!(detected.quant, "Q8_0");
+        assert_eq!(
+            detected.path,
+            Some(model_file.to_string_lossy().to_string())
+        );
+
+        // Also verify installed_path resolves it
+        let resolved = mgr
+            .installed_path(&detected.id)
+            .expect("should resolve detected model path");
+        assert_eq!(resolved, model_file);
+    }
+
+    #[tokio::test]
+    async fn same_file_reached_through_two_cache_paths_listed_once() {
+        let dir = tempdir().unwrap();
+        let models_dir = dir.path().join("models");
+        let cache1 = dir.path().join("cache1");
+        let cache2 = dir.path().join("cache2");
+
+        let repo1 = cache1.join("models--handy-computer--parakeet-test-0.6b-v3-gguf");
+        let snap1 = repo1.join("snapshots").join("rev1");
+        fs::create_dir_all(&snap1).unwrap();
+        let file1 = snap1.join("parakeet-test-0.6b-v3-Q8_0.gguf");
+        fs::write(&file1, b"parakeet model bytes").unwrap();
+
+        let repo2 = cache2.join("models--handy-computer--parakeet-test-0.6b-v3-gguf");
+        let snap2 = repo2.join("snapshots").join("rev1");
+        fs::create_dir_all(&snap2).unwrap();
+        let file2 = snap2.join("parakeet-test-0.6b-v3-Q8_0.gguf");
+        fs::write(&file2, b"parakeet model bytes").unwrap();
+
+        let mgr = ModelManager::new(models_dir)
+            .with_extra_caches(vec![cache1, cache2]);
+        let list = mgr.list().await;
+
+        let count = list
+            .iter()
+            .filter(|m| m.filename == "parakeet-test-0.6b-v3-Q8_0.gguf")
+            .count();
+        assert_eq!(count, 1, "model should only be listed once across two caches");
+    }
+
+    #[tokio::test]
+    async fn missing_cache_does_not_error() {
+        let dir = tempdir().unwrap();
+        let models_dir = dir.path().join("models");
+        let missing = dir.path().join("nonexistent_cache_folder");
+
+        let mgr = ModelManager::new(models_dir).with_extra_caches(vec![missing]);
+        let list = mgr.list().await;
+        assert!(!list.is_empty(), "list should succeed even when cache dir is missing");
+    }
+
+    #[tokio::test]
+    async fn detected_model_origin_huggingface_cache() {
+        let dir = tempdir().unwrap();
+        let models_dir = dir.path().join("models");
+        let cache = dir.path().join("hf_cache");
+
+        let repo = cache.join("models--some-org--custom-asr-gguf");
+        let snap = repo.join("snapshots").join("rev99");
+        fs::create_dir_all(&snap).unwrap();
+        let model_file = snap.join("custom-asr-model-Q4_K_M.gguf");
+        fs::write(&model_file, b"custom asr bytes").unwrap();
+
+        let mgr = ModelManager::new(models_dir).with_extra_caches(vec![cache]);
+        let list = mgr.list().await;
+
+        let detected = list
+            .iter()
+            .find(|m| m.filename == "custom-asr-model-Q4_K_M.gguf")
+            .expect("detected custom asr not found");
+
+        assert_eq!(detected.source, "detected");
+        assert_eq!(detected.origin, Some("HuggingFace cache".to_string()));
+        assert_eq!(detected.deletable, Some(false));
+        assert_eq!(detected.engine, "transcribecpp");
+    }
+
+    #[tokio::test]
+    async fn catalog_model_not_double_listed_when_present_in_hf_cache() {
+        let dir = tempdir().unwrap();
+        let models_dir = dir.path().join("models");
+        let cache = dir.path().join("hf_cache");
+
+        // Put whisper-tiny default quant file in fake cache
+        let repo = cache.join("models--handy-computer--whisper-tiny-gguf");
+        let snap = repo.join("snapshots").join("rev_tiny");
+        fs::create_dir_all(&snap).unwrap();
+        let model_file = snap.join("whisper-tiny-Q8_0.gguf");
+        fs::write(&model_file, b"whisper tiny bytes").unwrap();
+
+        let mgr = ModelManager::new(models_dir).with_extra_caches(vec![cache]);
+        let list = mgr.list().await;
+
+        // Verify whisper-tiny is only listed once
+        let tiny_matches: Vec<_> = list
+            .iter()
+            .filter(|m| m.id == "whisper-tiny" || m.filename == "whisper-tiny-Q8_0.gguf")
+            .collect();
+        assert_eq!(
+            tiny_matches.len(),
+            1,
+            "whisper-tiny must not be double listed: {:?}",
+            tiny_matches
+        );
+
+        let tiny = tiny_matches[0];
+        assert!(tiny.installed);
+        assert_eq!(tiny.source, "catalog");
+        assert_eq!(tiny.origin, Some("Handy".to_string()));
+        assert_eq!(tiny.deletable, Some(false));
+        assert_eq!(
+            tiny.path,
+            Some(model_file.to_string_lossy().to_string())
+        );
     }
 }
