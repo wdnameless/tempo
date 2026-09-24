@@ -256,36 +256,50 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
 
       {ringing && (
         <div
-          className="fixed inset-0 z-[60] flex flex-col items-center justify-center p-5"
-          style={{ backgroundColor: theme.accent }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Будильник: ${ringing.label || ringing.title || ringing.time}`}
+          className="fixed inset-0 z-[60] flex flex-col items-center justify-center p-6 bg-[var(--bg,#050505)]/95 backdrop-blur-2xl select-none"
+          style={{
+            color: theme.text || 'var(--text)',
+          }}
         >
           <style>{`
-            @keyframes alarmer-pulse { 0%,100% { opacity: 1 } 50% { opacity: .55 } }
+            @keyframes alarmer-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .65; transform: scale(1.08); } }
             @media (prefers-reduced-motion: reduce) {
               .alarmer-pulse { animation: none !important; }
             }
             .alarmer-pulse { animation: alarmer-pulse 1.4s ease-in-out infinite; }
           `}</style>
 
-          <Bell size={30} color="#0a0a0a" className="alarmer-pulse mb-5" />
+          <div
+            className="flex items-center justify-center w-16 h-16 rounded-full border mb-6 alarmer-pulse shadow-lg"
+            style={{
+              backgroundColor: 'var(--elevated)',
+              borderColor: 'var(--border)',
+            }}
+          >
+            <Bell size={30} style={{ color: theme.accent || 'var(--accent)' }} />
+          </div>
 
-          {/* Dark-on-warm: the measured contrast here is 7.59:1, where white on
-              the warm surface is only 2.61:1. */}
-          <span className="text-[52px] font-bold leading-none tabular-nums" style={{ color: '#0a0a0a' }}>
+          <span
+            className="text-[64px] sm:text-[76px] font-mono font-bold leading-none tabular-nums tracking-tight"
+            style={{ color: theme.text || 'var(--text)' }}
+          >
             {ringing.time}
           </span>
 
           <span
-            className="mt-2 text-sm font-semibold text-center max-w-[280px]"
-            style={{ color: 'rgba(10,10,10,0.82)' }}
+            className="mt-3 text-base sm:text-lg font-semibold text-center max-w-[300px] truncate"
+            style={{ color: theme.text || 'var(--text)' }}
           >
             {ringing.label || ringing.title}
           </span>
 
           {ringing.voicePrompt && (
             <span
-              className="mt-3 text-[11px] text-center max-w-[280px] leading-relaxed"
-              style={{ color: 'rgba(10,10,10,0.62)' }}
+              className="mt-2 text-xs text-center max-w-[280px] leading-relaxed"
+              style={{ color: theme.subtext || 'var(--text-muted)' }}
             >
               {ringing.voicePrompt}
             </span>
@@ -293,21 +307,25 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
 
           {ringing.note && (
             <span
-              className="mt-1.5 text-[11px] text-center max-w-[280px] leading-relaxed font-medium"
-              style={{ color: 'rgba(10,10,10,0.72)' }}
+              className="mt-1.5 text-xs text-center max-w-[280px] leading-relaxed italic"
+              style={{ color: theme.subtext || 'var(--text-muted)' }}
             >
               {ringing.note}
             </span>
           )}
 
-
-          <div className="flex items-center space-x-2 mt-4">
+          <div className="flex items-center space-x-2.5 mt-8">
             {[5, 10, 15].map((mins) => (
               <button
                 key={mins}
+                type="button"
                 onClick={() => snooze(mins)}
-                className="px-4 py-2.5 rounded-lg text-xs font-semibold active:scale-95 transition-transform"
-                style={{ color: '#0a0a0a', border: '1px solid rgba(10,10,10,0.28)' }}
+                className="px-4 py-2.5 rounded-[10px] text-xs font-semibold active:scale-95 transition-transform cursor-pointer border"
+                style={{
+                  backgroundColor: 'var(--elevated)',
+                  borderColor: 'var(--border)',
+                  color: theme.text || 'var(--text)',
+                }}
                 title={`Отложить на ${mins} минут`}
               >
                 +{mins} мин
@@ -316,9 +334,13 @@ export const AlarmCenter: React.FC<AlarmCenterProps> = ({
           </div>
 
           <button
+            type="button"
             onClick={dismiss}
-            className="mt-3 w-full max-w-[280px] py-3.5 rounded-lg text-xs font-bold uppercase tracking-widest active:scale-[0.97] transition-transform"
-            style={{ backgroundColor: '#0a0a0a', color: theme.accent }}
+            className="mt-3.5 w-full max-w-[280px] py-3.5 rounded-[12px] text-xs font-bold uppercase tracking-widest active:scale-[0.97] transition-transform cursor-pointer shadow-md"
+            style={{
+              backgroundColor: theme.accent || 'var(--accent)',
+              color: 'var(--bg, #000)',
+            }}
           >
             Остановить
           </button>

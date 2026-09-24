@@ -169,19 +169,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             ? `Следующий будильник: ${nextAlarm.time} ${nextAlarm.label}`
             : 'Перейти к будильникам'
         }
-        className="absolute top-4 left-4 z-20 flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/10 bg-black/40 backdrop-blur-xl text-xs text-white/80 hover:text-white hover:border-white/25 hover:bg-black/60 transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40"
+        className="absolute top-4 left-4 z-20 flex items-center gap-2 px-3 py-1.5 rounded-[12px] border border-[var(--border)] bg-[var(--surface)]/80 hover:bg-[var(--elevated)] backdrop-blur-md text-xs text-[var(--text-muted)] hover:text-[var(--text)] transition-colors focus-visible:outline-none focus-visible:border-[var(--accent)] shadow-sm cursor-pointer"
       >
-        <Bell className="w-3.5 h-3.5 text-white/70" />
+        <Bell className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
         {nextAlarm ? (
           <>
-            <span className="font-mono font-medium text-white">{nextAlarm.time}</span>
-            <span className="opacity-60 truncate max-w-[130px]">{nextAlarm.label}</span>
-            <ChevronRight className="w-3.5 h-3.5 opacity-40 ml-0.5" />
+            <span className="font-mono font-semibold text-[var(--text)]">{nextAlarm.time}</span>
+            <span className="text-[var(--text-muted)] truncate max-w-[130px]">{nextAlarm.label}</span>
+            <ChevronRight className="w-3.5 h-3.5 text-[var(--text-faint)] shrink-0 ml-0.5" />
           </>
         ) : (
           <>
-            <span className="opacity-60">Нет активных будильников</span>
-            <ChevronRight className="w-3.5 h-3.5 opacity-40 ml-0.5" />
+            <span className="text-[var(--text-muted)]">Нет активных будильников</span>
+            <ChevronRight className="w-3.5 h-3.5 text-[var(--text-faint)] shrink-0 ml-0.5" />
           </>
         )}
       </button>

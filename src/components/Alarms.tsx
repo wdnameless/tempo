@@ -4,9 +4,7 @@ import {
   Trash2,
   Bell,
   Clock,
-  Check,
-  X,
-  StickyNote,
+  Edit2,
 } from 'lucide-react';
 import type { ThemeColors, AlarmItem, AISettings, DynamicUIConfig } from '../types';
 import { I18nService, type Translations } from '../services/i18n';
@@ -22,8 +20,9 @@ import {
   toAlarm,
 } from '../services/alarms';
 import { onDataChanged } from '../services/appEvents';
-import { Card, EmptyState, Field, Toggle } from './ui';
+import { Card, EmptyState, Toggle } from './ui';
 import { AlarmAudio } from './AlarmAudio';
+import { AlarmEditorSheet } from './AlarmEditorSheet';
 
 /** Short weekday labels, indexed 0 = Sunday to match stored format */
 export const WEEKDAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'] as const;
@@ -37,6 +36,7 @@ export interface AlarmsProps {
   dynamicUi?: DynamicUIConfig;
 }
 
+/** Formats the next firing date into human-readable Russian string */
 export function formatNextFiring(nextIso: string | undefined, disabled: boolean, t: Translations): string {
   if (disabled) return t.alarmsDisabled;
   if (!nextIso) return t.alarmsNever;
@@ -72,27 +72,56 @@ export function formatNextFiring(nextIso: string | undefined, disabled: boolean,
   }
 }
 
+/** Formats repeat mode and days/date/interval into a concise human-readable summary */
+export function formatRepeatSummary(
+  alarm: { repeat: string; days?: number[]; date?: string | null; intervalMinutes?: number | null },
+  t: Translations,
+): string {
+  switch (alarm.repeat) {
+    case 'once':
+      return t.alarmsRepeatOnce;
+    case 'daily':
+      return t.alarmsRepeatDaily;
+    case 'days': {
+      const days = alarm.days ?? [];
+      if (days.length === 0) return t.alarmsRepeatDays;
+      if (days.length === 7) return t.alarmsRepeatDaily;
+      const sorted = [...days].sort((a, b) => a - b);
+      if (sorted.length === 5 && sorted.every((d, i) => d === i + 1)) {
+        return 'По будням';
+      }
+      if (sorted.length === 2 && sorted[0] === 0 && sorted[1] === 6) {
+        return 'По выходным';
+      }
+      return sorted.map((d) => WEEKDAY_LABELS[d] || String(d)).join(', ');
+    }
+    case 'date':
+      return alarm.date || t.alarmsRepeatDate;
+    case 'interval':
+      return `${t.alarmsIntervalEvery} ${alarm.intervalMinutes || 60} ${t.alarmsIntervalMinutes}`;
+    default:
+      return alarm.repeat;
+  }
+}
+
 function toAlarmItem(alarm: Alarm): AlarmItem {
-  // SAFETY: AlarmItem and Alarm have compatible field shapes for alarm projection
   return {
     id: alarm.id,
     title: alarm.label,
     label: alarm.label,
     time: alarm.time,
-    repeat: alarm.repeat as AlarmItem['repeat'],
+    repeat: alarm.repeat,
     days: alarm.days,
+    date: alarm.date || undefined,
+    intervalMinutes: alarm.intervalMinutes || undefined,
+    windowStart: alarm.windowStart || undefined,
+    windowEnd: alarm.windowEnd || undefined,
     enabled: alarm.enabled,
     sound: alarm.sound,
     voicePrompt: alarm.voicePrompt || undefined,
     note: alarm.note || undefined,
     ...(alarm.scheduleId ? { scheduleId: alarm.scheduleId } : {}),
-    ...(alarm.date ? { date: alarm.date } : {}),
-    ...(alarm.intervalMinutes !== null && alarm.intervalMinutes !== undefined
-      ? { intervalMinutes: alarm.intervalMinutes }
-      : {}),
-    ...(alarm.windowStart ? { windowStart: alarm.windowStart } : {}),
-    ...(alarm.windowEnd ? { windowEnd: alarm.windowEnd } : {}),
-  } as unknown as AlarmItem;
+  };
 }
 
 export const Alarms: React.FC<AlarmsProps> = ({
@@ -118,26 +147,9 @@ export const Alarms: React.FC<AlarmsProps> = ({
   // Clock
   const [currentTime, setCurrentTime] = useState('');
 
-  // Form states: Create / Edit in ONE place
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [label, setLabel] = useState('Утренняя разминка');
-  const [time, setTime] = useState('08:00');
-  const [repeat, setRepeat] = useState<AlarmRepeat>('days');
-  const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
-  const [date, setDate] = useState<string>(() => {
-    const d = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  });
-  const [intervalMinutes, setIntervalMinutes] = useState<number>(60);
-  const [windowStart, setWindowStart] = useState<string>('08:00');
-  const [windowEnd, setWindowEnd] = useState<string>('20:00');
-  const [note, setNote] = useState<string>('');
-
-  // Note inline editing state for backwards compatibility with tests
-  const [noteEditingId, setNoteEditingId] = useState<string | null>(null);
-  const [inlineNoteValue, setInlineNoteValue] = useState<string>('');
-  const [inlineNoteOriginal, setInlineNoteOriginal] = useState<string>('');
+  // Modal sheet state
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [selectedAlarm, setSelectedAlarm] = useState<Alarm | null>(null);
 
   const fetchPreviews = useCallback(async (list: Alarm[]) => {
     try {
@@ -165,8 +177,7 @@ export const Alarms: React.FC<AlarmsProps> = ({
     }
   }, [fetchPreviews, onUpdateAlarms]);
 
-  // Loads through the promise itself, not through a callback that sets state:
-  // the repo's lint forbids a synchronous setState reachable from an effect body.
+  // Initial load
   useEffect(() => {
     let active = true;
     const indexPreviews = (list: AlarmPreview[]) => {
@@ -209,7 +220,7 @@ export const Alarms: React.FC<AlarmsProps> = ({
     const tick = () => {
       const d = new Date();
       setCurrentTime(
-        `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+        `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
       );
     };
     tick();
@@ -217,65 +228,25 @@ export const Alarms: React.FC<AlarmsProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  const toggleDay = (dayIndex: number) => {
-    setDays((prev) => {
-      if (prev.includes(dayIndex)) {
-        if (prev.length === 1) return prev; // Do not allow empty days
-        return prev.filter((d) => d !== dayIndex);
-      }
-      return [...prev, dayIndex].sort((a, b) => a - b);
-    });
+  const handleOpenCreate = () => {
+    setSelectedAlarm(null);
+    setIsSheetOpen(true);
   };
 
-  const resetForm = () => {
-    setEditingId(null);
-    setLabel('Утренняя разминка');
-    setTime('08:00');
-    setRepeat('days');
-    setDays([1, 2, 3, 4, 5]);
-    const d = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    setDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
-    setIntervalMinutes(60);
-    setWindowStart('08:00');
-    setWindowEnd('20:00');
-    setNote('');
+  const handleOpenEdit = (alarm: Alarm) => {
+    setSelectedAlarm(alarm);
+    setIsSheetOpen(true);
   };
 
-  const handleEditClick = (alarm: Alarm) => {
-    setEditingId(alarm.id);
-    setLabel(alarm.label);
-    setTime(alarm.time);
-    setRepeat(alarm.repeat);
-    setDays(alarm.days && alarm.days.length > 0 ? alarm.days : [1, 2, 3, 4, 5]);
-    if (alarm.date) setDate(alarm.date);
-    if (alarm.intervalMinutes) setIntervalMinutes(alarm.intervalMinutes);
-    if (alarm.windowStart) setWindowStart(alarm.windowStart);
-    if (alarm.windowEnd) setWindowEnd(alarm.windowEnd);
-    setNote(alarm.note || '');
+  const handleCloseSheet = () => {
+    setIsSheetOpen(false);
+    setSelectedAlarm(null);
   };
 
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const alarmData: Alarm = {
-      id: editingId || `alarm_${Date.now()}`,
-      label: label.trim() || t.alarmsNew,
-      time,
-      repeat,
-      days: repeat === 'days' ? days : [],
-      date: repeat === 'date' ? date : null,
-      intervalMinutes: repeat === 'interval' ? Number(intervalMinutes) || 60 : null,
-      windowStart: repeat === 'interval' ? windowStart : null,
-      windowEnd: repeat === 'interval' ? windowEnd : null,
-      enabled: true,
-      sound: 'gentle',
-      note: note.trim() || null,
-    };
-
-    // Update parent
-    const updatedList = editingId
-      ? effectiveAlarms.map((a) => (a.id === editingId ? alarmData : a))
+  const handleSaveAlarm = async (alarmData: Alarm) => {
+    const isEdit = effectiveAlarms.some((a) => a.id === alarmData.id);
+    const updatedList = isEdit
+      ? effectiveAlarms.map((a) => (a.id === alarmData.id ? alarmData : a))
       : [alarmData, ...effectiveAlarms];
 
     setLocalAlarms(updatedList);
@@ -283,8 +254,8 @@ export const Alarms: React.FC<AlarmsProps> = ({
 
     await saveAlarm(alarmData);
     void fetchPreviews(updatedList);
-    resetForm();
   };
+
   const createQuickAlarm = async (labelVal: string, timeVal: string, repeatVal: AlarmRepeat) => {
     const alarmData: Alarm = {
       id: `alarm_${Date.now()}`,
@@ -324,7 +295,7 @@ export const Alarms: React.FC<AlarmsProps> = ({
 
   const handleToggle = async (id: string, currentEnabled: boolean) => {
     const updated = effectiveAlarms.map((a) =>
-      a.id === id ? { ...a, enabled: !currentEnabled } : a
+      a.id === id ? { ...a, enabled: !currentEnabled } : a,
     );
     setLocalAlarms(updated);
     onUpdateAlarms?.(updated.map(toAlarmItem));
@@ -338,60 +309,8 @@ export const Alarms: React.FC<AlarmsProps> = ({
     onUpdateAlarms?.(updated.map(toAlarmItem));
     await apiDeleteAlarm(id);
     void fetchPreviews(updated);
-    if (editingId === id) resetForm();
   };
 
-  // In-place edits for backwards compatibility with tests
-  const editAlarmTime = async (alarm: Alarm, newTimeVal: string) => {
-    if (!/^\d{2}:\d{2}$/.test(newTimeVal)) return;
-    const updated = { ...alarm, time: newTimeVal };
-    const list = effectiveAlarms.map((a) => (a.id === alarm.id ? updated : a));
-    setLocalAlarms(list);
-    onUpdateAlarms?.(list.map(toAlarmItem));
-    await saveAlarm(updated);
-    void fetchPreviews(list);
-  };
-
-  const toggleAlarmDay = async (alarm: Alarm, dayIndex: number) => {
-    const curDays = alarm.days ?? [];
-    let nextDays: number[];
-    if (curDays.includes(dayIndex)) {
-      if (curDays.length === 1) return; // Prevent removing the last day
-      nextDays = curDays.filter((d) => d !== dayIndex);
-    } else {
-      nextDays = [...curDays, dayIndex].sort((a, b) => a - b);
-    }
-    const updated = { ...alarm, days: nextDays, repeat: 'days' as const };
-    const list = effectiveAlarms.map((a) => (a.id === alarm.id ? updated : a));
-    setLocalAlarms(list);
-    onUpdateAlarms?.(list.map(toAlarmItem));
-    await saveAlarm(updated);
-    void fetchPreviews(list);
-  };
-
-  const startNoteEdit = (alarm: Alarm) => {
-    setNoteEditingId(alarm.id);
-    setInlineNoteValue(alarm.note || '');
-    setInlineNoteOriginal(alarm.note || '');
-  };
-
-  const commitNoteEdit = async (alarm: Alarm, overrideVal?: string) => {
-    const raw = overrideVal !== undefined ? overrideVal : inlineNoteValue;
-    const val = raw.trim();
-    const updated = { ...alarm, note: val || null };
-    const list = effectiveAlarms.map((a) => (a.id === alarm.id ? updated : a));
-    setLocalAlarms(list);
-    onUpdateAlarms?.(list.map(toAlarmItem));
-    setNoteEditingId(null);
-    await saveAlarm(updated);
-  };
-
-  const cancelNoteEdit = () => {
-    setNoteEditingId(null);
-    setInlineNoteValue(inlineNoteOriginal);
-  };
-
-  // Both shapes carry an optional scheduleId; `Alarm` is the narrowed one.
   const isDerived = (a: Alarm | AlarmItem) => Boolean(a.scheduleId);
 
   return (
@@ -402,7 +321,7 @@ export const Alarms: React.FC<AlarmsProps> = ({
       }}
     >
       {/* Header bar */}
-      <div className="flex items-center justify-between gap-2 select-none">
+      <div className="flex items-center justify-between gap-3 select-none">
         <div className="flex items-center gap-2">
           <Bell size={18} style={{ color: 'var(--accent)' }} />
           <h2 className="text-base font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
@@ -420,223 +339,97 @@ export const Alarms: React.FC<AlarmsProps> = ({
           </span>
         </div>
 
-        {dynamicUi?.layout?.showCurrentTimeBadge !== false && (
-          <div
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] text-xs font-mono font-medium border"
+        <div className="flex items-center gap-2">
+          {dynamicUi?.layout?.showCurrentTimeBadge !== false && (
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] text-xs font-mono font-medium border"
+              style={{
+                backgroundColor: 'var(--elevated)',
+                borderColor: 'var(--border)',
+                color: 'var(--text-muted)',
+              }}
+            >
+              <Clock size={13} />
+              <span>{currentTime || '--:--'}</span>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            data-testid="new-alarm-btn"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-semibold shadow-sm transition-transform active:scale-95 cursor-pointer"
             style={{
-              backgroundColor: 'var(--elevated)',
-              borderColor: 'var(--border)',
-              color: 'var(--text-muted)',
+              backgroundColor: 'var(--accent)',
+              color: 'var(--bg, #000)',
             }}
+            title={t.alarmsNew}
+            aria-label={t.alarmsNew}
           >
-            <Clock size={13} />
-            <span>{currentTime || '--:--'}</span>
-          </div>
-        )}
+            <Plus size={14} />
+            <span>{t.alarmsNew}</span>
+          </button>
+        </div>
       </div>
-      {/* Alarm Sound Settings (R13 / Overhaul) */}
+
+      {/* Global Sound Settings (compact row) */}
       <AlarmAudio />
 
-      {/* Quick Actions Row */}
+      {/* Quick Presets (compact chips) */}
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={handleQuickIn30}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[14px] text-xs font-medium bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--text)] transition-colors cursor-pointer"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-[10px] text-xs font-medium bg-[var(--surface)] hover:bg-[var(--elevated)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
           data-testid="quick-alarm-in-30"
         >
-          <Clock size={13} className="text-[var(--accent)]" />
+          <Clock size={12} className="text-[var(--accent)]" />
           <span>{t.alarmsQuickIn30}</span>
         </button>
         <button
           type="button"
           onClick={handleQuickTomorrow8}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[14px] text-xs font-medium bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--text)] transition-colors cursor-pointer"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-[10px] text-xs font-medium bg-[var(--surface)] hover:bg-[var(--elevated)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
           data-testid="quick-alarm-tomorrow-8"
         >
-          <Bell size={13} className="text-[var(--accent)]" />
+          <Bell size={12} className="text-[var(--accent)]" />
           <span>{t.alarmsQuickTomorrow8}</span>
         </button>
         <button
           type="button"
           onClick={handleQuickDaily730}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[14px] text-xs font-medium bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--text)] transition-colors cursor-pointer"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-[10px] text-xs font-medium bg-[var(--surface)] hover:bg-[var(--elevated)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer"
           data-testid="quick-alarm-daily-730"
         >
-          <Plus size={13} className="text-[var(--accent)]" />
+          <Plus size={12} className="text-[var(--accent)]" />
           <span>{t.alarmsQuickDaily730}</span>
         </button>
       </div>
 
-      {/* Unified Create / Edit Form in ONE place (R09 / R10) */}
-      <Card variant="surface" padding="md" className="space-y-3">
-        <div className="flex items-center justify-between pb-1 border-b border-[var(--border)]">
-          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            {editingId ? t.alarmsSave : t.alarmsNew}
-          </span>
-          {editingId && (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] flex items-center gap-1"
-            >
-              <X size={12} />
-              <span>{t.alarmsCancel}</span>
-            </button>
-          )}
-        </div>
+      {/* Reserved slot for AIScheduleIntake (Slice B integration seam) */}
+      <div id="ai-schedule-intake-slot" />
 
-        <form onSubmit={handleFormSubmit} className="space-y-3">
-          <div className="flex flex-col sm:flex-row gap-2">
-            {/* Time */}
-            <Field label={t.alarmsTime} className="shrink-0 sm:w-28">
-              <input
-                type="time"
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                required
-                className="w-full bg-[var(--elevated)] text-sm font-mono px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
-              />
-            </Field>
-
-            {/* Label */}
-            <Field label={t.alarmsLabel} className="flex-1">
-              <input
-                type="text"
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-                placeholder={t.alarmsLabelPlaceholder}
-                className="w-full bg-[var(--elevated)] text-sm px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
-              />
-            </Field>
-
-            {/* Repeat Mode Select (5 modes) */}
-            <Field label={t.alarmsNext} className="shrink-0 sm:w-36">
-              <select
-                value={repeat}
-                onChange={(e) => setRepeat(e.target.value as AlarmRepeat)}
-                title="Как часто звонить"
-                className="w-full bg-[var(--elevated)] text-xs px-2.5 py-2 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)] cursor-pointer"
-              >
-                <option value="once">{t.alarmsRepeatOnce}</option>
-                <option value="daily">{t.alarmsRepeatDaily}</option>
-                <option value="days">{t.alarmsRepeatDays}</option>
-                <option value="date">{t.alarmsRepeatDate}</option>
-                <option value="interval">{t.alarmsRepeatInterval}</option>
-              </select>
-            </Field>
-          </div>
-
-          {/* Conditional mode controls */}
-          {/* Weekday chips for 'days' */}
-          {repeat === 'days' && (
-            <Field label={t.alarmsRepeatDays}>
-              <div className="flex items-center gap-1 w-full flex-wrap sm:flex-nowrap">
-                {WEEKDAY_LABELS.map((wLabel, index) => {
-                  const active = days.includes(index);
-                  return (
-                    <button
-                      key={wLabel}
-                      type="button"
-                      onClick={() => toggleDay(index)}
-                      className="flex-1 min-w-[32px] h-7 rounded-[6px] text-xs font-semibold transition-colors border"
-                      style={{
-                        backgroundColor: active ? 'var(--accent)' : 'var(--elevated)',
-                        color: active ? 'var(--bg, #000)' : 'var(--text-muted)',
-                        borderColor: active ? 'var(--accent)' : 'var(--border)',
-                      }}
-                      title={`Звонить в ${wLabel}`}
-                      aria-pressed={active}
-                    >
-                      {wLabel}
-                    </button>
-                  );
-                })}
-              </div>
-            </Field>
-          )}
-
-          {/* Date picker for 'date' mode (R05) */}
-          {repeat === 'date' && (
-            <Field label={t.alarmsDate}>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                required
-                className="bg-[var(--elevated)] text-sm px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
-              />
-            </Field>
-          )}
-
-          {/* Interval settings for 'interval' mode (R06) */}
-          {repeat === 'interval' && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <Field label={`${t.alarmsIntervalEvery} (${t.alarmsIntervalMinutes})`}>
-                <input
-                  min="5"
-                  max="1440"
-                  step="5"
-                  value={intervalMinutes}
-                  onChange={(e) => setIntervalMinutes(Number(e.target.value) || 60)}
-                  className="w-full bg-[var(--elevated)] text-sm font-mono px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
-                />
-              </Field>
-              <Field label={t.alarmsWindowFrom}>
-                <input
-                  type="time"
-                  value={windowStart}
-                  onChange={(e) => setWindowStart(e.target.value)}
-                  className="w-full bg-[var(--elevated)] text-sm font-mono px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
-                />
-              </Field>
-              <Field label={t.alarmsWindowTo}>
-                <input
-                  type="time"
-                  value={windowEnd}
-                  onChange={(e) => setWindowEnd(e.target.value)}
-                  className="w-full bg-[var(--elevated)] text-sm font-mono px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
-                />
-              </Field>
-            </div>
-          )}
-
-          {/* Note input */}
-          <Field label={t.alarmsNote}>
-            <input
-              type="text"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder={t.alarmsNotePlaceholder}
-              className="w-full bg-[var(--elevated)] text-xs px-2.5 py-1.5 rounded-[8px] border border-[var(--border)] focus:outline-none focus:border-[var(--accent)] text-[var(--text)]"
-            />
-          </Field>
-
-          {/* Submit Action */}
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button
-              type="submit"
-              title="Добавить будильник"
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[8px] text-xs font-semibold shadow-sm transition-transform active:scale-95"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--bg, #000)',
-              }}
-            >
-              <Plus size={14} />
-              <span>{editingId ? t.alarmsSave : t.alarmsNew}</span>
-            </button>
-          </div>
-        </form>
-      </Card>
-
-      {/* Alarm List with Next Firing times (R08) */}
+      {/* Alarm List (Hero surface) */}
       <div className="flex flex-col space-y-2">
         {effectiveAlarms.length === 0 ? (
           <EmptyState
             icon={<Bell size={24} />}
             title={t.alarmsEmpty}
             description={t.assistantPrompt}
+            action={
+              <button
+                type="button"
+                onClick={handleOpenCreate}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-semibold cursor-pointer shadow-sm transition-transform active:scale-95"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--bg, #000)',
+                }}
+              >
+                <Plus size={14} />
+                <span>{t.alarmsNew}</span>
+              </button>
+            }
           />
         ) : (
           effectiveAlarms.map((alarm) => {
@@ -644,166 +437,138 @@ export const Alarms: React.FC<AlarmsProps> = ({
             const preview = previews[alarm.id];
             const nextIso = preview?.next?.[0];
             const nextHuman = formatNextFiring(nextIso, !alarm.enabled, t);
+            const repeatSummary = formatRepeatSummary(alarm, t);
 
             return (
               <Card
                 key={alarm.id}
                 variant="surface"
-                padding="sm"
-                className={`flex flex-col gap-2 transition-all ${
+                padding="md"
+                className={`group flex items-center justify-between gap-4 transition-all rounded-xl border border-[var(--border)] hover:border-[var(--border-hover,var(--border))] ${
                   alarm.enabled ? 'opacity-100' : 'opacity-55'
                 }`}
+                data-testid={`alarm-row-${alarm.id}`}
               >
-                <div className="flex items-center justify-between gap-3">
-                  {/* Time + Next firing indicator */}
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <input
-                      type="text"
+                {/* Left: Time + Label + Repeat summary + Next firing */}
+                <div
+                  className={`flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-4 min-w-0 flex-1 ${
+                    !derived ? 'cursor-pointer' : ''
+                  }`}
+                  onClick={() => !derived && handleOpenEdit(alarm)}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="font-mono text-2xl font-bold tracking-tight text-[var(--text)] tabular-nums"
                       aria-label={`Время будильника ${alarm.label}`}
-                      readOnly={derived}
-                      value={alarm.time}
-                      onChange={(e) => editAlarmTime(alarm, e.target.value)}
-                      onBlur={(e) => editAlarmTime(alarm, e.target.value)}
-                      className={`w-16 font-mono text-base font-semibold bg-transparent border-b border-dashed border-[var(--border)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)] ${
-                        derived ? 'cursor-default border-none' : 'cursor-text'
-                      }`}
-                    />
-
-                    <div className="flex flex-col min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span
-                          onClick={() => !derived && handleEditClick(alarm)}
-                          className={`text-sm font-medium truncate ${
-                            !derived ? 'hover:underline cursor-pointer' : ''
-                          }`}
-                          style={{ color: 'var(--text)' }}
-                        >
-                          {alarm.label}
-                        </span>
-                        {derived && (
-                          <span
-                            className="text-[10px] px-1.5 py-0.2 rounded border text-[var(--text-faint)] border-[var(--border)] shrink-0"
-                            title="Из программы"
-                          >
-                            Программа
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Next firing badge */}
+                    >
+                      {alarm.time}
+                    </span>
+                    {derived && (
                       <span
-                        className="text-xs font-medium"
-                        style={{
-                          color: alarm.enabled ? 'var(--accent)' : 'var(--text-muted)',
-                        }}
+                        className="text-[10px] px-1.5 py-0.5 rounded border text-[var(--text-faint)] border-[var(--border)] shrink-0 font-medium"
+                        title="Из программы"
                       >
-                        {nextHuman}
+                        Программа
                       </span>
-                    </div>
+                    )}
                   </div>
 
-                  {/* Right actions: Toggle + Delete + Note */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      disabled={derived}
-                      title={derived ? 'Описание задаётся в шаге программы' : 'Добавить описание'}
-                      onClick={() => !derived && startNoteEdit(alarm)}
-                      className="p-1 rounded hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--text)] disabled:opacity-30 disabled:cursor-not-allowed"
+                  <div className="flex flex-col min-w-0">
+                    <span
+                      className={`text-sm font-semibold truncate ${
+                        !derived ? 'group-hover:text-[var(--accent)] transition-colors' : ''
+                      }`}
+                      style={{ color: 'var(--text)' }}
                     >
-                      <StickyNote size={14} />
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={derived}
-                      onClick={() => handleToggle(alarm.id, alarm.enabled)}
-                      title={derived ? 'Включается вместе с программой' : (alarm.enabled ? 'Выключить будильник' : 'Включить будильник')}
-                      className="cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <Toggle
-                        checked={alarm.enabled}
-                        onChange={() => {}}
-                        disabled={derived}
-                      />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(alarm.id)}
-                      title="Удалить"
-                      className="p-1.5 rounded-[6px] hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--accent-red,#EF4444)] transition-colors cursor-pointer"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                      {alarm.label}
+                    </span>
+                    <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] flex-wrap">
+                      <span>{repeatSummary}</span>
+                      {nextHuman && (
+                        <>
+                          <span className="opacity-40">•</span>
+                          <span
+                            style={{
+                              color: alarm.enabled ? 'var(--accent)' : 'var(--text-muted)',
+                            }}
+                          >
+                            {nextHuman}
+                          </span>
+                        </>
+                      )}
+                      {alarm.note && (
+                        <>
+                          <span className="opacity-40">•</span>
+                          <span className="italic truncate max-w-[200px]" title={alarm.note}>
+                            {alarm.note}
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                {/* Per-row weekday chips if repeat is 'days' */}
-                {alarm.repeat === 'days' && !derived && (
-                  <div className="flex items-center gap-1 pt-1 border-t border-[var(--border)]">
-                    {WEEKDAY_LABELS.map((wLabel, index) => {
-                      const active = (alarm.days ?? []).includes(index);
-                      return (
-                        <button
-                          key={wLabel}
-                          type="button"
-                          onClick={() => toggleAlarmDay(alarm, index)}
-                          title={active ? `Убрать ${wLabel}` : `Добавить ${wLabel}`}
-                          className="h-5 flex-1 rounded text-[10px] font-semibold transition-colors border"
-                          style={{
-                            backgroundColor: active ? 'var(--accent)' : 'transparent',
-                            color: active ? 'var(--bg, #000)' : 'var(--text-muted)',
-                            borderColor: active ? 'var(--accent)' : 'var(--border)',
-                          }}
-                        >
-                          {wLabel}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Inline note edit or display */}
-                {noteEditingId === alarm.id ? (
-                  <div className="flex items-center gap-2 pt-1 border-t border-[var(--border)]">
-                    <input
-                      type="text"
-                      aria-label="Описание будильника"
-                      autoFocus
-                      value={inlineNoteValue}
-                      onChange={(e) => setInlineNoteValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') void commitNoteEdit(alarm);
-                        if (e.key === 'Escape') cancelNoteEdit();
-                      }}
-                      onBlur={(e) => void commitNoteEdit(alarm, e.target.value)}
-                      placeholder={t.alarmsNotePlaceholder}
-                      className="flex-1 bg-[var(--elevated)] text-xs px-2 py-1 rounded border border-[var(--border)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+                {/* Right actions: Toggle + Edit + Delete */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={derived}
+                    onClick={() => handleToggle(alarm.id, alarm.enabled)}
+                    title={
+                      derived
+                        ? 'Включается вместе с программой'
+                        : alarm.enabled
+                          ? 'Выключить будильник'
+                          : 'Включить будильник'
+                    }
+                    className="cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Toggle
+                      checked={alarm.enabled}
+                      onChange={() => {}}
+                      disabled={derived}
                     />
-                    <button
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        void commitNoteEdit(alarm);
-                      }}
-                      className="p-1 text-[var(--accent)]"
-                    >
-                      <Check size={14} />
-                    </button>
-                  </div>
-                ) : (
-                  alarm.note && (
-                    <div className="text-xs text-[var(--text-muted)] italic pt-0.5 px-0.5 truncate">
-                      {alarm.note}
-                    </div>
-                  )
-                )}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={derived}
+                    onClick={() => handleOpenEdit(alarm)}
+                    title={derived ? 'Редактируется в шаге программы' : 'Редактировать будильник'}
+                    aria-label={`Редактировать ${alarm.label}`}
+                    className="p-1.5 rounded-[6px] hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(alarm.id)}
+                    title="Удалить"
+                    aria-label={`Удалить ${alarm.label}`}
+                    className="p-1.5 rounded-[6px] hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--accent-red,#EF4444)] transition-colors cursor-pointer"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </Card>
             );
           })
         )}
       </div>
+
+      {/* Modal sheet for create / edit */}
+      {isSheetOpen && (
+        <AlarmEditorSheet
+          key={selectedAlarm?.id || 'new'}
+          isOpen={isSheetOpen}
+          alarm={selectedAlarm}
+          onClose={handleCloseSheet}
+          onSave={handleSaveAlarm}
+          onDelete={handleDelete}
+          theme={theme}
+        />
+      )}
     </div>
   );
 };
