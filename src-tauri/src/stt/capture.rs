@@ -118,6 +118,9 @@ pub struct CaptureOptions {
     pub channel: Option<u16>,
     /// VAD backend and smoothing parameters.
     pub vad: VadConfig,
+    /// Noise suppression configuration.
+    #[serde(default)]
+    pub denoise: crate::stt::denoise::DenoiseConfig,
 }
 
 /// Capture error conditions mapped by frontend services.
@@ -591,6 +594,7 @@ pub fn start_audio_capture(
     let channel_opt = opts.channel;
     let vad_cfg = opts.vad;
 
+    let denoise_cfg = opts.denoise;
     let thread_handle = std::thread::spawn(move || {
         let sample_rate = config.sample_rate().0;
         let channels = config.channels();
@@ -677,9 +681,17 @@ pub fn start_audio_capture(
             return Err(CaptureError::NoSpeech);
         }
 
-        // Resample from hardware sample_rate to 16 kHz
-        let pcm_16k = resample_linear(&gathered, sample_rate, SAMPLE_RATE);
+        // Apply noise suppression chain before resampling and VAD
+        let mut processed = gathered;
+        crate::stt::denoise::apply_denoise_chain(
+            &mut processed,
+            sample_rate,
+            1,
+            &denoise_cfg,
+        );
 
+        // Resample from hardware sample_rate to 16 kHz
+        let pcm_16k = resample_linear(&processed, sample_rate, SAMPLE_RATE);
         // Trim silence and isolated transient noise with smoothed VAD
         let trimmed = vad_trim_with_config(&pcm_16k, &vad_cfg)?;
         Ok(trimmed)
@@ -706,6 +718,7 @@ pub fn start_audio_capture_legacy(
                 energy_threshold,
                 ..Default::default()
             },
+            denoise: crate::stt::denoise::DenoiseConfig::default(),
         },
         state,
     )

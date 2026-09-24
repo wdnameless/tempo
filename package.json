@@ -1,7 +1,7 @@
 {
   "name": "alarmer",
   "private": true,
-  "version": "0.23.2",
+  "version": "0.23.3",
   "description": "Alarmer — offline-first time management: schedules, interval blocks, alarms and focus statistics.",
   "type": "module",
   "scripts": {

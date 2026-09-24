@@ -169,11 +169,25 @@ impl RecordingManager {
         assets_dir: &Path,
         channels: u16,
     ) -> Result<StartResult, RecordingError> {
+        self.start_with_channels_and_denoise(
+            options,
+            assets_dir,
+            channels,
+            crate::stt::denoise::DenoiseConfig::default(),
+        )
+    }
+
+    pub fn start_with_channels_and_denoise(
+        &self,
+        options: StartOptions,
+        assets_dir: &Path,
+        channels: u16,
+        denoise_cfg: crate::stt::denoise::DenoiseConfig,
+    ) -> Result<StartResult, RecordingError> {
         let mut guard = self.inner.lock().unwrap();
         if guard.is_some() {
             return Err(RecordingError::AlreadyRecording);
         }
-
         let kind = options.kind.as_str();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -192,11 +206,12 @@ impl RecordingManager {
                 };
 
                 let target_channels = audio::normalize_channels(channels);
-                let session = match audio::AudioRecordingSession::start(
+                let session = match audio::AudioRecordingSession::start_with_denoise(
                     file_path.clone(),
                     mic_id,
                     sys_id,
                     target_channels,
+                    denoise_cfg,
                 ) {
                     Ok(s) => s,
                     Err(e) => {
@@ -428,8 +443,9 @@ pub fn recording_start(
     let channels = options
         .channels
         .unwrap_or_else(|| read_channels_preference(&app));
+    let denoise = crate::stt::denoise::read_denoise_preference(&app);
     state
-        .start_with_channels(options, &dir, channels)
+        .start_with_channels_and_denoise(options, &dir, channels, denoise)
         .map_err(String::from)
 }
 

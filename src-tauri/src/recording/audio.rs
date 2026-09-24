@@ -330,6 +330,22 @@ impl AudioRecordingSession {
         sys_device_id: Option<String>,
         channels: u16,
     ) -> Result<Self, RecordingError> {
+        Self::start_with_denoise(
+            output_path,
+            mic_device_id,
+            sys_device_id,
+            channels,
+            crate::stt::denoise::DenoiseConfig::default(),
+        )
+    }
+
+    pub fn start_with_denoise(
+        output_path: PathBuf,
+        mic_device_id: Option<String>,
+        sys_device_id: Option<String>,
+        channels: u16,
+        denoise_cfg: crate::stt::denoise::DenoiseConfig,
+    ) -> Result<Self, RecordingError> {
         let is_paused = Arc::new(AtomicBool::new(false));
         let should_stop = Arc::new(AtomicBool::new(false));
         let level_peak = Arc::new(AtomicU32::new(0));
@@ -351,6 +367,7 @@ impl AudioRecordingSession {
                 mic_device_id,
                 sys_device_id,
                 channels,
+                denoise_cfg,
                 is_paused_clone,
                 should_stop_clone,
                 peak_clone,
@@ -435,6 +452,7 @@ fn run_audio_capture_loop(
     mic_device_id: Option<String>,
     sys_device_id: Option<String>,
     target_channels: u16,
+    denoise_cfg: crate::stt::denoise::DenoiseConfig,
     is_paused: Arc<AtomicBool>,
     should_stop: Arc<AtomicBool>,
     level_peak: Arc<AtomicU32>,
@@ -489,7 +507,14 @@ fn run_audio_capture_loop(
                 let stream_res = dev.build_input_stream(
                     &config.into(),
                     move |data: &[f32], _: &_| {
-                        let resampled = resample_linear(data, sample_rate, TARGET_SAMPLE_RATE, channels);
+                        let mut mic_data = data.to_vec();
+                        crate::stt::denoise::apply_denoise_chain(
+                            &mut mic_data,
+                            sample_rate,
+                            channels,
+                            &denoise_cfg,
+                        );
+                        let resampled = resample_linear(&mic_data, sample_rate, TARGET_SAMPLE_RATE, channels);
                         let converted = convert_channels(&resampled, channels, target_channels);
                         let mut buf = mic_buf_clone.lock().unwrap();
                         buf.extend(converted);

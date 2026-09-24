@@ -4,6 +4,7 @@ pub mod accel;
 pub mod capture;
 pub mod catalog;
 pub mod cloud;
+pub mod denoise;
 pub mod dictation;
 pub mod engine;
 pub mod feedback;
@@ -29,6 +30,7 @@ pub use capture::{
     input_channels, input_devices, output_devices, AudioCaptureHandle, AudioCaptureState,
     AudioDeviceInfo, CaptureError, CaptureOptions,
 };
+pub use denoise::DenoiseConfig;
 pub use dictation::{ClipboardBehavior, InjectionOutcome, PasteMethod, PasteOptions};
 pub use engine::EngineManager;
 pub use feedback::{SoundKind, SoundTheme};
@@ -73,7 +75,7 @@ pub struct TranscribeFileResult {
     pub language: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SpeechConfig {
     pub enabled: bool,
@@ -110,7 +112,69 @@ pub struct SpeechConfig {
     pub accelerator: String,
     pub gpu_device: Option<String>,
     pub model_unload_secs: u64,
+    #[serde(rename = "denoise_highpass", alias = "denoiseHighpass")]
+    pub denoise_highpass: bool,
+    #[serde(rename = "denoise_highpass_hz", alias = "denoiseHighpassHz")]
+    pub denoise_highpass_hz: f32,
+    #[serde(rename = "denoise_gate", alias = "denoiseGate")]
+    pub denoise_gate: bool,
+    #[serde(rename = "denoise_gate_db", alias = "denoiseGateDb")]
+    pub denoise_gate_db: f32,
+    #[serde(rename = "denoise_rnnoise", alias = "denoiseRnnoise")]
+    pub denoise_rnnoise: bool,
+    #[serde(rename = "denoise_agc", alias = "denoiseAgc")]
+    pub denoise_agc: bool,
+    #[serde(rename = "denoise_agc_target_db", alias = "denoiseAgcTargetDb")]
+    pub denoise_agc_target_db: f32,
 }
+impl Default for SpeechConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            activation: ShortcutActivation::HoldOrToggle,
+            hotkey: "Ctrl+Shift+D".to_string(),
+            cancel_hotkey: "Escape".to_string(),
+            hold_threshold_ms: 300,
+            engine: "local".to_string(),
+            model_id: None,
+            device: None,
+            channel: None,
+            vad_backend: "earshot".to_string(),
+            vad_energy_threshold: 0.015,
+            language: None,
+            translate_to_english: false,
+            custom_words: Vec::new(),
+            remove_filler_words: false,
+            paste_method: "ctrl_v".to_string(),
+            clipboard_behavior: "restore".to_string(),
+            paste_delay_ms: 60,
+            paste_delay_after_ms: 60,
+            append_space: false,
+            auto_submit: false,
+            feedback_enabled: true,
+            feedback_volume: 0.5,
+            sound_theme: "default".to_string(),
+            history_enabled: true,
+            history_limit: 100,
+            retention_days: 30,
+            postprocess_enabled: false,
+            postprocess_prompt: String::new(),
+            overlay_enabled: true,
+            onboarded: false,
+            accelerator: "auto".to_string(),
+            gpu_device: None,
+            model_unload_secs: 60,
+            denoise_highpass: true,
+            denoise_highpass_hz: 80.0,
+            denoise_gate: true,
+            denoise_gate_db: -45.0,
+            denoise_rnnoise: false,
+            denoise_agc: false,
+            denoise_agc_target_db: -20.0,
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -149,6 +213,20 @@ pub struct SpeechConfigPatch {
     pub accelerator: Option<String>,
     pub gpu_device: Option<String>,
     pub model_unload_secs: Option<u64>,
+    #[serde(rename = "denoise_highpass", alias = "denoiseHighpass")]
+    pub denoise_highpass: Option<bool>,
+    #[serde(rename = "denoise_highpass_hz", alias = "denoiseHighpassHz")]
+    pub denoise_highpass_hz: Option<f32>,
+    #[serde(rename = "denoise_gate", alias = "denoiseGate")]
+    pub denoise_gate: Option<bool>,
+    #[serde(rename = "denoise_gate_db", alias = "denoiseGateDb")]
+    pub denoise_gate_db: Option<f32>,
+    #[serde(rename = "denoise_rnnoise", alias = "denoiseRnnoise")]
+    pub denoise_rnnoise: Option<bool>,
+    #[serde(rename = "denoise_agc", alias = "denoiseAgc")]
+    pub denoise_agc: Option<bool>,
+    #[serde(rename = "denoise_agc_target_db", alias = "denoiseAgcTargetDb")]
+    pub denoise_agc_target_db: Option<f32>,
 }
 
 pub struct SttState {
@@ -336,6 +414,13 @@ pub fn load_speech_config(app: &AppHandle) -> SpeechConfig {
         let accelerator = pref_read_string(conn, "tempo_speech_accelerator", None, "auto");
         let gpu_device = pref_read_opt_string(conn, "tempo_speech_gpu_device", None);
         let model_unload_secs: u64 = pref_read(conn, "tempo_speech_model_unload_secs", None, 60);
+        let denoise_highpass: bool = pref_read(conn, "tempo_speech_denoise_highpass", None, true);
+        let denoise_highpass_hz: f32 = pref_read(conn, "tempo_speech_denoise_highpass_hz", None, 80.0);
+        let denoise_gate: bool = pref_read(conn, "tempo_speech_denoise_gate", None, true);
+        let denoise_gate_db: f32 = pref_read(conn, "tempo_speech_denoise_gate_db", None, -45.0);
+        let denoise_rnnoise: bool = pref_read(conn, "tempo_speech_denoise_rnnoise", None, false);
+        let denoise_agc: bool = pref_read(conn, "tempo_speech_denoise_agc", None, false);
+        let denoise_agc_target_db: f32 = pref_read(conn, "tempo_speech_denoise_agc_target_db", None, -20.0);
 
         Ok(SpeechConfig {
             enabled,
@@ -372,44 +457,16 @@ pub fn load_speech_config(app: &AppHandle) -> SpeechConfig {
             accelerator,
             gpu_device,
             model_unload_secs,
+            denoise_highpass,
+            denoise_highpass_hz,
+            denoise_gate,
+            denoise_gate_db,
+            denoise_rnnoise,
+            denoise_agc,
+            denoise_agc_target_db,
         })
     })
-    .unwrap_or_else(|_| SpeechConfig {
-        enabled: true,
-        activation: ShortcutActivation::HoldOrToggle,
-        hotkey: "Ctrl+Shift+D".to_string(),
-        cancel_hotkey: "Escape".to_string(),
-        hold_threshold_ms: 300,
-        engine: "local".to_string(),
-        model_id: None,
-        device: None,
-        channel: None,
-        vad_backend: "earshot".to_string(),
-        vad_energy_threshold: 0.015,
-        language: None,
-        translate_to_english: false,
-        custom_words: Vec::new(),
-        remove_filler_words: false,
-        paste_method: "ctrl_v".to_string(),
-        clipboard_behavior: "restore".to_string(),
-        paste_delay_ms: 60,
-        paste_delay_after_ms: 60,
-        append_space: false,
-        auto_submit: false,
-        feedback_enabled: true,
-        feedback_volume: 0.5,
-        sound_theme: "default".to_string(),
-        history_enabled: true,
-        history_limit: 100,
-        retention_days: 30,
-        postprocess_enabled: false,
-        postprocess_prompt: String::new(),
-        overlay_enabled: true,
-        onboarded: false,
-        accelerator: "auto".to_string(),
-        gpu_device: None,
-        model_unload_secs: 60,
-    })
+    .unwrap_or_default()
 }
 
 // ----------------------------------------------------------------------------
@@ -465,6 +522,15 @@ impl DictationDriver for TempoDictationDriver {
             device: cfg.device.clone(),
             channel: cfg.channel,
             vad: vad_cfg,
+            denoise: DenoiseConfig {
+                denoise_highpass: cfg.denoise_highpass,
+                denoise_highpass_hz: cfg.denoise_highpass_hz,
+                denoise_gate: cfg.denoise_gate,
+                denoise_gate_db: cfg.denoise_gate_db,
+                denoise_rnnoise: cfg.denoise_rnnoise,
+                denoise_agc: cfg.denoise_agc,
+                denoise_agc_target_db: cfg.denoise_agc_target_db,
+            },
         };
 
         match capture::start_audio_capture(opts, (*self.capture_state).clone()) {
@@ -1141,6 +1207,27 @@ pub async fn stt_apply_speech_settings(
         if let Some(v) = patch.model_unload_secs {
             pref_write(conn, "tempo_speech_model_unload_secs", &v)?;
         }
+        if let Some(v) = patch.denoise_highpass {
+            pref_write(conn, "tempo_speech_denoise_highpass", &v)?;
+        }
+        if let Some(v) = patch.denoise_highpass_hz {
+            pref_write(conn, "tempo_speech_denoise_highpass_hz", &v)?;
+        }
+        if let Some(v) = patch.denoise_gate {
+            pref_write(conn, "tempo_speech_denoise_gate", &v)?;
+        }
+        if let Some(v) = patch.denoise_gate_db {
+            pref_write(conn, "tempo_speech_denoise_gate_db", &v)?;
+        }
+        if let Some(v) = patch.denoise_rnnoise {
+            pref_write(conn, "tempo_speech_denoise_rnnoise", &v)?;
+        }
+        if let Some(v) = patch.denoise_agc {
+            pref_write(conn, "tempo_speech_denoise_agc", &v)?;
+        }
+        if let Some(v) = patch.denoise_agc_target_db {
+            pref_write(conn, "tempo_speech_denoise_agc_target_db", &v)?;
+        }
 
         Ok(())
     })?;
@@ -1398,5 +1485,18 @@ mod tests {
         .unwrap();
         assert!(probe_called.load(Ordering::SeqCst));
         assert_eq!(probe_res, 0.42);
+    }
+
+    #[test]
+    fn test_speech_config_denoise_defaults() {
+        let cfg = SpeechConfig::default();
+        // Contract: highpass: true, hz: 80, gate: true, gate_db: -45, rnnoise: false, agc: false, agc_target_db: -20
+        assert!(cfg.denoise_highpass);
+        assert_eq!(cfg.denoise_highpass_hz, 80.0);
+        assert!(cfg.denoise_gate);
+        assert_eq!(cfg.denoise_gate_db, -45.0);
+        assert!(!cfg.denoise_rnnoise);
+        assert!(!cfg.denoise_agc);
+        assert_eq!(cfg.denoise_agc_target_db, -20.0);
     }
 }

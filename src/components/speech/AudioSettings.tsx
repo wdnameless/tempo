@@ -321,6 +321,167 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({
         )}
       </div>
 
+      {/* Noise Suppression & Audio Filters */}
+      <div
+        data-testid="audio-denoise-settings"
+        className="p-4 rounded-[10px] border space-y-4"
+        style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+      >
+        <div className="flex flex-col gap-0.5">
+          <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>
+            {t.settingsSpeechDenoiseTitle}
+          </div>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {t.settingsSpeechDenoiseSubtitle}
+          </p>
+        </div>
+
+        {/* RNNoise */}
+        <Row
+          label={t.settingsSpeechDenoiseRnnoise}
+          description={t.settingsSpeechDenoiseRnnoiseDesc}
+          control={
+            <div data-testid="denoise-rnnoise-toggle">
+              <Toggle
+                checked={config.denoise_rnnoise ?? false}
+                onChange={(val) => onChange({ denoise_rnnoise: val })}
+                disabled={disabled}
+              />
+            </div>
+          }
+          disabled={disabled}
+        />
+
+        {/* High-Pass Filter */}
+        <div className="pt-2 border-t space-y-3" style={{ borderColor: 'var(--border)' }}>
+          <Row
+            label={t.settingsSpeechDenoiseHighpass}
+            description={t.settingsSpeechDenoiseHighpassDesc}
+            control={
+              <div data-testid="denoise-highpass-toggle">
+                <Toggle
+                  checked={config.denoise_highpass ?? true}
+                  onChange={(val) => onChange({ denoise_highpass: val })}
+                  disabled={disabled}
+                />
+              </div>
+            }
+            disabled={disabled}
+          />
+
+          {(config.denoise_highpass ?? true) && (
+            <div className="pl-3 border-l-2 space-y-2" style={{ borderColor: 'var(--accent)' }}>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium" style={{ color: 'var(--text)' }}>
+                  {t.settingsSpeechDenoiseHighpassHz}
+                </span>
+                <span className="font-mono tabular-nums text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {config.denoise_highpass_hz ?? 80} Hz
+                </span>
+              </div>
+              <div data-testid="denoise-highpass-slider">
+                <Slider
+                  value={config.denoise_highpass_hz ?? 80}
+                  min={40}
+                  max={300}
+                  step={5}
+                  onChange={(val) => onChange({ denoise_highpass_hz: Math.round(val) })}
+                  minLabel="40 Hz"
+                  maxLabel="300 Hz"
+                  disabled={disabled}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Noise Gate */}
+        <div className="pt-2 border-t space-y-3" style={{ borderColor: 'var(--border)' }}>
+          <Row
+            label={t.settingsSpeechDenoiseGate}
+            description={t.settingsSpeechDenoiseGateDesc}
+            control={
+              <div data-testid="denoise-gate-toggle">
+                <Toggle
+                  checked={config.denoise_gate ?? true}
+                  onChange={(val) => onChange({ denoise_gate: val })}
+                  disabled={disabled}
+                />
+              </div>
+            }
+            disabled={disabled}
+          />
+
+          {(config.denoise_gate ?? true) && (
+            <div className="pl-3 border-l-2 space-y-2" style={{ borderColor: 'var(--accent)' }}>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium" style={{ color: 'var(--text)' }}>
+                  {t.settingsSpeechDenoiseGateDb}
+                </span>
+                <span className="font-mono tabular-nums text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {config.denoise_gate_db ?? -45} dB
+                </span>
+              </div>
+              <div data-testid="denoise-gate-slider">
+                <Slider
+                  value={config.denoise_gate_db ?? -45}
+                  min={-60}
+                  max={-20}
+                  step={1}
+                  onChange={(val) => onChange({ denoise_gate_db: Math.round(val) })}
+                  minLabel="-60 dB"
+                  maxLabel="-20 dB"
+                  disabled={disabled}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Level Normalisation (AGC) */}
+        <div className="pt-2 border-t space-y-3" style={{ borderColor: 'var(--border)' }}>
+          <Row
+            label={t.settingsSpeechDenoiseAgc}
+            description={t.settingsSpeechDenoiseAgcDesc}
+            control={
+              <div data-testid="denoise-agc-toggle">
+                <Toggle
+                  checked={config.denoise_agc ?? false}
+                  onChange={(val) => onChange({ denoise_agc: val })}
+                  disabled={disabled}
+                />
+              </div>
+            }
+            disabled={disabled}
+          />
+
+          {(config.denoise_agc ?? false) && (
+            <div className="pl-3 border-l-2 space-y-2" style={{ borderColor: 'var(--accent)' }}>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium" style={{ color: 'var(--text)' }}>
+                  {t.settingsSpeechDenoiseAgcTargetDb}
+                </span>
+                <span className="font-mono tabular-nums text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {config.denoise_agc_target_db ?? -20} dB
+                </span>
+              </div>
+              <div data-testid="denoise-agc-slider">
+                <Slider
+                  value={config.denoise_agc_target_db ?? -20}
+                  min={-36}
+                  max={-6}
+                  step={1}
+                  onChange={(val) => onChange({ denoise_agc_target_db: Math.round(val) })}
+                  minLabel="-36 dB"
+                  maxLabel="-6 dB"
+                  disabled={disabled}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Test Microphone & Live Level Meter */}
       <div
         className="p-4 rounded-[10px] border space-y-4"

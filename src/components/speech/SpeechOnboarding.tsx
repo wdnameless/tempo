@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   CheckCircle,
@@ -23,7 +23,7 @@ import { onSttEvent } from '../../services/sttEvents';
 import { I18nService } from '../../services/i18n';
 import { HotkeyRecorder } from './HotkeyRecorder';
 import { DownloadBar } from './DownloadBar';
-import { formatBytes } from './utils';
+import { formatBytes, formatModelSizeMB, getModelQuant, groupAndSortModels } from './utils';
 
 export interface SpeechOnboardingProps {
   open: boolean;
@@ -49,6 +49,10 @@ export const SpeechOnboarding: React.FC<SpeechOnboardingProps> = ({
   const [testResult, setTestResult] = useState<string | null>(null);
   const [isStoppingDictation, setIsStoppingDictation] = useState(false);
 
+
+  const groupedModels = useMemo(() => {
+    return groupAndSortModels(models);
+  }, [models]);
   useEffect(() => {
     if (!open) return;
     let mounted = true;
@@ -235,48 +239,65 @@ export const SpeechOnboarding: React.FC<SpeechOnboardingProps> = ({
                   </span>
                 </div>
               ) : (
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                  {models.map((model) => {
-                    const isSelected = config.modelId === model.id;
-                    return (
-                      <div
-                        key={model.id}
-                        onClick={() => onChange({ modelId: model.id })}
-                        className={`p-3 rounded-[10px] border cursor-pointer transition-all flex items-center justify-between gap-3 ${
-                          isSelected ? 'border-[var(--accent)] ring-1 ring-[var(--accent)]' : 'hover:border-[var(--accent)]/50'
-                        }`}
-                        style={{
-                          backgroundColor: isSelected ? 'var(--accent-soft)' : 'var(--surface)',
-                          borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
-                        }}
-                      >
-                        <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>
-                              {model.name}
-                            </span>
-                            {model.recommended && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                Recommended
-                              </span>
-                            )}
-                            {model.installed && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                                Installed
-                              </span>
+                <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
+                  {[
+                    { key: 'multilingual', title: t.speechModelMultilingual, testId: 'onboarding-models-group-multilingual', list: groupedModels.multilingual },
+                    { key: 'englishOnly', title: t.speechModelEnglishOnly, testId: 'onboarding-models-group-english-only', list: groupedModels.englishOnly },
+                  ].filter((group) => group.list.length > 0).map((group) => (
+                    <div key={group.key} data-testid={group.testId} className="space-y-2">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider px-1 text-[var(--text-muted)]">
+                        {group.title}
+                      </div>
+                      {group.list.map((model) => {
+                        const isSelected = config.modelId === model.id;
+                        return (
+                          <div
+                            key={model.id}
+                            onClick={() => onChange({ modelId: model.id })}
+                            className={`p-3 rounded-[10px] border cursor-pointer transition-all flex items-center justify-between gap-3 ${
+                              isSelected ? 'border-[var(--accent)] ring-1 ring-[var(--accent)]' : 'hover:border-[var(--accent)]/50'
+                            }`}
+                            style={{
+                              backgroundColor: isSelected ? 'var(--accent-soft)' : 'var(--surface)',
+                              borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
+                            }}
+                          >
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>
+                                  {model.name}
+                                </span>
+                                {model.recommended && (
+                                  <span className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                    {t.settingsSpeechModelsFilterRecommended || 'Recommended'}
+                                  </span>
+                                )}
+                                {model.installed && (
+                                  <span
+                                    data-testid="model-installed-badge"
+                                    className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                                  >
+                                    {t.sttModelInstalled || 'Installed'}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                <span className="font-mono font-medium px-1 py-0.2 rounded bg-[var(--elevated)] border" style={{ borderColor: 'var(--border)' }}>
+                                  {getModelQuant(model)}
+                                </span>
+                                <span>{formatModelSizeMB(model.bytes)}</span>
+                                {model.parameters && <span>· {model.parameters}</span>}
+                              </div>
+                            </div>
+
+                            {isSelected && (
+                              <CheckCircle className="w-4 h-4 text-[var(--accent)] shrink-0" />
                             )}
                           </div>
-                          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                            {model.parameters || ''} · {formatBytes(model.bytes)}
-                          </span>
-                        </div>
-
-                        {isSelected && (
-                          <CheckCircle className="w-4 h-4 text-[var(--accent)] shrink-0" />
-                        )}
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

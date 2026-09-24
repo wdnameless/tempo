@@ -46,6 +46,13 @@ export interface SpeechConfig {
   accelerator: string;
   gpuDevice: string | null;
   modelUnloadSecs: number;
+  denoise_highpass: boolean;
+  denoise_highpass_hz: number;
+  denoise_gate: boolean;
+  denoise_gate_db: number;
+  denoise_rnnoise: boolean;
+  denoise_agc: boolean;
+  denoise_agc_target_db: number;
 }
 
 export type SpeechSettings = SpeechConfig;
@@ -85,6 +92,13 @@ export const DEFAULT_SPEECH_CONFIG: SpeechConfig = {
   accelerator: 'auto',
   gpuDevice: null,
   modelUnloadSecs: 60,
+  denoise_highpass: true,
+  denoise_highpass_hz: 80,
+  denoise_gate: true,
+  denoise_gate_db: -45,
+  denoise_rnnoise: false,
+  denoise_agc: false,
+  denoise_agc_target_db: -20,
 };
 
 export const DEFAULT_SPEECH_SETTINGS: SpeechSettings = DEFAULT_SPEECH_CONFIG;
@@ -296,6 +310,34 @@ export function loadSpeechConfig(): SpeechConfig {
       getSpeechPref('model_unload_secs', DEFAULT_SPEECH_CONFIG.modelUnloadSecs),
       DEFAULT_SPEECH_CONFIG.modelUnloadSecs,
     ),
+    denoise_highpass: parseBoolean(
+      getSpeechPref('denoise_highpass', DEFAULT_SPEECH_CONFIG.denoise_highpass),
+      DEFAULT_SPEECH_CONFIG.denoise_highpass,
+    ),
+    denoise_highpass_hz: parseNumber(
+      getSpeechPref('denoise_highpass_hz', DEFAULT_SPEECH_CONFIG.denoise_highpass_hz),
+      DEFAULT_SPEECH_CONFIG.denoise_highpass_hz,
+    ),
+    denoise_gate: parseBoolean(
+      getSpeechPref('denoise_gate', DEFAULT_SPEECH_CONFIG.denoise_gate),
+      DEFAULT_SPEECH_CONFIG.denoise_gate,
+    ),
+    denoise_gate_db: parseNumber(
+      getSpeechPref('denoise_gate_db', DEFAULT_SPEECH_CONFIG.denoise_gate_db),
+      DEFAULT_SPEECH_CONFIG.denoise_gate_db,
+    ),
+    denoise_rnnoise: parseBoolean(
+      getSpeechPref('denoise_rnnoise', DEFAULT_SPEECH_CONFIG.denoise_rnnoise),
+      DEFAULT_SPEECH_CONFIG.denoise_rnnoise,
+    ),
+    denoise_agc: parseBoolean(
+      getSpeechPref('denoise_agc', DEFAULT_SPEECH_CONFIG.denoise_agc),
+      DEFAULT_SPEECH_CONFIG.denoise_agc,
+    ),
+    denoise_agc_target_db: parseNumber(
+      getSpeechPref('denoise_agc_target_db', DEFAULT_SPEECH_CONFIG.denoise_agc_target_db),
+      DEFAULT_SPEECH_CONFIG.denoise_agc_target_db,
+    ),
   };
 }
 
@@ -372,6 +414,34 @@ export function mergeSpeechConfig(base: SpeechConfig, patch: Partial<SpeechConfi
       patch.modelUnloadSecs !== undefined
         ? parseNumber(patch.modelUnloadSecs, base.modelUnloadSecs)
         : base.modelUnloadSecs,
+    denoise_highpass:
+      patch.denoise_highpass !== undefined
+        ? parseBoolean(patch.denoise_highpass, base.denoise_highpass)
+        : base.denoise_highpass,
+    denoise_highpass_hz:
+      patch.denoise_highpass_hz !== undefined
+        ? parseNumber(patch.denoise_highpass_hz, base.denoise_highpass_hz)
+        : base.denoise_highpass_hz,
+    denoise_gate:
+      patch.denoise_gate !== undefined
+        ? parseBoolean(patch.denoise_gate, base.denoise_gate)
+        : base.denoise_gate,
+    denoise_gate_db:
+      patch.denoise_gate_db !== undefined
+        ? parseNumber(patch.denoise_gate_db, base.denoise_gate_db)
+        : base.denoise_gate_db,
+    denoise_rnnoise:
+      patch.denoise_rnnoise !== undefined
+        ? parseBoolean(patch.denoise_rnnoise, base.denoise_rnnoise)
+        : base.denoise_rnnoise,
+    denoise_agc:
+      patch.denoise_agc !== undefined
+        ? parseBoolean(patch.denoise_agc, base.denoise_agc)
+        : base.denoise_agc,
+    denoise_agc_target_db:
+      patch.denoise_agc_target_db !== undefined
+        ? parseNumber(patch.denoise_agc_target_db, base.denoise_agc_target_db)
+        : base.denoise_agc_target_db,
   };
 }
 
@@ -410,6 +480,13 @@ const FIELD_TO_PREF: Record<keyof SpeechConfig, string> = {
   accelerator: 'tempo_speech_accelerator',
   gpuDevice: 'tempo_speech_gpu_device',
   modelUnloadSecs: 'tempo_speech_model_unload_secs',
+  denoise_highpass: 'tempo_speech_denoise_highpass',
+  denoise_highpass_hz: 'tempo_speech_denoise_highpass_hz',
+  denoise_gate: 'tempo_speech_denoise_gate',
+  denoise_gate_db: 'tempo_speech_denoise_gate_db',
+  denoise_rnnoise: 'tempo_speech_denoise_rnnoise',
+  denoise_agc: 'tempo_speech_denoise_agc',
+  denoise_agc_target_db: 'tempo_speech_denoise_agc_target_db',
 };
 
 async function persistToLocalPrefs(config: SpeechConfig, patch: Partial<SpeechConfig>): Promise<void> {

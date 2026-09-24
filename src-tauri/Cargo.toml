@@ -1,6 +1,6 @@
 [package]
 name = "tempo"
-version = "0.23.2"
+version = "0.23.3"
 description = "Tempo backend: alarm scheduler, countdown timer, alarm audio and AI gateway"
 authors = ["Tempo"]
 edition = "2021"
@@ -63,6 +63,8 @@ sha2 = "0.10"
 # earshot as its pure-Rust backend; Silero would drag ONNX Runtime into the
 # installer, which is not worth ~100 MB for a gate on a 16 kHz stream.
 earshot = "1.2.2"
+# Pure-Rust RNNoise for neural noise suppression
+nnnoiseless = "0.5"
 
 [target.'cfg(windows)'.dependencies]
 # System sound is a render device read backwards, and cpal exposes no loopback.

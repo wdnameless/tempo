@@ -24,7 +24,7 @@ import { onSttEvent } from '../../services/sttEvents';
 import { I18nService } from '../../services/i18n';
 import { ModelCard } from './ModelCard';
 import { DownloadBar } from './DownloadBar';
-import { formatBytes } from './utils';
+import { formatBytes, groupAndSortModels } from './utils';
 
 export interface ModelLibraryProps {
   activeModelId: string | null;
@@ -252,6 +252,10 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({
     });
   }, [models, searchQuery, statusFilter, sizeFilter, languageFilter]);
 
+  const groupedModels = useMemo(() => {
+    return groupAndSortModels(filteredModels);
+  }, [filteredModels]);
+
   const activeDownloadsList = useMemo(() => {
     return Object.values(downloads).filter(
       (d) => d.phase === 'downloading' || d.phase === 'verifying'
@@ -438,19 +442,34 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({
           No models match current search or filters.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {filteredModels.map((model) => (
-            <ModelCard
-              key={model.id}
-              model={model}
-              isActive={model.id === activeModelId}
-              progress={downloads[model.id]}
-              onSelect={handleSelect}
-              onDownload={handleDownload}
-              onCancelDownload={handleCancelDownload}
-              onDelete={handleDelete}
-              disabled={disabled}
-            />
+        <div className="space-y-5">
+          {[
+            { key: 'multilingual', title: t.speechModelMultilingual, testId: 'models-group-multilingual', list: groupedModels.multilingual },
+            { key: 'englishOnly', title: t.speechModelEnglishOnly, testId: 'models-group-english-only', list: groupedModels.englishOnly },
+          ].filter((group) => group.list.length > 0).map((group) => (
+            <div key={group.key} data-testid={group.testId} className="space-y-2">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                <span>{group.title}</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-[var(--elevated)] border" style={{ borderColor: 'var(--border)' }}>
+                  {group.list.length}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {group.list.map((model) => (
+                  <ModelCard
+                    key={model.id}
+                    model={model}
+                    isActive={model.id === activeModelId}
+                    progress={downloads[model.id]}
+                    onSelect={handleSelect}
+                    onDownload={handleDownload}
+                    onCancelDownload={handleCancelDownload}
+                    onDelete={handleDelete}
+                    disabled={disabled}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}

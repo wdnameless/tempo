@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import type { ModelInfo, DownloadProgress } from '../../services/stt';
 import { I18nService } from '../../services/i18n';
-import { formatBytes } from './utils';
+import { formatModelSizeMB, getModelQuant } from './utils';
 export interface ModelCardProps {
   model: ModelInfo;
   isActive: boolean;
@@ -114,6 +114,15 @@ export const ModelCard: React.FC<ModelCardProps> = ({
                 {t.settingsSpeechModelsFilterRecommended}
               </span>
             )}
+            {isInstalled && (
+              <span
+                data-testid="model-installed-badge"
+                className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20"
+              >
+                <Check className="w-3 h-3" />
+                {t.sttModelInstalled}
+              </span>
+            )}
 
             {(model.isCustom || model.is_custom) && (
               <span
@@ -144,7 +153,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({
           style={{ color: 'var(--text-muted)' }}
         >
           <HardDrive className="w-3.5 h-3.5" />
-          {formatBytes(model.bytes)}
+          {formatModelSizeMB(model.bytes)}
         </div>
       </div>
 
@@ -180,10 +189,10 @@ export const ModelCard: React.FC<ModelCardProps> = ({
             </select>
           </div>
         ) : (
-          (model.quant || quants[0]) && (
+          (
             <div className="flex items-center gap-1">
               <span className="text-[11px] uppercase tracking-wider">{t.settingsSpeechModelQuant}:</span>
-              <span className="font-mono text-[var(--text)]">{model.quant || quants[0]}</span>
+              <span className="font-mono text-[var(--text)]">{model.quant || quants[0] || getModelQuant(model)}</span>
             </div>
           )
         )}

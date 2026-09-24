@@ -284,6 +284,22 @@ export interface Translations {
   settingsSpeechTestMic: string;
   settingsSpeechTestMicStop: string;
   settingsSpeechMicLevel: string;
+  settingsSpeechDenoiseTitle: string;
+  settingsSpeechDenoiseSubtitle: string;
+  settingsSpeechDenoiseRnnoise: string;
+  settingsSpeechDenoiseRnnoiseDesc: string;
+  settingsSpeechDenoiseHighpass: string;
+  settingsSpeechDenoiseHighpassDesc: string;
+  settingsSpeechDenoiseHighpassHz: string;
+  settingsSpeechDenoiseGate: string;
+  settingsSpeechDenoiseGateDesc: string;
+  settingsSpeechDenoiseGateDb: string;
+  settingsSpeechDenoiseAgc: string;
+  settingsSpeechDenoiseAgcDesc: string;
+  settingsSpeechDenoiseAgcTargetDb: string;
+  settingsSpeechModelsGroupMultilingual: string;
+  settingsSpeechModelsGroupEnglishOnly: string;
+  settingsSpeechModelsNoMatches: string;
   settingsSpeechPasteMethod: string;
   settingsSpeechPasteMethodCtrlV: string;
   settingsSpeechPasteMethodShiftInsert: string;
@@ -1075,6 +1091,22 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechTestMic: 'Проверить микрофон',
     settingsSpeechTestMicStop: 'Остановить проверку',
     settingsSpeechMicLevel: 'Уровень входного сигнала',
+    settingsSpeechDenoiseTitle: 'Шумоподавление и фильтры',
+    settingsSpeechDenoiseSubtitle: 'Обработка микрофона перед распознаванием речи',
+    settingsSpeechDenoiseRnnoise: 'Нейросетевой шумодав (RNNoise)',
+    settingsSpeechDenoiseRnnoiseDesc: 'Устраняет фоновый шум и гул окружения с помощью рекуррентной нейросети.',
+    settingsSpeechDenoiseHighpass: 'Фильтр высоких частот (High-pass)',
+    settingsSpeechDenoiseHighpassDesc: 'Срезает низкочастотный гул стола, микрофонные задувания и вибрации.',
+    settingsSpeechDenoiseHighpassHz: 'Частота среза',
+    settingsSpeechDenoiseGate: 'Шумовой гейт (Noise gate)',
+    settingsSpeechDenoiseGateDesc: 'Глушит фоновый шум и дыхание в паузах между словами.',
+    settingsSpeechDenoiseGateDb: 'Порог срабатывания гейта',
+    settingsSpeechDenoiseAgc: 'Нормализация громкости (AGC)',
+    settingsSpeechDenoiseAgcDesc: 'Выравнивает уровень громкости между тихими и громкими фразами.',
+    settingsSpeechDenoiseAgcTargetDb: 'Целевой уровень громкости',
+    settingsSpeechModelsGroupMultilingual: 'Многоязычные модели',
+    settingsSpeechModelsGroupEnglishOnly: 'Только английский',
+    settingsSpeechModelsNoMatches: 'Нет моделей, соответствующих поиску или фильтрам.',
     settingsSpeechPasteMethod: 'Метод вставки',
     settingsSpeechPasteMethodCtrlV: 'Ctrl+V',
     settingsSpeechPasteMethodShiftInsert: 'Shift+Insert',
@@ -1721,6 +1753,22 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechTestMic: 'Test Microphone',
     settingsSpeechTestMicStop: 'Stop Test',
     settingsSpeechMicLevel: 'Input Level',
+    settingsSpeechDenoiseTitle: 'Noise Suppression & Filters',
+    settingsSpeechDenoiseSubtitle: 'Microphone audio processing before speech recognition',
+    settingsSpeechDenoiseRnnoise: 'Neural noise suppression (RNNoise)',
+    settingsSpeechDenoiseRnnoiseDesc: 'Eliminates background noise and ambient hum using a recurrent neural network.',
+    settingsSpeechDenoiseHighpass: 'High-pass filter',
+    settingsSpeechDenoiseHighpassDesc: 'Cuts low-frequency desk rumble, wind noise, and mic thumps.',
+    settingsSpeechDenoiseHighpassHz: 'Cutoff frequency',
+    settingsSpeechDenoiseGate: 'Noise gate',
+    settingsSpeechDenoiseGateDesc: 'Silences background noise and breathing during pauses in speech.',
+    settingsSpeechDenoiseGateDb: 'Gate threshold',
+    settingsSpeechDenoiseAgc: 'Level normalisation (AGC)',
+    settingsSpeechDenoiseAgcDesc: 'Automatically evens out volume between quiet and loud phrases.',
+    settingsSpeechDenoiseAgcTargetDb: 'Target volume level',
+    settingsSpeechModelsGroupMultilingual: 'Multilingual models',
+    settingsSpeechModelsGroupEnglishOnly: 'English only models',
+    settingsSpeechModelsNoMatches: 'No models match current search or filters.',
     settingsSpeechPasteMethod: 'Paste Method',
     settingsSpeechPasteMethodCtrlV: 'Ctrl+V',
     settingsSpeechPasteMethodShiftInsert: 'Shift+Insert',

@@ -575,3 +575,135 @@ describe('Speech components localization (ru/en)', () => {
     I18nService.setLang('ru');
   });
 });
+
+describe('Speech Models - Grouping, Quants, Size and Installed Badge', () => {
+  const sampleModels: stt.ModelInfo[] = [
+    {
+      id: 'whisper-large-v3',
+      name: 'Whisper Large v3',
+      quant: 'Q5_K_M',
+      bytes: 1_540_000_000,
+      languages: ['en', 'ru', 'es'],
+      installed: true,
+      speedScore: 0.25,
+      accuracyScore: 0.95,
+      description: 'Accurate model',
+    },
+    {
+      id: 'whisper-small',
+      name: 'Whisper Small',
+      quant: 'Q8_0',
+      bytes: 488_000_000,
+      languages: ['en', 'ru'],
+      installed: false,
+      speedScore: 0.8,
+      accuracyScore: 0.85,
+      description: 'Balanced multilingual model',
+    },
+    {
+      id: 'whisper-tiny.en',
+      name: 'Whisper Tiny EN',
+      quant: 'Q8_0',
+      bytes: 75_000_000,
+      languages: ['en'],
+      installed: true,
+      speedScore: 1.0,
+      accuracyScore: 0.6,
+      description: 'Fast English model',
+    },
+    {
+      id: 'whisper-base.en',
+      name: 'Whisper Base EN',
+      quant: 'Q5_0',
+      bytes: 145_000_000,
+      languages: ['en'],
+      installed: false,
+      speedScore: 0.9,
+      accuracyScore: 0.7,
+      description: 'Standard English model',
+    },
+  ];
+
+  beforeEach(() => {
+    vi.mocked(stt.listModels).mockResolvedValue(sampleModels);
+  });
+
+  it('ModelLibrary displays quant, size in MB, marks installed models, and groups multilingual before English-only', async () => {
+    render(<ModelLibrary activeModelId="whisper-small" onSelectModel={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('models-group-multilingual')).toBeDefined();
+      expect(screen.getByTestId('models-group-english-only')).toBeDefined();
+    });
+
+    const multiGroup = screen.getByTestId('models-group-multilingual');
+    const enGroup = screen.getByTestId('models-group-english-only');
+
+    // Multilingual appears before English-only in DOM order
+    expect(multiGroup.compareDocumentPosition(enGroup)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    // Multilingual group contains Whisper Small and Whisper Large v3
+    expect(multiGroup.textContent).toContain('Whisper Small');
+    expect(multiGroup.textContent).toContain('Whisper Large v3');
+
+    // Fast to accurate: Whisper Small (speed 0.8) before Whisper Large v3 (speed 0.25)
+    const smallIdx = multiGroup.textContent!.indexOf('Whisper Small');
+    const largeIdx = multiGroup.textContent!.indexOf('Whisper Large v3');
+    expect(smallIdx).toBeLessThan(largeIdx);
+
+    // English group: Tiny EN (speed 1.0) before Base EN (speed 0.9)
+    const tinyIdx = enGroup.textContent!.indexOf('Whisper Tiny EN');
+    const baseIdx = enGroup.textContent!.indexOf('Whisper Base EN');
+    expect(tinyIdx).toBeLessThan(baseIdx);
+
+    // Check size in MB and quant for models
+    expect(multiGroup.textContent).toContain('Q8_0');
+    expect(multiGroup.textContent).toContain('465 MB');
+    expect(multiGroup.textContent).toContain('Q5_K_M');
+    expect(multiGroup.textContent).toContain('1469 MB');
+
+    // Installed badges: large-v3 is installed, small is not
+    const largeCard = screen.getByTestId('model-card-whisper-large-v3');
+    expect(largeCard.querySelector('[data-testid="model-installed-badge"]')).toBeDefined();
+
+    const smallCard = screen.getByTestId('model-card-whisper-small');
+    expect(smallCard.querySelector('[data-testid="model-installed-badge"]')).toBeNull();
+  });
+
+  it('SpeechOnboarding step 1 displays quant, size in MB, installed badge, and groups multilingual before English-only', async () => {
+    render(
+      <SpeechOnboarding
+        open={true}
+        config={{ ...DEFAULT_SPEECH_CONFIG, modelId: 'whisper-small' }}
+        onChange={vi.fn()}
+        onClose={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('onboarding-step-1')).toBeDefined();
+      expect(screen.getByTestId('onboarding-models-group-multilingual')).toBeDefined();
+      expect(screen.getByTestId('onboarding-models-group-english-only')).toBeDefined();
+    });
+
+    const multiGroup = screen.getByTestId('onboarding-models-group-multilingual');
+    const enGroup = screen.getByTestId('onboarding-models-group-english-only');
+
+    // Multilingual appears before English-only in DOM order
+    expect(multiGroup.compareDocumentPosition(enGroup)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    // Fast to accurate: Whisper Small before Whisper Large v3
+    expect(multiGroup.textContent!.indexOf('Whisper Small')).toBeLessThan(multiGroup.textContent!.indexOf('Whisper Large v3'));
+
+    // Shows quant and size in MB
+    expect(multiGroup.textContent).toContain('Q8_0');
+    expect(multiGroup.textContent).toContain('465 MB');
+    expect(multiGroup.textContent).toContain('Q5_K_M');
+    expect(multiGroup.textContent).toContain('1469 MB');
+
+    // Installed badge present for installed model
+    const installedBadges = screen.getAllByTestId('model-installed-badge');
+    expect(installedBadges.length).toBe(2); // large-v3 and tiny.en
+  });
+});
