@@ -545,6 +545,52 @@ impl ModelManager {
         None
     }
 
+    /// Resolves the engine name for any model listed in catalog, custom models, or detected caches.
+    ///
+    /// The catalog stays the primary source for known models.
+    /// For custom or detected models, the engine is retrieved from the unified model list (`self.list()`).
+    /// If the model cannot be resolved, returns a clear error naming the model.
+    pub async fn resolve_engine(&self, model_id: &str) -> Result<String, String> {
+        let trimmed = model_id.trim();
+        if trimmed.is_empty() {
+            return Err("no_model: Model id cannot be empty".to_string());
+        }
+
+        // 1. Catalog is the first source for our own models
+        if let Some(cat) = catalog::find(trimmed) {
+            return Ok(cat.engine.clone());
+        }
+        if trimmed.eq_ignore_ascii_case(SILERO_VAD_MODEL_ID) || trimmed.eq_ignore_ascii_case("silero_vad") {
+            return Ok("onnx".to_string());
+        }
+
+        // 2. Resolve from the unified model list (custom or detected models)
+        let list = self.list().await;
+        if let Some(model) = list.into_iter().find(|m| {
+            m.id.eq_ignore_ascii_case(trimmed)
+                || m.filename.eq_ignore_ascii_case(trimmed)
+                || trimmed.ends_with(&m.filename)
+                || m.name.eq_ignore_ascii_case(trimmed)
+                || m.path.as_deref().map(|p| {
+                    p.eq_ignore_ascii_case(trimmed)
+                        || Path::new(p)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .map(|s| s.eq_ignore_ascii_case(trimmed))
+                            .unwrap_or(false)
+                        || Path::new(p)
+                            .file_name()
+                            .and_then(|f| f.to_str())
+                            .map(|f| f.eq_ignore_ascii_case(trimmed))
+                            .unwrap_or(false)
+                }).unwrap_or(false)
+        }) {
+            return Ok(model.engine);
+        }
+
+        Err(format!("no_model: Model '{model_id}' cannot be resolved to any speech engine"))
+    }
+
     /// Starts a resumable model download in the background.
     pub async fn start_download(
         &self,
@@ -2119,6 +2165,108 @@ mod tests {
         assert_eq!(
             tiny.path,
             Some(model_file.to_string_lossy().to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_engine_detected_model_resolves_to_own_engine() {
+        let dir = tempdir().unwrap();
+        let models_dir = dir.path().join("models");
+        let cache = dir.path().join("hf_cache");
+
+        let repo = cache.join("models--handy-computer--nemotron-3.5-asr-streaming-0.6b-gguf");
+        let snap = repo.join("snapshots").join("rev_nemotron");
+        fs::create_dir_all(&snap).unwrap();
+        let model_file = snap.join("nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf");
+        fs::write(&model_file, b"fake gguf").unwrap();
+
+        let mgr = ModelManager::new(models_dir).with_extra_caches(vec![cache]);
+        let engine = mgr
+            .resolve_engine("nemotron-3.5-asr-streaming-0.6b-Q8_0")
+            .await
+            .expect("detected model should resolve");
+        assert_eq!(engine, "transcribecpp");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_engine_catalog_whisper_model_resolves_to_whisper() {
+        let dir = tempdir().unwrap();
+        let mgr = ModelManager::new(dir.path().to_path_buf());
+        let engine = mgr
+            .resolve_engine("whisper-small")
+            .await
+            .expect("catalog whisper model should resolve");
+        assert_eq!(engine, "whisper");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_engine_unknown_id_produces_error_naming_model() {
+        let dir = tempdir().unwrap();
+        let mgr = ModelManager::new(dir.path().to_path_buf());
+        let err = mgr
+            .resolve_engine("nonexistent-model-xyz-98765")
+            .await
+            .expect_err("unknown model id must return error");
+        assert!(
+            err.contains("nonexistent-model-xyz-98765"),
+            "error message should name the model, got: {err}"
+        );
+        assert!(
+            err.contains("no_model"),
+            "error message should have no_model code, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_real_nemotron_pipeline_end_to_end() {
+        let dir = tempdir().unwrap();
+        let mgr = ModelManager::new(dir.path().to_path_buf());
+        let model_id = "nemotron-3.5-asr-streaming-0.6b-Q8_0";
+
+        // Pipeline step 1: resolve model path via ModelManager
+        let model_path = match mgr.installed_path(model_id) {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping test_real_nemotron_pipeline_end_to_end: nemotron model not installed");
+                return;
+            }
+        };
+
+        // Pipeline step 2: resolve engine via ModelManager::resolve_engine
+        let engine_name = mgr
+            .resolve_engine(model_id)
+            .await
+            .expect("nemotron must resolve to its engine");
+        assert_eq!(engine_name, "transcribecpp", "nemotron must resolve to transcribecpp");
+
+        let wav_path = PathBuf::from(r"D:\WORK\Alarmer\.tmp\ru16k.wav");
+        if !wav_path.is_file() {
+            eprintln!("Skipping test_real_nemotron_pipeline_end_to_end: ru16k.wav not found");
+            return;
+        }
+
+        let mut reader = hound::WavReader::open(&wav_path).expect("open test wav");
+        let pcm: Vec<f32> = reader
+            .samples::<i16>()
+            .map(|s| s.expect("sample") as f32 / i16::MAX as f32)
+            .collect();
+
+        // Pipeline step 3: transcribe through EngineManager with resolved engine and model_path
+        let engine_mgr = crate::stt::engine::EngineManager::new();
+        let run_options = transcribe_cpp::RunOptions {
+            language: Some("ru".to_string()),
+            ..Default::default()
+        };
+        let result = engine_mgr
+            .transcribe_samples(&engine_name, model_path, &pcm, &run_options)
+            .await;
+        assert!(result.is_ok(), "transcription failed: {:?}", result);
+        let text = result.unwrap();
+        println!("Pipeline transcribed text: {:?}", text);
+        assert!(
+            text.contains("Привет"),
+            "expected Russian transcription, got: {:?}",
+            text
         );
     }
 }

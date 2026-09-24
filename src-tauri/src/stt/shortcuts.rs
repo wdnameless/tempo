@@ -166,7 +166,8 @@ pub fn parse_accelerator(s: &str) -> Result<Shortcut, String> {
 /// and only while recording is active.
 pub fn apply_bindings(app: &AppHandle, bindings: &SpeechBindings) -> Result<(), String> {
     let transcribe = parse_accelerator(&bindings.transcribe)?;
-    let cancel = parse_accelerator(&bindings.cancel)?;
+    let cancel_str = crate::stt::resolve_cancel_hotkey(&bindings.cancel);
+    let cancel = parse_accelerator(&cancel_str)?;
 
     if transcribe == cancel {
         return Err("Transcribe and Cancel shortcuts cannot use the same key combination".to_string());
@@ -537,5 +538,22 @@ mod tests {
         let default_bindings = SpeechBindings::default();
         assert_eq!(default_bindings.transcribe, "Ctrl+S");
         assert_eq!(default_bindings.cancel, "Escape");
+    }
+
+    #[test]
+    fn speech_bindings_cancel_resolves_empty_to_escape() {
+        let empty_bindings = SpeechBindings {
+            transcribe: "Ctrl+S".to_string(),
+            cancel: "".to_string(),
+        };
+        let resolved = crate::stt::resolve_cancel_hotkey(&empty_bindings.cancel);
+        assert_eq!(resolved, "Escape");
+
+        let explicit_bindings = SpeechBindings {
+            transcribe: "Ctrl+S".to_string(),
+            cancel: "F8".to_string(),
+        };
+        let resolved_explicit = crate::stt::resolve_cancel_hotkey(&explicit_bindings.cancel);
+        assert_eq!(resolved_explicit, "F8");
     }
 }

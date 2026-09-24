@@ -108,4 +108,56 @@ describe('speechSettings', () => {
     await saveSpeechSettings({ enabled: false });
     expect(notified).toBe(1);
   });
+
+  it('resolves empty or whitespace stored cancel hotkey to Escape', async () => {
+    await setPref('tempo_speech_cancel_hotkey', '');
+    let settings = loadSpeechSettings();
+    expect(settings.cancelHotkey).toBe('Escape');
+
+    await setPref('tempo_speech_cancel_hotkey', '   ');
+    settings = loadSpeechSettings();
+    expect(settings.cancelHotkey).toBe('Escape');
+  });
+
+  it('honors an explicit cancel hotkey', async () => {
+    await setPref('tempo_speech_cancel_hotkey', 'F8');
+    const settings = loadSpeechSettings();
+    expect(settings.cancelHotkey).toBe('F8');
+  });
+
+  it('resolves legacy alarmer cancel hotkey to Escape when empty and honors explicit value', async () => {
+    await setPref('alarmer_speech_cancel_hotkey', '');
+    let settings = loadSpeechSettings();
+    expect(settings.cancelHotkey).toBe('Escape');
+
+    await setPref('alarmer_speech_cancel_hotkey', 'Ctrl+Shift+C');
+    settings = loadSpeechSettings();
+    expect(settings.cancelHotkey).toBe('Ctrl+Shift+C');
+  });
+
+  it('normalizes empty cancel hotkey on merge and save', async () => {
+    const merged = mergeSpeechConfig(DEFAULT_SPEECH_SETTINGS, { cancelHotkey: '' });
+    expect(merged.cancelHotkey).toBe('Escape');
+
+    const mergedExplicit = mergeSpeechConfig(DEFAULT_SPEECH_SETTINGS, { cancelHotkey: 'F8' });
+    expect(mergedExplicit.cancelHotkey).toBe('F8');
+
+    await saveSpeechSettings({ cancelHotkey: '' });
+    expect(mockInvoke).toHaveBeenCalledWith('stt_apply_speech_settings', {
+      patch: {
+        cancelHotkey: 'Escape',
+      },
+    });
+    expect(getPref('tempo_speech_cancel_hotkey', undefined)).toBe('Escape');
+    expect(loadSpeechSettings().cancelHotkey).toBe('Escape');
+
+    await saveSpeechSettings({ cancelHotkey: 'F8' });
+    expect(mockInvoke).toHaveBeenCalledWith('stt_apply_speech_settings', {
+      patch: {
+        cancelHotkey: 'F8',
+      },
+    });
+    expect(getPref('tempo_speech_cancel_hotkey', undefined)).toBe('F8');
+    expect(loadSpeechSettings().cancelHotkey).toBe('F8');
+  });
 });

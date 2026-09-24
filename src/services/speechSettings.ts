@@ -120,6 +120,14 @@ function parseString(val: unknown, fallback: string): string {
   if (typeof val === 'string') return val;
   return fallback;
 }
+export function parseCancelHotkey(val: unknown, fallback: string = DEFAULT_SPEECH_CONFIG.cancelHotkey): string {
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+  const fallbackTrimmed = typeof fallback === 'string' ? fallback.trim() : '';
+  return fallbackTrimmed.length > 0 ? fallbackTrimmed : DEFAULT_SPEECH_CONFIG.cancelHotkey;
+}
 
 function parseNullableString(val: unknown, fallback: string | null): string | null {
   if (val === null) return null;
@@ -207,7 +215,7 @@ export function loadSpeechConfig(): SpeechConfig {
       DEFAULT_SPEECH_CONFIG.activation,
     ),
     hotkey: parseString(getSpeechPref('hotkey', DEFAULT_SPEECH_CONFIG.hotkey), DEFAULT_SPEECH_CONFIG.hotkey),
-    cancelHotkey: parseString(
+    cancelHotkey: parseCancelHotkey(
       getSpeechPref('cancel_hotkey', DEFAULT_SPEECH_CONFIG.cancelHotkey),
       DEFAULT_SPEECH_CONFIG.cancelHotkey,
     ),
@@ -364,7 +372,10 @@ export function mergeSpeechConfig(base: SpeechConfig, patch: Partial<SpeechConfi
     enabled: patch.enabled !== undefined ? parseBoolean(patch.enabled, base.enabled) : base.enabled,
     activation: patch.activation !== undefined ? parseActivation(patch.activation, base.activation) : base.activation,
     hotkey: patch.hotkey !== undefined ? parseString(patch.hotkey, base.hotkey) : base.hotkey,
-    cancelHotkey: patch.cancelHotkey !== undefined ? parseString(patch.cancelHotkey, base.cancelHotkey) : base.cancelHotkey,
+    cancelHotkey:
+      patch.cancelHotkey !== undefined
+        ? parseCancelHotkey(patch.cancelHotkey, base.cancelHotkey)
+        : base.cancelHotkey,
     holdThresholdMs:
       patch.holdThresholdMs !== undefined ? parseNumber(patch.holdThresholdMs, base.holdThresholdMs) : base.holdThresholdMs,
     engine: patch.engine !== undefined ? parseString(patch.engine, base.engine) : base.engine,
@@ -531,21 +542,25 @@ async function persistToLocalPrefs(config: SpeechConfig, patch: Partial<SpeechCo
 }
 
 export async function saveSpeechConfig(patch: Partial<SpeechConfig>): Promise<SpeechConfig> {
+  const normalizedPatch: Partial<SpeechConfig> = { ...patch };
+  if (normalizedPatch.cancelHotkey !== undefined) {
+    normalizedPatch.cancelHotkey = parseCancelHotkey(normalizedPatch.cancelHotkey);
+  }
   let result: SpeechConfig;
 
   if (isTauri()) {
     try {
-      result = await applySpeechConfig(patch);
+      result = await applySpeechConfig(normalizedPatch);
     } catch {
       // In unit test environments where applySpeechConfig is unmocked or offline, fallback to local merge
-      result = mergeSpeechConfig(loadSpeechConfig(), patch);
+      result = mergeSpeechConfig(loadSpeechConfig(), normalizedPatch);
     }
   } else {
-    result = mergeSpeechConfig(loadSpeechConfig(), patch);
+    result = mergeSpeechConfig(loadSpeechConfig(), normalizedPatch);
   }
 
   // Update local pref cache from the returned config so UI and Rust cannot drift
-  await persistToLocalPrefs(result, patch);
+  await persistToLocalPrefs(result, normalizedPatch);
   return result;
 }
 

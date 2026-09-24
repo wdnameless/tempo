@@ -389,6 +389,20 @@ fn pref_write<T: Serialize>(conn: &rusqlite::Connection, key: &str, val: &T) -> 
     crate::storage::repo::pref_set(conn, key, &json)
 }
 
+pub fn resolve_cancel_hotkey(s: &str) -> String {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        "Escape".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+pub fn pref_read_cancel_hotkey(conn: &rusqlite::Connection) -> String {
+    let raw = pref_read_string(conn, "tempo_speech_cancel_hotkey", Some("alarmer_speech_cancel_hotkey"), "Escape");
+    resolve_cancel_hotkey(&raw)
+}
+
 pub fn load_speech_config(app: &AppHandle) -> SpeechConfig {
     crate::storage::with_db(app, |conn| {
         let enabled: bool = pref_read(conn, "tempo_speech_enabled", Some("alarmer_speech_enabled"), true);
@@ -400,7 +414,7 @@ pub fn load_speech_config(app: &AppHandle) -> SpeechConfig {
         };
 
         let hotkey = pref_read_string(conn, "tempo_speech_hotkey", Some("alarmer_speech_hotkey"), "Ctrl+S");
-        let cancel_hotkey = pref_read_string(conn, "tempo_speech_cancel_hotkey", Some("alarmer_speech_cancel_hotkey"), "Escape");
+        let cancel_hotkey = pref_read_cancel_hotkey(conn);
         let hold_threshold_ms: u64 = pref_read(conn, "tempo_speech_hold_threshold_ms", Some("alarmer_speech_hold_threshold_ms"), 300);
         let engine = pref_read_string(conn, "tempo_speech_engine", Some("alarmer_speech_engine"), "local");
         let model_id = pref_read_opt_string(conn, "tempo_speech_model_id", Some("alarmer_speech_model_id"));
@@ -720,12 +734,12 @@ impl DictationDriver for TempoDictationDriver {
                 Err("cloud_refused: Cloud transcription not configured".to_string())
             } else {
                 let model_id = cfg.model_id.as_deref().unwrap_or("whisper-small");
-                let model_path = match models.installed_path(model_id) {
-                    Some(p) => p,
+                let (resolved_model_id, model_path) = match models.installed_path(model_id) {
+                    Some(p) => (model_id.to_string(), p),
                     None => {
                         let list = models.list().await;
-                        match list.into_iter().find(|m| m.installed).and_then(|m| m.path.map(PathBuf::from)) {
-                            Some(p) => p,
+                        match list.into_iter().find(|m| m.installed && m.path.is_some()) {
+                            Some(m) => (m.id.clone(), PathBuf::from(m.path.unwrap())),
                             None => {
                                 let err = format!("no_model: Model '{model_id}' is not installed");
                                 let _ = app_handle.emit(
@@ -744,17 +758,13 @@ impl DictationDriver for TempoDictationDriver {
                     }
                 };
 
-                let engine_name = catalog::find(model_id)
-                    .map(|m| m.engine.as_str())
-                    .unwrap_or_else(|| {
-                        if cfg.engine != "whisper" && cfg.engine != "cloud" && !cfg.engine.is_empty() {
-                            &cfg.engine
-                        } else {
-                            "whisper"
-                        }
-                    });
-                let run_options = run_options_from_cfg(&cfg);
-                engine.transcribe_samples(engine_name, model_path, &samples, &run_options).await
+                match models.resolve_engine(&resolved_model_id).await {
+                    Ok(engine_name) => {
+                        let run_options = run_options_from_cfg(&cfg);
+                        engine.transcribe_samples(&engine_name, model_path, &samples, &run_options).await
+                    }
+                    Err(err) => Err(err),
+                }
             };
 
             let raw_text = match text_res {
@@ -1054,11 +1064,9 @@ pub async fn stt_transcribe_file(
     };
 
     let pcm = capture::resample_linear(&mono, spec.sample_rate, 16000);
-    let engine_name = catalog::find(model_id)
-        .map(|m| m.engine.as_str())
-        .unwrap_or("whisper");
+    let engine_name = state.models.resolve_engine(model_id).await?;
     let run_options = run_options_from_cfg(&cfg);
-    let text = state.engine.transcribe_samples(engine_name, model_path, &pcm, &run_options).await?;
+    let text = state.engine.transcribe_samples(&engine_name, model_path, &pcm, &run_options).await?;
     Ok(TranscribeFileResult {
         text,
         language: cfg.language.unwrap_or_else(|| "auto".to_string()),
@@ -1147,8 +1155,9 @@ pub async fn stt_apply_speech_settings(
             pref_write(conn, "alarmer_speech_hotkey", v)?;
         }
         if let Some(v) = &patch.cancel_hotkey {
-            pref_write(conn, "tempo_speech_cancel_hotkey", v)?;
-            pref_write(conn, "alarmer_speech_cancel_hotkey", v)?;
+            let normalized = resolve_cancel_hotkey(v);
+            pref_write(conn, "tempo_speech_cancel_hotkey", &normalized)?;
+            pref_write(conn, "alarmer_speech_cancel_hotkey", &normalized)?;
         }
         if let Some(v) = patch.hold_threshold_ms {
             pref_write(conn, "tempo_speech_hold_threshold_ms", &v)?;
@@ -1300,7 +1309,17 @@ pub async fn stt_apply_speech_settings(
             transcribe: updated.hotkey.clone(),
             cancel: updated.cancel_hotkey.clone(),
         };
-        let _ = shortcuts::apply_bindings(&app, &bindings);
+        // A global shortcut the OS refuses (another app owns it, or the
+        // combination is reserved by the system) used to be discarded here, and
+        // the user was left pressing a key that did nothing with no way to find
+        // out why. Say it out loud: the reason goes to the log and to the UI.
+        if let Err(e) = shortcuts::apply_bindings(&app, &bindings) {
+            eprintln!("[stt] hotkey not registered: {e}");
+            let _ = app.emit(
+                "stt://hotkey-error",
+                serde_json::json!({ "hotkey": bindings.transcribe, "message": e }),
+            );
+        }
     } else {
         shortcuts::unregister_all(&app);
     }
@@ -1560,5 +1579,50 @@ mod tests {
         assert!(!cfg.denoise_rnnoise);
         assert!(!cfg.denoise_agc);
         assert_eq!(cfg.denoise_agc_target_db, -20.0);
+    }
+
+    #[test]
+    fn test_speech_config_cancel_hotkey_defaults_to_escape() {
+        let cfg = SpeechConfig::default();
+        assert_eq!(cfg.cancel_hotkey, "Escape");
+    }
+
+    #[test]
+    fn test_resolve_cancel_hotkey() {
+        assert_eq!(resolve_cancel_hotkey(""), "Escape");
+        assert_eq!(resolve_cancel_hotkey("   "), "Escape");
+        assert_eq!(resolve_cancel_hotkey("Escape"), "Escape");
+        assert_eq!(resolve_cancel_hotkey("F8"), "F8");
+        assert_eq!(resolve_cancel_hotkey("  Ctrl+Shift+C  "), "Ctrl+Shift+C");
+    }
+
+    #[test]
+    fn test_pref_read_cancel_hotkey() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::storage::migrations::migrate(&conn).expect("migration must succeed");
+
+        // 1. Fresh database -> default cancel hotkey is Escape
+        assert_eq!(pref_read_cancel_hotkey(&conn), "Escape");
+
+        // 2. User has stored tempo_speech_cancel_hotkey = "" in DB -> resolves to Escape
+        pref_write(&conn, "tempo_speech_cancel_hotkey", &"").unwrap();
+        assert_eq!(pref_read_cancel_hotkey(&conn), "Escape");
+
+        // 3. User has stored whitespace -> resolves to Escape
+        pref_write(&conn, "tempo_speech_cancel_hotkey", &"   ").unwrap();
+        assert_eq!(pref_read_cancel_hotkey(&conn), "Escape");
+
+        // 4. User has explicit hotkey (e.g. F8) -> kept
+        pref_write(&conn, "tempo_speech_cancel_hotkey", &"F8").unwrap();
+        assert_eq!(pref_read_cancel_hotkey(&conn), "F8");
+
+        // 5. Fallback alarmer_speech_cancel_hotkey when tempo is unset
+        let conn_legacy = rusqlite::Connection::open_in_memory().unwrap();
+        crate::storage::migrations::migrate(&conn_legacy).expect("migration must succeed");
+        pref_write(&conn_legacy, "alarmer_speech_cancel_hotkey", &"").unwrap();
+        assert_eq!(pref_read_cancel_hotkey(&conn_legacy), "Escape");
+
+        pref_write(&conn_legacy, "alarmer_speech_cancel_hotkey", &"F8").unwrap();
+        assert_eq!(pref_read_cancel_hotkey(&conn_legacy), "F8");
     }
 }
