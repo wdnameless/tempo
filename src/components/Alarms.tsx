@@ -23,6 +23,7 @@ import { onDataChanged } from '../services/appEvents';
 import { Card, EmptyState, Toggle } from './ui';
 import { AlarmAudio } from './AlarmAudio';
 import { AlarmEditorSheet } from './AlarmEditorSheet';
+import { AIScheduleIntake } from './AIScheduleIntake';
 
 /** Short weekday labels, indexed 0 = Sunday to match stored format */
 export const WEEKDAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'] as const;
@@ -406,8 +407,12 @@ export const Alarms: React.FC<AlarmsProps> = ({
         </button>
       </div>
 
-      {/* Reserved slot for AIScheduleIntake (Slice B integration seam) */}
-      <div id="ai-schedule-intake-slot" />
+      {/* AI Schedule Intake */}
+      <AIScheduleIntake
+        onApplied={() => {
+          void refreshAlarms();
+        }}
+      />
 
       {/* Alarm List (Hero surface) */}
       <div className="flex flex-col space-y-2">
