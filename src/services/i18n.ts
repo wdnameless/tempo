@@ -426,6 +426,13 @@ export interface Translations {
   sttErrorNoDevice: string;
   sttErrorImportFailed: string;
   sttErrorPostprocessFailed: string;
+  sttNoticeHotkeyError: string;
+  sttNoticeHotkeyErrorWithReason: string;
+  sttNoticeVadFallback: string;
+  sttNoticeVadFallbackWithReason: string;
+  sttNoticeModelFailed: string;
+  sttNoticeModelFailedWithReason: string;
+  sttNoticeDismiss: string;
   sttCopiedToClipboard: string;
   sttInsertedIntoWindow: string;
   recTranscribe: string;
@@ -1252,7 +1259,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechModelUnload10Min: '10 минут',
     settingsSpeechModelUnload15Min: '15 минут',
     dictationIndicatorRecording: 'Запись...',
-    dictationIndicatorTranscribing: 'Распознавание...',
+    dictationIndicatorTranscribing: 'Распознаём…',
     dictationIndicatorCancel: 'Отмена',
     dictationIndicatorStop: 'Завершить',
     settingsWhisperModel: 'Модель Whisper',
@@ -1272,6 +1279,13 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     sttErrorNoDevice: 'Устройство аудиовхода не найдено',
     sttErrorImportFailed: 'Не удалось импортировать модель .gguf',
     sttErrorPostprocessFailed: 'Ошибка ИИ пост-обработки транскрипта',
+    sttNoticeHotkeyError: 'Не удалось активировать клавишу {hotkey}',
+    sttNoticeHotkeyErrorWithReason: 'Не удалось активировать клавишу {hotkey}: {reason}',
+    sttNoticeVadFallback: 'Детектор голоса переключён на {backend}',
+    sttNoticeVadFallbackWithReason: 'Детектор голоса переключён на {backend}: {reason}',
+    sttNoticeModelFailed: 'Не удалось загрузить модель {modelId}',
+    sttNoticeModelFailedWithReason: 'Не удалось загрузить модель {modelId}: {reason}',
+    sttNoticeDismiss: 'Закрыть уведомление',
     sttCopiedToClipboard: 'Текст скопирован в буфер обмена',
     sttInsertedIntoWindow: 'Текст вставлен в активное окно',
     settingsShortcutsHint: 'Список берётся из реестра горячих клавиш',
@@ -1953,7 +1967,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechModelUnload10Min: '10 minutes',
     settingsSpeechModelUnload15Min: '15 minutes',
     dictationIndicatorRecording: 'Recording...',
-    dictationIndicatorTranscribing: 'Transcribing...',
+    dictationIndicatorTranscribing: 'Transcribing…',
     dictationIndicatorCancel: 'Cancel',
     dictationIndicatorStop: 'Stop',
     settingsSubtitle: 'Configure Tempo behavior, shortcuts, and integrations',
@@ -2016,6 +2030,13 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     sttErrorNoDevice: 'Audio input device not found',
     sttErrorImportFailed: 'Failed to import .gguf model',
     sttErrorPostprocessFailed: 'AI post-processing failed',
+    sttNoticeHotkeyError: 'Failed to register shortcut {hotkey}',
+    sttNoticeHotkeyErrorWithReason: 'Failed to register shortcut {hotkey}: {reason}',
+    sttNoticeVadFallback: 'Voice detector switched to {backend}',
+    sttNoticeVadFallbackWithReason: 'Voice detector switched to {backend}: {reason}',
+    sttNoticeModelFailed: 'Failed to load model {modelId}',
+    sttNoticeModelFailedWithReason: 'Failed to load model {modelId}: {reason}',
+    sttNoticeDismiss: 'Dismiss notice',
     sttCopiedToClipboard: 'Text copied to clipboard',
     sttInsertedIntoWindow: 'Text inserted into active window',
     // Existing keys

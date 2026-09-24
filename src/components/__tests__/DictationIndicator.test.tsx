@@ -316,4 +316,184 @@ describe('DictationIndicator', () => {
 
     window.matchMedia = originalMatchMedia;
   });
+  it('after release the indicator stays visible and shows the processing text', async () => {
+    const startTime = Date.now() - 3000;
+    vi.mocked(stt.dictationState).mockResolvedValue({
+      recording: true,
+      level: 0.5,
+      since: startTime,
+    });
+
+    render(<DictationIndicator pollIntervalMs={50} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dictation-indicator')).toBeDefined();
+    });
+
+    // Simulate key release: microphone stops recording, so dictationState returns recording: false
+    vi.mocked(stt.dictationState).mockResolvedValue({
+      recording: false,
+      level: 0,
+      since: startTime,
+    });
+
+    // Indicator stays visible and enters processing phase
+    await waitFor(() => {
+      expect(screen.getByTestId('dictation-processing-spinner')).toBeDefined();
+    });
+
+    expect(screen.getByTestId('dictation-indicator')).toBeDefined();
+    const expectedProcessingText = I18nService.t().dictationIndicatorTranscribing || 'Распознаём…';
+    expect(screen.getByText(expectedProcessingText)).toBeDefined();
+
+    // Wave visualizer remains rendered
+    expect(screen.getByTestId('dictation-wave')).toBeDefined();
+
+    // Stop button is disabled during processing
+    const stopBtn = screen.getByTestId('dictation-stop-button') as HTMLButtonElement;
+    expect(stopBtn.disabled).toBe(true);
+  });
+
+  it('disappears once the result arrives', async () => {
+    const startTime = Date.now() - 2000;
+    vi.mocked(stt.dictationState).mockResolvedValue({
+      recording: true,
+      level: 0.5,
+      since: startTime,
+    });
+
+    render(<DictationIndicator pollIntervalMs={50} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dictation-indicator')).toBeDefined();
+    });
+
+    // Key release -> transitions to processing
+    vi.mocked(stt.dictationState).mockResolvedValue({
+      recording: false,
+      level: 0,
+      since: startTime,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dictation-processing-spinner')).toBeDefined();
+    });
+    expect(screen.getByTestId('dictation-indicator')).toBeDefined();
+
+    // Backend finishes transcribing and emits dictation-stopped
+    act(() => {
+      eventHandler?.({
+        type: 'dictation-stopped',
+        result: { text: 'Transcribed sentence', duration_ms: 2000, engine: 'local' },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('dictation-indicator')).toBeNull();
+    });
+  });
+
+  it('also disappears on an error', async () => {
+    const startTime = Date.now() - 2000;
+    vi.mocked(stt.dictationState).mockResolvedValue({
+      recording: true,
+      level: 0.5,
+      since: startTime,
+    });
+
+    render(<DictationIndicator pollIntervalMs={50} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dictation-indicator')).toBeDefined();
+    });
+
+    // Key release -> transitions to processing
+    vi.mocked(stt.dictationState).mockResolvedValue({
+      recording: false,
+      level: 0,
+      since: startTime,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dictation-processing-spinner')).toBeDefined();
+    });
+    expect(screen.getByTestId('dictation-indicator')).toBeDefined();
+
+    // Backend encounters an error and emits speech-error
+    act(() => {
+      eventHandler?.({
+        type: 'speech-error',
+        code: 'no_speech',
+        message: 'No speech detected',
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('dictation-indicator')).toBeNull();
+    });
+  });
+
+  it('renders wave and follows the level while recording', async () => {
+    vi.mocked(stt.dictationState).mockResolvedValue({
+      recording: false,
+      level: 0,
+      since: null,
+    });
+
+    render(<DictationIndicator pollIntervalMs={500} />);
+
+    // Recording starts
+    act(() => {
+      eventHandler?.({ type: 'dictation-started', mode: 'insert' });
+    });
+
+    expect(screen.getByTestId('dictation-indicator')).toBeDefined();
+    expect(screen.getByTestId('dictation-wave')).toBeDefined();
+
+    // Low level
+    act(() => {
+      eventHandler?.({ type: 'dictation-level', level: 0.05 });
+    });
+    const barsLow = screen.getAllByTestId('dictation-wave-bar');
+    const heightLow = parseInt(barsLow[12].style.height, 10);
+
+    // High level
+    act(() => {
+      eventHandler?.({ type: 'dictation-level', level: 0.95 });
+    });
+    const barsHigh = screen.getAllByTestId('dictation-wave-bar');
+    const heightHigh = parseInt(barsHigh[12].style.height, 10);
+
+    expect(heightHigh).toBeGreaterThan(heightLow);
+  });
+
+  it('shows processing state in overlay variant as well', async () => {
+    const startTime = Date.now() - 2000;
+    vi.mocked(stt.dictationState).mockResolvedValue({
+      recording: true,
+      level: 0.4,
+      since: startTime,
+    });
+
+    render(<DictationIndicator variant="overlay" pollIntervalMs={50} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dictation-indicator')).toBeDefined();
+    });
+
+    // Key released -> processing
+    vi.mocked(stt.dictationState).mockResolvedValue({
+      recording: false,
+      level: 0,
+      since: startTime,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dictation-processing-spinner')).toBeDefined();
+    });
+
+    expect(screen.getByTestId('dictation-indicator')).toBeDefined();
+    const expectedProcessingText = I18nService.t().dictationIndicatorTranscribing || 'Распознаём…';
+    expect(screen.getByText(expectedProcessingText)).toBeDefined();
+  });
 });

@@ -19,7 +19,9 @@ export type SttEvent =
   | { type: 'dictation-stopped'; result: DictationResult }
   | { type: 'dictation-cancelled' }
   | { type: 'dictation-level'; level: number }
-  | { type: 'speech-error'; code: SttErrorCode; message: string };
+  | { type: 'speech-error'; code: SttErrorCode; message: string }
+  | { type: 'hotkey-error'; hotkey: string; message: string }
+  | { type: 'vad-fallback'; backend: string; reason: string };
 
 export type SttEventHandler = (e: SttEvent) => void;
 
@@ -99,6 +101,18 @@ function setupTauriListeners(): void {
     type: 'speech-error',
     code: mapSttError(p?.code ?? p?.message ?? 'unknown').code,
     message: p?.message ?? (typeof p?.code === 'string' ? p.code : 'Speech recognition error'),
+  }));
+
+  bind<{ hotkey?: string; message?: string }>('stt://hotkey-error', (p) => ({
+    type: 'hotkey-error',
+    hotkey: p?.hotkey ?? '',
+    message: p?.message ?? 'Hotkey registration failed',
+  }));
+
+  bind<{ backend?: string; reason?: string }>('stt://vad-fallback', (p) => ({
+    type: 'vad-fallback',
+    backend: p?.backend ?? 'energy',
+    reason: p?.reason ?? 'VAD fallback',
   }));
 
   teardownListeners = () => {

@@ -36,6 +36,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { SectionTabs } from './components/SectionTabs';
 
 import { DictationIndicator } from './components/DictationIndicator';
+import { SttNotices } from './components/SttNotices';
 import { DynamicBackground } from './components/DynamicBackground';
 import { I18nService } from './services/i18n';
 import { loadAccent, migrateLegacyPreferences } from './services/generalSettings';
@@ -743,6 +744,7 @@ export default function App() {
       ) : (
         <MainShell />
       )}
+      <SttNotices />
     </ErrorBoundary>
   );
 }

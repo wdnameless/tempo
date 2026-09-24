@@ -4,8 +4,8 @@
 // Supports both floating 'pill' (default) and full 'overlay' (for mini-overlay window) variants.
 // Must not steal focus from previous active window.
 
-import React, { useEffect, useState, useMemo } from 'react';
-import { Square, Mic, X } from 'lucide-react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { Square, Mic, X, Loader2 } from 'lucide-react';
 import { dictationState, stopDictation, cancelDictation } from '../services/stt';
 
 /** Shape of the dictation snapshot this indicator renders. Declared here, not in
@@ -63,6 +63,8 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
   const [now, setNow] = useState<number>(0);
   const [isStopping, setIsStopping] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const exitTimerRef = useRef<number | null>(null);
   const [overlayEnabled, setOverlayEnabled] = useState<boolean>(() => {
     try {
       return loadSpeechConfig().overlayEnabled;
@@ -141,34 +143,63 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
     return () => window.clearInterval(interval);
   }, [state.recording]);
 
+  // Auto-reset if processing hangs unexpectedly
+  useEffect(() => {
+    if (!isProcessing) return;
+    const timeout = window.setTimeout(() => {
+      setIsProcessing(false);
+      setState({ recording: false, level: 0, since: null });
+    }, 60000);
+    return () => window.clearTimeout(timeout);
+  }, [isProcessing]);
+
   // Primary: subscribe to real-time STT events
   useEffect(() => {
     const unsubscribe = onSttEvent((e) => {
       if (e.type === 'dictation-started') {
+        if (exitTimerRef.current !== null) {
+          window.clearTimeout(exitTimerRef.current);
+          exitTimerRef.current = null;
+        }
         setIsExiting(false);
+        setIsProcessing(false);
         if (e.mode) setMode(e.mode);
+        const start = Date.now();
+        setNow(start);
         setState((prev) => ({
           ...prev,
           recording: true,
-          since: prev.since ?? Date.now(),
+          since: prev.since ?? start,
         }));
       } else if (e.type === 'dictation-level') {
+        if (exitTimerRef.current !== null) {
+          window.clearTimeout(exitTimerRef.current);
+          exitTimerRef.current = null;
+        }
         setIsExiting(false);
+        setIsProcessing(false);
         setState((prev) => ({
           ...prev,
           recording: true,
           level: e.level,
           since: prev.since ?? Date.now(),
         }));
-      } else if (e.type === 'dictation-stopped' || e.type === 'dictation-cancelled') {
+      } else if (e.type === 'dictation-stopped' || e.type === 'dictation-cancelled' || e.type === 'speech-error') {
+        if (exitTimerRef.current !== null) {
+          window.clearTimeout(exitTimerRef.current);
+          exitTimerRef.current = null;
+        }
         if (prefersReducedMotion) {
+          setIsProcessing(false);
           setState({ recording: false, level: 0, since: null });
           setIsExiting(false);
         } else {
           setIsExiting(true);
-          window.setTimeout(() => {
+          exitTimerRef.current = window.setTimeout(() => {
+            setIsProcessing(false);
             setState({ recording: false, level: 0, since: null });
             setIsExiting(false);
+            exitTimerRef.current = null;
           }, 200);
         }
         if (e.type === 'dictation-stopped') {
@@ -177,7 +208,13 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (exitTimerRef.current !== null) {
+        window.clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = null;
+      }
+    };
   }, [onStop, prefersReducedMotion]);
   // Fallback: poll dictationState()
   useEffect(() => {
@@ -193,15 +230,37 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
         if (!current || typeof current !== 'object' || typeof current.recording !== 'boolean') {
           return;
         }
-        setState((prev) => {
-          // If already marked recording by event, preserve since timestamp if poll lacks it
-          const since = current.since ?? (current.recording ? prev.since ?? Date.now() : null);
-          return {
-            recording: current.recording,
-            level: current.level,
-            since,
-          };
-        });
+        if (current.recording) {
+          if (exitTimerRef.current !== null) {
+            window.clearTimeout(exitTimerRef.current);
+            exitTimerRef.current = null;
+          }
+          setIsProcessing(false);
+          setIsExiting(false);
+          setState((prev) => {
+            const since = current.since ?? (prev.recording ? prev.since ?? Date.now() : Date.now());
+            return {
+              recording: true,
+              level: current.level,
+              since,
+            };
+          });
+        } else {
+          // current.recording is false
+          setState((prev) => {
+            if (prev.recording) {
+              // Transition from recording to processing
+              setIsProcessing(true);
+              setNow(Date.now());
+              return {
+                recording: false,
+                level: 0,
+                since: prev.since,
+              };
+            }
+            return prev;
+          });
+        }
       } catch {
         // Silently tolerate state polling failures
       } finally {
@@ -226,8 +285,8 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
     return null;
   }
 
-  // If not recording and not exiting, render nothing
-  if (!state.recording && !isExiting) {
+  // If not recording, not processing, and not exiting, render nothing
+  if (!state.recording && !isProcessing && !isExiting) {
     return null;
   }
   const elapsedSeconds = state.since && now > 0
@@ -282,9 +341,12 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
   const handleStop = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (isStopping || isCancelling) return;
+    if (isStopping || isCancelling || isProcessing) return;
 
     setIsStopping(true);
+    setIsProcessing(true);
+    setState((prev) => ({ ...prev, recording: false, level: 0 }));
+    setNow(Date.now());
     try {
       await stopDictation();
       onStop?.();
@@ -317,7 +379,7 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
         data-testid="dictation-indicator"
         data-variant="overlay"
         role="status"
-        aria-label={t.dictationIndicatorRecording || t.settingsSpeechHotkey}
+        aria-label={isProcessing ? (t.dictationIndicatorTranscribing || 'Распознаём…') : (t.dictationIndicatorRecording || t.settingsSpeechHotkey)}
         className={`absolute inset-0 z-50 flex flex-col justify-between p-3 select-none backdrop-blur-md transition-all duration-200 ${
           isExiting ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
         }`}
@@ -330,13 +392,28 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
         {/* Top bar: Mode, pulsing dot, timer */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-red-400" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
-            </span>
-            <Mic className="w-3.5 h-3.5 text-[var(--accent)] animate-pulse" />
-            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text)' }}>
-              {t.dictationIndicatorRecording || 'Recording'}
+            {isProcessing ? (
+              <Loader2
+                data-testid="dictation-processing-spinner"
+                className={`w-3.5 h-3.5 text-[var(--accent)] ${prefersReducedMotion ? '' : 'animate-spin'}`}
+              />
+            ) : (
+              <>
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-red-400" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+                </span>
+                <Mic className="w-3.5 h-3.5 text-[var(--accent)] animate-pulse" />
+              </>
+            )}
+            <span
+              data-testid="dictation-status-text"
+              className="text-xs font-semibold uppercase tracking-wider"
+              style={{ color: 'var(--text)' }}
+            >
+              {isProcessing
+                ? (t.dictationIndicatorTranscribing || 'Распознаём…')
+                : (t.dictationIndicatorRecording || 'Recording')}
             </span>
             <span
               data-testid="dictation-mode"
@@ -382,7 +459,7 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
             tabIndex={-1}
             data-testid="dictation-stop-button"
             onClick={handleStop}
-            disabled={isStopping || isCancelling}
+            disabled={isStopping || isCancelling || isProcessing}
             aria-label={t.dictationIndicatorStop || t.recStop}
             title={t.dictationIndicatorStop || t.recStop}
             className="flex items-center gap-1 px-3 py-1 rounded-[6px] text-xs font-medium transition-colors cursor-pointer shadow-sm"
@@ -405,7 +482,7 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
       data-testid="dictation-indicator"
       data-variant="pill"
       role="status"
-      aria-label={t.dictationIndicatorRecording || t.settingsSpeechHotkey}
+      aria-label={isProcessing ? (t.dictationIndicatorTranscribing || 'Распознаём…') : (t.dictationIndicatorRecording || t.settingsSpeechHotkey)}
       className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-2.5 rounded-full border shadow-xl backdrop-blur-md transition-all duration-200 select-none pointer-events-auto ${
         isExiting ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
       }`}
@@ -417,13 +494,28 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
       }}
     >
       <div className="flex items-center gap-2">
-        <span className="relative flex h-3 w-3">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-red-400" />
-          <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
-        </span>
-        <Mic className="w-4 h-4 text-[var(--accent)] animate-pulse" />
-        <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: 'var(--text-muted)' }}>
-          {t.settingsSpeechHotkey}
+        {isProcessing ? (
+          <Loader2
+            data-testid="dictation-processing-spinner"
+            className={`w-4 h-4 text-[var(--accent)] ${prefersReducedMotion ? '' : 'animate-spin'}`}
+          />
+        ) : (
+          <>
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 bg-red-400" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+            </span>
+            <Mic className="w-4 h-4 text-[var(--accent)] animate-pulse" />
+          </>
+        )}
+        <span
+          data-testid="dictation-status-text"
+          className="text-xs font-semibold tracking-wide uppercase"
+          style={{ color: isProcessing ? 'var(--text)' : 'var(--text-muted)' }}
+        >
+          {isProcessing
+            ? (t.dictationIndicatorTranscribing || 'Распознаём…')
+            : t.settingsSpeechHotkey}
         </span>
       </div>
 
@@ -469,7 +561,7 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
           tabIndex={-1}
           data-testid="dictation-stop-button"
           onClick={handleStop}
-          disabled={isStopping || isCancelling}
+          disabled={isStopping || isCancelling || isProcessing}
           aria-label={t.dictationIndicatorStop || t.recStop}
           title={t.dictationIndicatorStop || t.recStop}
           className="p-1 rounded-full hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors disabled:opacity-50 cursor-pointer"
