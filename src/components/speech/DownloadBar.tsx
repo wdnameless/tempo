@@ -32,7 +32,7 @@ export const DownloadBar: React.FC<DownloadBarProps> = ({
     >
       <div className="flex items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2 min-w-0">
-          {phase === 'verifying' ? (
+          {phase === 'verifying' || phase === 'extracting' ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--accent)] shrink-0" />
           ) : phase === 'done' ? (
             <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
@@ -47,6 +47,8 @@ export const DownloadBar: React.FC<DownloadBarProps> = ({
           <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
             {phase === 'verifying'
               ? t.settingsSpeechModelVerifying
+              : phase === 'extracting'
+              ? t.settingsSpeechModelExtracting
               : `${percentage}%`}
           </span>
         </div>

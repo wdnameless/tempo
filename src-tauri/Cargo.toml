@@ -1,6 +1,6 @@
 [package]
 name = "tempo"
-version = "0.23.5"
+version = "0.23.6"
 description = "Tempo backend: alarm scheduler, countdown timer, alarm audio and AI gateway"
 authors = ["Tempo"]
 edition = "2021"
@@ -65,8 +65,10 @@ sha2 = "0.10"
 earshot = "1.2.2"
 # Pure-Rust RNNoise for neural noise suppression
 nnnoiseless = "0.5"
-# Silero VAD neural voice activity detection on ONNX Runtime
-transcribe-rs = { version = "0.3.11", default-features = false, features = ["vad-silero"] }
+# Silero VAD neural voice activity detection + ONNX STT engines
+transcribe-rs = { version = "0.3.11", default-features = false, features = ["vad-silero", "onnx"] }
+tar = "0.4"
+flate2 = "1.0"
 
 [target.'cfg(windows)'.dependencies]
 # System sound is a render device read backwards, and cpal exposes no loopback.

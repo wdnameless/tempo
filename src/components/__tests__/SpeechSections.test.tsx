@@ -36,6 +36,9 @@ vi.mock('../../services/stt', () => ({
   deleteModel: vi.fn(),
   loadModel: vi.fn(),
   importCustomModel: vi.fn(),
+  setEngine: vi.fn(),
+  rescanModels: vi.fn(),
+  importModel: vi.fn(),
 }));
 
 vi.mock('../../services/sttEvents', () => ({
@@ -705,5 +708,164 @@ describe('Speech Models - Grouping, Quants, Size and Installed Badge', () => {
     // Installed badge present for installed model
     const installedBadges = screen.getAllByTestId('model-installed-badge');
     expect(installedBadges.length).toBe(2); // large-v3 and tiny.en
+  });
+});
+
+describe('Handy STT Engines - Display, Grouping, Support, and Archives', () => {
+  const handyModels: stt.ModelInfo[] = [
+    {
+      id: 'gigaam-v3',
+      name: 'GigaAM v3 (русский)',
+      engine: 'gigaam',
+      filename: 'giga-am-v3-int8',
+      archive: 'https://blob.handy.computer/giga-am-v3-int8.tar.gz',
+      bytes: 159_235_143,
+      languages: ['ru'],
+      speed_score: 0.9,
+      accuracy_score: 0.85,
+      recommended: true,
+      installed: false,
+    },
+    {
+      id: 'parakeet-v3',
+      name: 'Parakeet v3',
+      engine: 'parakeet',
+      bytes: 456_000_000,
+      languages: ['en'],
+      speedScore: 0.85,
+      accuracyScore: 0.9,
+      installed: true,
+    },
+    {
+      id: 'canary-unsupported',
+      name: 'Canary Multilingual',
+      engine: 'canary',
+      bytes: 600_000_000,
+      languages: ['en', 'de', 'es', 'fr'],
+      supported: false,
+      unsupportedReason: 'Requires ONNX runtime with DirectML',
+      installed: false,
+    },
+    {
+      id: 'whisper-small',
+      name: 'Whisper Small',
+      engine: 'whisper',
+      bytes: 488_000_000,
+      languages: ['en', 'ru'],
+      installed: false,
+      speedScore: 0.8,
+      accuracyScore: 0.85,
+    },
+  ];
+
+  beforeEach(() => {
+    vi.mocked(stt.listModels).mockResolvedValue(handyModels);
+  });
+
+  it('a card shows engine and languages', async () => {
+    render(<ModelLibrary activeModelId="parakeet-v3" onSelectModel={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-card-gigaam-v3')).toBeDefined();
+    });
+
+    const gigaCard = screen.getByTestId('model-card-gigaam-v3');
+    const parakeetCard = screen.getByTestId('model-card-parakeet-v3');
+    const whisperCard = screen.getByTestId('model-card-whisper-small');
+
+    // Engine is shown on each card
+    expect(gigaCard.querySelector('[data-testid="model-engine"]')?.textContent).toBe('GigaAM');
+    expect(parakeetCard.querySelector('[data-testid="model-engine"]')?.textContent).toBe('Parakeet');
+    expect(whisperCard.querySelector('[data-testid="model-engine"]')?.textContent).toBe('Whisper');
+
+    // Languages are shown on each card
+    expect(gigaCard.querySelector('[data-testid="model-languages"]')?.textContent).toBe('Русский');
+    expect(parakeetCard.querySelector('[data-testid="model-languages"]')?.textContent).toBe('EN');
+    expect(whisperCard.querySelector('[data-testid="model-languages"]')?.textContent).toBe('EN, RU');
+
+    // Archive-backed model shows archive badge
+    expect(gigaCard.querySelector('[data-testid="model-archive-badge"]')).toBeDefined();
+  });
+
+  it('GigaAM is grouped and labelled as Russian', async () => {
+    render(<ModelLibrary activeModelId="parakeet-v3" onSelectModel={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('models-group-russian')).toBeDefined();
+      expect(screen.getByTestId('models-group-multilingual')).toBeDefined();
+      expect(screen.getByTestId('models-group-english-only')).toBeDefined();
+    });
+
+    const ruGroup = screen.getByTestId('models-group-russian');
+    const multiGroup = screen.getByTestId('models-group-multilingual');
+
+    // Russian group appears first (findable, not buried)
+    expect(ruGroup.compareDocumentPosition(multiGroup)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    // GigaAM is inside the Russian group
+    expect(ruGroup.textContent).toContain('GigaAM v3 (русский)');
+
+    // GigaAM card has Russian badge
+    const gigaCard = screen.getByTestId('model-card-gigaam-v3');
+    expect(gigaCard.querySelector('[data-testid="model-russian-badge"]')).toBeDefined();
+  });
+
+  it('an unsupported engine is not selectable and displays reason', async () => {
+    const onSelect = vi.fn();
+    render(<ModelLibrary activeModelId="parakeet-v3" onSelectModel={onSelect} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-card-canary-unsupported')).toBeDefined();
+    });
+
+    const canaryCard = screen.getByTestId('model-card-canary-unsupported');
+
+    // Unsupported badge and reason are displayed
+    expect(canaryCard.querySelector('[data-testid="model-unsupported-badge"]')).toBeDefined();
+    const reasonEl = canaryCard.querySelector('[data-testid="model-unsupported-reason"]');
+    expect(reasonEl).toBeDefined();
+    expect(reasonEl?.textContent).toContain('Requires ONNX runtime with DirectML');
+
+    // Action button is disabled / unavailable
+    const actionBtn = canaryCard.querySelector('[data-testid="model-unsupported-button"]') as HTMLButtonElement;
+    expect(actionBtn).toBeDefined();
+    expect(actionBtn.disabled).toBe(true);
+
+    fireEvent.click(actionBtn);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('SpeechOnboarding groups GigaAM as Russian and prevents selecting unsupported engines', async () => {
+    const onChange = vi.fn();
+    render(
+      <SpeechOnboarding
+        open={true}
+        config={{ ...DEFAULT_SPEECH_CONFIG, modelId: 'parakeet-v3' }}
+        onChange={onChange}
+        onClose={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('onboarding-models-group-russian')).toBeDefined();
+    });
+
+    const ruGroup = screen.getByTestId('onboarding-models-group-russian');
+    expect(ruGroup.textContent).toContain('GigaAM v3 (русский)');
+    expect(ruGroup.querySelector('[data-testid="model-russian-badge"]')).toBeDefined();
+
+    // Clicking unsupported model does not trigger onChange
+    const canaryItem = screen.getByTestId('onboarding-model-canary-unsupported');
+    expect(canaryItem.querySelector('[data-testid="model-unsupported-reason"]')?.textContent).toContain(
+      'Requires ONNX runtime with DirectML',
+    );
+    fireEvent.click(canaryItem);
+    expect(onChange).not.toHaveBeenCalled();
+
+    // Clicking supported GigaAM triggers onChange
+    const gigaItem = screen.getByTestId('onboarding-model-gigaam-v3');
+    fireEvent.click(gigaItem);
+    expect(onChange).toHaveBeenCalledWith({ modelId: 'gigaam-v3' });
   });
 });

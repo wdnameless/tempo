@@ -21,6 +21,7 @@ pub struct QuantFile {
 pub struct CatalogModel {
     pub id: String,            // "whisper-small" (идентификатор позиции каталога)
     pub name: String,          // "Whisper Small"
+    pub engine: String,        // "whisper" | "parakeet" | "canary" | "cohere" | "moonshine" | "sensevoice" | "gigaam"
     pub family: String,        // "whisper"
     pub parameters: String,    // "242M"
     pub description: String,
@@ -36,6 +37,8 @@ pub struct CatalogModel {
     pub revision: String,      // пин коммита HF
     pub files: Vec<QuantFile>,
     pub default_quant: String,
+    pub archive: Option<String>,
+    pub filename: String,
 }
 
 #[derive(Deserialize)]
@@ -52,6 +55,7 @@ struct RawCatalogModel {
     revision: Option<String>,
     slug: Option<String>,
     name: String,
+    engine: Option<String>,
     family: Option<String>,
     parameters: Option<String>,
     description: Option<String>,
@@ -62,8 +66,13 @@ struct RawCatalogModel {
     accuracy_score: Option<f32>,
     recommended: Option<bool>,
     recommended_rank: Option<u32>,
+    #[serde(default)]
     files: Vec<QuantFile>,
     default_quant: Option<String>,
+    archive: Option<String>,
+    filename: Option<String>,
+    bytes: Option<u64>,
+    sha256: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -89,9 +98,25 @@ pub static CATALOG: LazyLock<Vec<CatalogModel>> = LazyLock::new(|| {
                 .unwrap_or(&repo_id)
                 .to_string()
         });
+        let engine = raw.engine.clone().unwrap_or_else(|| "whisper".to_string());
+        let archive = raw.archive.clone();
+        let filename = raw.filename.clone().unwrap_or_else(|| {
+            raw.files.first().map(|f| f.filename.clone()).unwrap_or_else(|| id.clone())
+        });
+
+        let files = if raw.files.is_empty() && archive.is_some() {
+            vec![QuantFile {
+                filename: filename.clone(),
+                quant: "int8".to_string(),
+                size_bytes: raw.bytes.unwrap_or(0),
+                sha256: raw.sha256.clone(),
+            }]
+        } else {
+            raw.files.clone()
+        };
 
         let default_quant = raw.default_quant.clone().unwrap_or_else(|| {
-            raw.files.first().map(|f| f.quant.clone()).unwrap_or_else(|| "Q8_0".to_string())
+            files.first().map(|f| f.quant.clone()).unwrap_or_else(|| "int8".to_string())
         });
 
         let speed = raw.speed_score.unwrap_or(50.0);
@@ -105,6 +130,7 @@ pub static CATALOG: LazyLock<Vec<CatalogModel>> = LazyLock::new(|| {
         CatalogModel {
             id,
             name: raw.name.clone(),
+            engine,
             family: raw.family.clone().unwrap_or_else(|| "whisper".to_string()),
             parameters: raw.parameters.clone().unwrap_or_else(|| "unknown".to_string()),
             description: raw.description.clone().unwrap_or_default(),
@@ -118,8 +144,10 @@ pub static CATALOG: LazyLock<Vec<CatalogModel>> = LazyLock::new(|| {
             recommended_rank: raw.recommended_rank,
             repo_id,
             revision: raw.revision.clone().unwrap_or_else(|| "main".to_string()),
-            files: raw.files.clone(),
+            files,
             default_quant,
+            archive,
+            filename,
         }
     }).collect()
 });
@@ -144,6 +172,9 @@ pub fn default_file(m: &CatalogModel) -> Option<&QuantFile> {
 
 /// Download URLs for a model file: Hugging Face resolve URL first, followed by mirror URLs.
 pub fn download_urls(m: &CatalogModel, f: &QuantFile) -> Vec<String> {
+    if let Some(archive_url) = &m.archive {
+        return vec![archive_url.clone()];
+    }
     let mut urls = Vec::with_capacity(1 + RAW_CATALOG.mirrors.len());
     urls.push(format!(
         "https://huggingface.co/{}/resolve/{}/{}",
@@ -163,7 +194,7 @@ mod tests {
 
     #[test]
     fn catalog_loads_and_meets_invariants() {
-        assert_eq!(CATALOG.len(), 13, "expected 13 whisper models in catalog");
+        assert_eq!(CATALOG.len(), 24, "expected 24 models in catalog (13 whisper + 11 handy)");
 
         let mut seen_ids = HashSet::new();
         let mut total_quants = 0;
@@ -171,14 +202,20 @@ mod tests {
         for m in CATALOG.iter() {
             assert!(seen_ids.insert(&m.id), "duplicate model id: {}", m.id);
             assert!(!m.name.is_empty(), "model name is empty");
-            assert!(!m.repo_id.is_empty(), "repo_id is empty");
-            assert!(!m.revision.is_empty(), "revision is empty");
-            assert!(
-                m.files.len() >= 2,
-                "model {} has {} quants, expected at least 2",
-                m.id,
-                m.files.len()
-            );
+            assert!(!m.engine.is_empty(), "engine is empty");
+            if m.engine == "whisper" {
+                assert!(!m.repo_id.is_empty(), "repo_id is empty");
+                assert!(!m.revision.is_empty(), "revision is empty");
+                assert!(
+                    m.files.len() >= 2,
+                    "model {} has {} quants, expected at least 2",
+                    m.id,
+                    m.files.len()
+                );
+            } else {
+                assert!(m.archive.is_some(), "archive missing for non-whisper model");
+                assert!(!m.files.is_empty(), "files empty for non-whisper model");
+            }
 
             total_quants += m.files.len();
 

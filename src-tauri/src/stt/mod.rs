@@ -744,8 +744,17 @@ impl DictationDriver for TempoDictationDriver {
                     }
                 };
 
+                let engine_name = catalog::find(model_id)
+                    .map(|m| m.engine.as_str())
+                    .unwrap_or_else(|| {
+                        if cfg.engine != "whisper" && cfg.engine != "cloud" && !cfg.engine.is_empty() {
+                            &cfg.engine
+                        } else {
+                            "whisper"
+                        }
+                    });
                 let run_options = run_options_from_cfg(&cfg);
-                engine.transcribe_samples(model_path, &samples, &run_options).await
+                engine.transcribe_samples(engine_name, model_path, &samples, &run_options).await
             };
 
             let raw_text = match text_res {
@@ -1045,8 +1054,11 @@ pub async fn stt_transcribe_file(
     };
 
     let pcm = capture::resample_linear(&mono, spec.sample_rate, 16000);
+    let engine_name = catalog::find(model_id)
+        .map(|m| m.engine.as_str())
+        .unwrap_or("whisper");
     let run_options = run_options_from_cfg(&cfg);
-    let text = state.engine.transcribe_samples(model_path, &pcm, &run_options).await?;
+    let text = state.engine.transcribe_samples(engine_name, model_path, &pcm, &run_options).await?;
     Ok(TranscribeFileResult {
         text,
         language: cfg.language.unwrap_or_else(|| "auto".to_string()),

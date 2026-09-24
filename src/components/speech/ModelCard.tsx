@@ -9,10 +9,21 @@ import {
   Loader2,
   HardDrive,
   Sparkles,
+  AlertCircle,
+  Cpu,
 } from 'lucide-react';
 import type { ModelInfo, DownloadProgress } from '../../services/stt';
 import { I18nService } from '../../services/i18n';
-import { formatModelSizeMB, getModelQuant } from './utils';
+import {
+  formatModelSizeMB,
+  getModelQuant,
+  formatEngineName,
+  isRussianModel,
+  isModelSupported,
+  getUnsupportedReason,
+  formatLanguages,
+} from './utils';
+
 export interface ModelCardProps {
   model: ModelInfo;
   isActive: boolean;
@@ -45,11 +56,14 @@ export const ModelCard: React.FC<ModelCardProps> = ({
     (progress && progress.phase === 'downloading')
   );
   const isVerifying = Boolean(progress && progress.phase === 'verifying');
+  const isExtracting = Boolean(progress && progress.phase === 'extracting');
   const isInstalled = Boolean(model.installed);
+  const isSupported = isModelSupported(model);
+  const unsupportedReason = getUnsupportedReason(model, t.settingsSpeechModelEngineUnsupported);
+  const isRussian = isRussianModel(model);
 
   const speedScore = model.speedScore ?? model.speed_score ?? 0.5;
   const accuracyScore = model.accuracyScore ?? model.accuracy_score ?? 0.5;
-  const languagesCount = model.languageCount ?? model.language_count ?? model.languages?.length ?? 1;
 
   const handleDownloadClick = () => {
     onDownload(model.id, selectedQuant || undefined);
@@ -114,6 +128,31 @@ export const ModelCard: React.FC<ModelCardProps> = ({
                 {t.settingsSpeechModelsFilterRecommended}
               </span>
             )}
+            {isRussian && (
+              <span
+                data-testid="model-russian-badge"
+                className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30"
+              >
+                {t.settingsSpeechModelRussianBadge}
+              </span>
+            )}
+            {model.archive && (
+              <span
+                data-testid="model-archive-badge"
+                className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20"
+              >
+                {t.settingsSpeechModelArchive}
+              </span>
+            )}
+            {!isSupported && (
+              <span
+                data-testid="model-unsupported-badge"
+                className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20"
+              >
+                <AlertCircle className="w-3 h-3" />
+                {t.settingsSpeechModelUnavailable}
+              </span>
+            )}
             {isInstalled && (
               <span
                 data-testid="model-installed-badge"
@@ -123,7 +162,6 @@ export const ModelCard: React.FC<ModelCardProps> = ({
                 {t.sttModelInstalled}
               </span>
             )}
-
             {(model.isCustom || model.is_custom) && (
               <span
                 className="text-[11px] font-medium px-2 py-0.5 rounded-full"
@@ -196,17 +234,35 @@ export const ModelCard: React.FC<ModelCardProps> = ({
             </div>
           )
         )}
+        {/* Engine specification */}
+        <div className="flex items-center gap-1">
+          <Cpu className="w-3.5 h-3.5 text-[var(--accent)]" />
+          <span className="text-[11px] uppercase tracking-wider">{t.settingsSpeechModelEngine}:</span>
+          <span data-testid="model-engine" className="font-mono font-medium text-[var(--text)]">
+            {formatEngineName(model.engine)}
+          </span>
+        </div>
 
         {/* Supported Languages */}
         <div className="flex items-center gap-1">
           <Globe className="w-3.5 h-3.5" />
-          <span>
-            {languagesCount > 1
-              ? `${languagesCount} langs`
-              : model.languages?.[0]?.toUpperCase() || 'EN'}
+          <span className="text-[11px] uppercase tracking-wider">{t.settingsSpeechModelLanguages}:</span>
+          <span data-testid="model-languages" className="font-medium text-[var(--text)]">
+            {formatLanguages(model, t.settingsSpeechModelRussianBadge)}
           </span>
         </div>
       </div>
+
+      {/* Unsupported reason message if backend cannot run this engine */}
+      {!isSupported && (
+        <div
+          data-testid="model-unsupported-reason"
+          className="text-xs p-2.5 rounded-[8px] bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-2"
+        >
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{unsupportedReason}</span>
+        </div>
+      )}
 
       {/* Speed & Accuracy metrics */}
       <div className="grid grid-cols-2 gap-3 pt-1 border-t" style={{ borderColor: 'var(--border)' }}>
@@ -245,11 +301,15 @@ export const ModelCard: React.FC<ModelCardProps> = ({
 
       {/* Actions footer */}
       <div className="flex items-center justify-between gap-2 pt-2">
-        {isDownloading || isVerifying ? (
+        {isDownloading || isVerifying || isExtracting ? (
           <div className="flex items-center justify-between w-full gap-2">
             <span className="text-xs flex items-center gap-1.5" style={{ color: 'var(--accent)' }}>
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              {isVerifying ? t.settingsSpeechModelVerifying : t.settingsSpeechModelDownloading}
+              {isVerifying
+                ? t.settingsSpeechModelVerifying
+                : isExtracting
+                ? t.settingsSpeechModelExtracting
+                : t.settingsSpeechModelDownloading}
             </span>
             <button
               type="button"
@@ -260,6 +320,21 @@ export const ModelCard: React.FC<ModelCardProps> = ({
               {t.settingsSpeechModelCancelDownload}
             </button>
           </div>
+        ) : !isSupported ? (
+          <button
+            type="button"
+            disabled={true}
+            data-testid="model-unsupported-button"
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-medium rounded-[8px] border opacity-50 cursor-not-allowed"
+            style={{
+              borderColor: 'var(--border)',
+              color: 'var(--text-muted)',
+            }}
+            title={unsupportedReason || undefined}
+          >
+            <AlertCircle className="w-3.5 h-3.5" />
+            {t.settingsSpeechModelUnavailable}
+          </button>
         ) : isInstalled ? (
           <div className="flex items-center justify-between w-full gap-2">
             {isActive ? (

@@ -5994,12 +5994,13 @@ dependencies = [
 
 [[package]]
 name = "tempo"
-version = "0.23.5"
+version = "0.23.6"
 dependencies = [
  "base64 0.22.1",
  "chrono",
  "cpal",
  "earshot",
+ "flate2",
  "futures-util",
  "hound",
  "keyring",
@@ -6014,6 +6015,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -6426,12 +6428,16 @@ version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fb9d5cfb8e68a2a8fc27fb548987473221d3cc3776a331ccde46c8bd8b2eda0f"
 dependencies = [
+ "base64 0.22.1",
  "derive_builder",
  "env_logger",
  "hound",
  "log",
  "ndarray",
+ "once_cell",
  "ort",
+ "regex",
+ "rustfft",
  "serde",
  "serde_json",
  "thiserror 2.0.20",

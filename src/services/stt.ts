@@ -6,9 +6,24 @@ import { isTauri } from './platform';
 import type { Translations } from './i18n';
 import { loadSpeechConfig, type SpeechConfig } from './speechSettings';
 
+export type SttModelEngine =
+  | 'whisper'
+  | 'parakeet'
+  | 'canary'
+  | 'cohere'
+  | 'moonshine'
+  | 'sensevoice'
+  | 'gigaam';
+
 export interface ModelInfo {
   id: string;
   name: string;
+  engine?: SttModelEngine | string;
+  archive?: string;
+  supported?: boolean;
+  unsupported?: boolean;
+  unsupportedReason?: string;
+  unsupported_reason?: string;
   description?: string;
   filename?: string;
   quant?: string;

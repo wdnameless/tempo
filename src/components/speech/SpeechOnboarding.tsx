@@ -23,8 +23,17 @@ import { onSttEvent } from '../../services/sttEvents';
 import { I18nService } from '../../services/i18n';
 import { HotkeyRecorder } from './HotkeyRecorder';
 import { DownloadBar } from './DownloadBar';
-import { formatBytes, formatModelSizeMB, getModelQuant, groupAndSortModels } from './utils';
-
+import {
+  formatBytes,
+  formatModelSizeMB,
+  getModelQuant,
+  groupAndSortModels,
+  formatEngineName,
+  isRussianModel,
+  isModelSupported,
+  getUnsupportedReason,
+  formatLanguages,
+} from './utils';
 export interface SpeechOnboardingProps {
   open: boolean;
   config: SpeechConfig;
@@ -241,6 +250,7 @@ export const SpeechOnboarding: React.FC<SpeechOnboardingProps> = ({
               ) : (
                 <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
                   {[
+                    { key: 'russian', title: t.speechModelRussian, testId: 'onboarding-models-group-russian', list: groupedModels.russian },
                     { key: 'multilingual', title: t.speechModelMultilingual, testId: 'onboarding-models-group-multilingual', list: groupedModels.multilingual },
                     { key: 'englishOnly', title: t.speechModelEnglishOnly, testId: 'onboarding-models-group-english-only', list: groupedModels.englishOnly },
                   ].filter((group) => group.list.length > 0).map((group) => (
@@ -250,12 +260,23 @@ export const SpeechOnboarding: React.FC<SpeechOnboardingProps> = ({
                       </div>
                       {group.list.map((model) => {
                         const isSelected = config.modelId === model.id;
+                        const isSupported = isModelSupported(model);
+                        const unsupportedReason = getUnsupportedReason(model, t.settingsSpeechModelEngineUnsupported);
+                        const isRussian = isRussianModel(model);
                         return (
                           <div
                             key={model.id}
-                            onClick={() => onChange({ modelId: model.id })}
-                            className={`p-3 rounded-[10px] border cursor-pointer transition-all flex items-center justify-between gap-3 ${
-                              isSelected ? 'border-[var(--accent)] ring-1 ring-[var(--accent)]' : 'hover:border-[var(--accent)]/50'
+                            data-testid={`onboarding-model-${model.id}`}
+                            onClick={() => {
+                              if (!isSupported) return;
+                              onChange({ modelId: model.id });
+                            }}
+                            className={`p-3 rounded-[10px] border transition-all flex items-center justify-between gap-3 ${
+                              !isSupported
+                                ? 'opacity-50 cursor-not-allowed border-[var(--border)]'
+                                : isSelected
+                                ? 'border-[var(--accent)] ring-1 ring-[var(--accent)] cursor-pointer'
+                                : 'hover:border-[var(--accent)]/50 cursor-pointer'
                             }`}
                             style={{
                               backgroundColor: isSelected ? 'var(--accent-soft)' : 'var(--surface)',
@@ -263,13 +284,29 @@ export const SpeechOnboarding: React.FC<SpeechOnboardingProps> = ({
                             }}
                           >
                             <div className="flex flex-col gap-0.5">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>
                                   {model.name}
                                 </span>
+                                {isRussian && (
+                                  <span
+                                    data-testid="model-russian-badge"
+                                    className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-red-500/15 text-red-400 border border-red-500/30"
+                                  >
+                                    {t.settingsSpeechModelRussianBadge}
+                                  </span>
+                                )}
                                 {model.recommended && (
                                   <span className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                                     {t.settingsSpeechModelsFilterRecommended || 'Recommended'}
+                                  </span>
+                                )}
+                                {!isSupported && (
+                                  <span
+                                    data-testid="model-unsupported-badge"
+                                    className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/20"
+                                  >
+                                    {t.settingsSpeechModelUnavailable}
                                   </span>
                                 )}
                                 {model.installed && (
@@ -281,13 +318,24 @@ export const SpeechOnboarding: React.FC<SpeechOnboardingProps> = ({
                                   </span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                              <div className="flex items-center gap-2 text-[11px] flex-wrap" style={{ color: 'var(--text-muted)' }}>
+                                <span data-testid="model-engine" className="font-mono font-medium px-1 py-0.2 rounded bg-[var(--elevated)] border" style={{ borderColor: 'var(--border)' }}>
+                                  {formatEngineName(model.engine)}
+                                </span>
+                                <span data-testid="model-languages" className="font-medium text-[var(--text)]">
+                                  {formatLanguages(model, t.settingsSpeechModelRussianBadge)}
+                                </span>
                                 <span className="font-mono font-medium px-1 py-0.2 rounded bg-[var(--elevated)] border" style={{ borderColor: 'var(--border)' }}>
                                   {getModelQuant(model)}
                                 </span>
                                 <span>{formatModelSizeMB(model.bytes)}</span>
                                 {model.parameters && <span>· {model.parameters}</span>}
                               </div>
+                              {!isSupported && (
+                                <div data-testid="model-unsupported-reason" className="text-[10px] text-red-400 mt-0.5">
+                                  {unsupportedReason}
+                                </div>
+                              )}
                             </div>
 
                             {isSelected && (

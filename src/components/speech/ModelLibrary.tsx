@@ -24,8 +24,13 @@ import { onSttEvent } from '../../services/sttEvents';
 import { I18nService } from '../../services/i18n';
 import { ModelCard } from './ModelCard';
 import { DownloadBar } from './DownloadBar';
-import { formatBytes, groupAndSortModels } from './utils';
-
+import {
+  formatBytes,
+  groupAndSortModels,
+  isRussianModel,
+  isEnglishOnlyModel,
+  isModelSupported,
+} from './utils';
 export interface ModelLibraryProps {
   activeModelId: string | null;
   onSelectModel: (modelId: string) => void;
@@ -197,6 +202,10 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({
   };
 
   const handleSelect = async (modelId: string) => {
+    const targetModel = models.find((m) => m.id === modelId);
+    if (targetModel && !isModelSupported(targetModel)) {
+      return;
+    }
     try {
       await setEngine('local', modelId);
       onSelectModel(modelId);
@@ -227,7 +236,10 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({
         const matchesName = m.name?.toLowerCase().includes(q);
         const matchesDesc = m.description?.toLowerCase().includes(q);
         const matchesId = m.id.toLowerCase().includes(q);
-        if (!matchesName && !matchesDesc && !matchesId) return false;
+        const matchesEngine = m.engine?.toLowerCase().includes(q);
+        const matchesLang = m.languages?.some((l) => l.toLowerCase().includes(q));
+        const matchesRussian = (q === 'ru' || q === 'russian' || q === 'русский' || q === 'рус') && isRussianModel(m);
+        if (!matchesName && !matchesDesc && !matchesId && !matchesEngine && !matchesLang && !matchesRussian) return false;
       }
 
       // Status
@@ -240,14 +252,15 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({
       if (sizeFilter === 'large' && m.bytes <= 600 * 1024 * 1024) return false;
 
       // Language
-      if (languageFilter === 'en') {
-        const isEnglishOnly = m.languages?.length === 1 && m.languages[0] === 'en';
+      if (languageFilter === 'ru') {
+        if (!isRussianModel(m) && !m.languages?.includes('ru')) return false;
+      } else if (languageFilter === 'en') {
+        const isEnglishOnly = isEnglishOnlyModel(m);
         if (!isEnglishOnly) return false;
       } else if (languageFilter === 'multilingual') {
-        const isMulti = (m.languages?.length ?? 0) > 1 || (m.languageCount ?? 0) > 1;
+        const isMulti = !isRussianModel(m) && !isEnglishOnlyModel(m);
         if (!isMulti) return false;
       }
-
       return true;
     });
   }, [models, searchQuery, statusFilter, sizeFilter, languageFilter]);
@@ -391,6 +404,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({
           }}
         >
           <option value="all">{t.settingsSpeechModelsFilterLanguages}</option>
+          <option value="ru">{t.speechModelRussian}</option>
           <option value="multilingual">{t.speechModelMultilingual}</option>
           <option value="en">{t.speechModelEnglishOnly}</option>
         </select>
@@ -444,6 +458,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({
       ) : (
         <div className="space-y-5">
           {[
+            { key: 'russian', title: t.speechModelRussian, testId: 'models-group-russian', list: groupedModels.russian },
             { key: 'multilingual', title: t.speechModelMultilingual, testId: 'models-group-multilingual', list: groupedModels.multilingual },
             { key: 'englishOnly', title: t.speechModelEnglishOnly, testId: 'models-group-english-only', list: groupedModels.englishOnly },
           ].filter((group) => group.list.length > 0).map((group) => (

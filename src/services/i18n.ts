@@ -273,6 +273,12 @@ export interface Translations {
   settingsSpeechModelQuant: string;
   settingsSpeechModelLanguages: string;
   settingsSpeechModelCustom: string;
+  settingsSpeechModelEngine: string;
+  settingsSpeechModelExtracting: string;
+  settingsSpeechModelArchive: string;
+  settingsSpeechModelUnavailable: string;
+  settingsSpeechModelEngineUnsupported: string;
+  settingsSpeechModelRussianBadge: string;
   settingsSpeechInputDevice: string;
   settingsSpeechInputDeviceDefault: string;
   settingsSpeechInputChannel: string;
@@ -305,6 +311,7 @@ export interface Translations {
   settingsSpeechDenoiseAgc: string;
   settingsSpeechDenoiseAgcDesc: string;
   settingsSpeechDenoiseAgcTargetDb: string;
+  settingsSpeechModelsGroupRussian: string;
   settingsSpeechModelsGroupMultilingual: string;
   settingsSpeechModelsGroupEnglishOnly: string;
   settingsSpeechModelsNoMatches: string;
@@ -775,6 +782,7 @@ export interface Translations {
   speechClearAllWords: string;
   speechClear: string;
   speechAdd: string;
+  speechModelRussian: string;
   speechModelMultilingual: string;
   speechModelEnglishOnly: string;
   speechSaved: string;
@@ -1088,6 +1096,12 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechModelQuant: 'Квантование',
     settingsSpeechModelLanguages: 'Языки',
     settingsSpeechModelCustom: 'Своя модель',
+    settingsSpeechModelEngine: 'Движок',
+    settingsSpeechModelExtracting: 'Распаковка архива...',
+    settingsSpeechModelArchive: 'Архив',
+    settingsSpeechModelUnavailable: 'Недоступно',
+    settingsSpeechModelEngineUnsupported: 'Движок не поддерживается в этой системе',
+    settingsSpeechModelRussianBadge: 'Русский',
     settingsSpeechInputDevice: 'Микрофон',
     settingsSpeechInputDeviceDefault: 'По умолчанию',
     settingsSpeechInputChannel: 'Канал аудио',
@@ -1120,6 +1134,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechDenoiseAgc: 'Нормализация громкости (AGC)',
     settingsSpeechDenoiseAgcDesc: 'Выравнивает уровень громкости между тихими и громкими фразами.',
     settingsSpeechDenoiseAgcTargetDb: 'Целевой уровень громкости',
+    settingsSpeechModelsGroupRussian: 'Русские модели (GigaAM)',
     settingsSpeechModelsGroupMultilingual: 'Многоязычные модели',
     settingsSpeechModelsGroupEnglishOnly: 'Только английский',
     settingsSpeechModelsNoMatches: 'Нет моделей, соответствующих поиску или фильтрам.',
@@ -1583,6 +1598,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     speechClearAllWords: 'Удалить все слова',
     speechClear: 'Очистить',
     speechAdd: 'Добавить',
+    speechModelRussian: 'Русский (GigaAM)',
     speechModelMultilingual: 'Многоязычные (99+)',
     speechModelEnglishOnly: 'Только английский',
     speechSaved: 'Сохранённые',
@@ -1758,6 +1774,12 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechModelQuant: 'Quantization',
     settingsSpeechModelLanguages: 'Languages',
     settingsSpeechModelCustom: 'Custom Model',
+    settingsSpeechModelEngine: 'Engine',
+    settingsSpeechModelExtracting: 'Extracting archive...',
+    settingsSpeechModelArchive: 'Archive',
+    settingsSpeechModelUnavailable: 'Unavailable',
+    settingsSpeechModelEngineUnsupported: 'Engine is not supported on this system',
+    settingsSpeechModelRussianBadge: 'Russian',
     settingsSpeechInputDevice: 'Microphone',
     settingsSpeechInputDeviceDefault: 'Default Device',
     settingsSpeechInputChannel: 'Audio Channel',
@@ -1790,6 +1812,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechDenoiseAgc: 'Level normalisation (AGC)',
     settingsSpeechDenoiseAgcDesc: 'Automatically evens out volume between quiet and loud phrases.',
     settingsSpeechDenoiseAgcTargetDb: 'Target volume level',
+    settingsSpeechModelsGroupRussian: 'Russian models (GigaAM)',
     settingsSpeechModelsGroupMultilingual: 'Multilingual models',
     settingsSpeechModelsGroupEnglishOnly: 'English only models',
     settingsSpeechModelsNoMatches: 'No models match current search or filters.',
@@ -2390,6 +2413,7 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     speechClearAllWords: 'Clear all words',
     speechClear: 'Clear',
     speechAdd: 'Add',
+    speechModelRussian: 'Russian (GigaAM)',
     speechModelMultilingual: 'Multilingual (99+)',
     speechModelEnglishOnly: 'English only',
     speechSaved: 'Saved',

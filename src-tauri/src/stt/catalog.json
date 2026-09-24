@@ -1597,6 +1597,234 @@
       "default_quant": "Q5_K_M",
       "recommended": false,
       "recommended_rank": null
+    },
+    {
+      "id": "parakeet-tdt-0.6b-v2",
+      "name": "Parakeet V2",
+      "engine": "parakeet",
+      "filename": "parakeet-tdt-0.6b-v2-int8",
+      "archive": "https://blob.handy.computer/parakeet-v2-int8.tar.gz",
+      "bytes": 473166028,
+      "sha256": "ac9b9429984dd565b25097337a887bb7f0f8ac393573661c651f0e7d31563991",
+      "parameters": "600M",
+      "description": "English only. The best model for English speakers.",
+      "languages": ["en"],
+      "language_count": 1,
+      "capabilities": {
+        "translate": false,
+        "lang_detect": true
+      },
+      "speed_score": 0.85,
+      "accuracy_score": 0.85,
+      "recommended": false
+    },
+    {
+      "id": "parakeet-tdt-0.6b-v3",
+      "name": "Parakeet V3",
+      "engine": "parakeet",
+      "filename": "parakeet-tdt-0.6b-v3-int8",
+      "archive": "https://blob.handy.computer/parakeet-v3-int8.tar.gz",
+      "bytes": 478517071,
+      "sha256": "43d37191602727524a7d8c6da0eef11c4ba24320f5b4730f1a2497befc2efa77",
+      "parameters": "600M",
+      "description": "Fast and accurate. Supports 25 European languages.",
+      "languages": [
+        "bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv",
+        "lt", "mt", "pl", "pt", "ro", "sk", "sl", "es", "sv", "ru", "uk"
+      ],
+      "language_count": 25,
+      "capabilities": {
+        "translate": false,
+        "lang_detect": true
+      },
+      "speed_score": 0.85,
+      "accuracy_score": 0.80,
+      "recommended": true
+    },
+    {
+      "id": "moonshine-base",
+      "name": "Moonshine Base",
+      "engine": "moonshine",
+      "filename": "moonshine-base",
+      "archive": "https://blob.handy.computer/moonshine-base.tar.gz",
+      "bytes": 57901034,
+      "sha256": "04bf6ab012cfceebd4ac7cf88c1b31d027bbdd3cd704649b692e2e935236b7e8",
+      "parameters": "Base",
+      "description": "Very fast, English only. Handles accents well.",
+      "languages": ["en"],
+      "language_count": 1,
+      "capabilities": {
+        "translate": false,
+        "lang_detect": true
+      },
+      "speed_score": 0.90,
+      "accuracy_score": 0.70,
+      "recommended": false
+    },
+    {
+      "id": "moonshine-tiny-streaming-en",
+      "name": "Moonshine V2 Tiny",
+      "engine": "moonshine",
+      "filename": "moonshine-tiny-streaming-en",
+      "archive": "https://blob.handy.computer/moonshine-tiny-streaming-en.tar.gz",
+      "bytes": 33006044,
+      "sha256": "465addcfca9e86117415677dfdc98b21edc53537210333a3ecdb58509a80abaf",
+      "parameters": "Tiny",
+      "description": "Ultra-fast, English only",
+      "languages": ["en"],
+      "language_count": 1,
+      "capabilities": {
+        "translate": false,
+        "lang_detect": true
+      },
+      "speed_score": 0.95,
+      "accuracy_score": 0.55,
+      "recommended": false
+    },
+    {
+      "id": "moonshine-small-streaming-en",
+      "name": "Moonshine V2 Small",
+      "engine": "moonshine",
+      "filename": "moonshine-small-streaming-en",
+      "archive": "https://blob.handy.computer/moonshine-small-streaming-en.tar.gz",
+      "bytes": 104842676,
+      "sha256": "dbb3e1c1832bd88a4ac712f7449a136cc2c9a18c5fe33a12ed1b7cb1cfe9cdd5",
+      "parameters": "Small",
+      "description": "Fast, English only. Good balance of speed and accuracy.",
+      "languages": ["en"],
+      "language_count": 1,
+      "capabilities": {
+        "translate": false,
+        "lang_detect": true
+      },
+      "speed_score": 0.90,
+      "accuracy_score": 0.65,
+      "recommended": false
+    },
+    {
+      "id": "moonshine-medium-streaming-en",
+      "name": "Moonshine V2 Medium",
+      "engine": "moonshine",
+      "filename": "moonshine-medium-streaming-en",
+      "archive": "https://blob.handy.computer/moonshine-medium-streaming-en.tar.gz",
+      "bytes": 201780020,
+      "sha256": "07a66f3bff1c77e75a2f637e5a263928a08baae3c29c4c053fc968a9a9373d13",
+      "parameters": "Medium",
+      "description": "English only. High quality.",
+      "languages": ["en"],
+      "language_count": 1,
+      "capabilities": {
+        "translate": false,
+        "lang_detect": true
+      },
+      "speed_score": 0.80,
+      "accuracy_score": 0.75,
+      "recommended": false
+    },
+    {
+      "id": "sense-voice-int8",
+      "name": "SenseVoice",
+      "engine": "sensevoice",
+      "filename": "sense-voice-int8",
+      "archive": "https://blob.handy.computer/sense-voice-int8.tar.gz",
+      "bytes": 160307845,
+      "sha256": "171d611fe5d353a50bbb741b6f3ef42559b1565685684e9aa888ef563ba3e8a4",
+      "parameters": "Small",
+      "description": "Very fast. Chinese, English, Japanese, Korean, Cantonese.",
+      "languages": ["zh", "en", "yue", "ja", "ko"],
+      "language_count": 5,
+      "capabilities": {
+        "translate": false,
+        "lang_detect": true
+      },
+      "speed_score": 0.95,
+      "accuracy_score": 0.65,
+      "recommended": false
+    },
+    {
+      "id": "gigaam-v3",
+      "name": "GigaAM v3 (русский)",
+      "engine": "gigaam",
+      "filename": "giga-am-v3-int8",
+      "archive": "https://blob.handy.computer/giga-am-v3-int8.tar.gz",
+      "bytes": 159235143,
+      "sha256": "d872462268430db140b69b72e0fc4b787b194c1dbe51b58de39444d55b6da45b",
+      "parameters": "244M",
+      "description": "Russian speech recognition. Fast and accurate.",
+      "languages": ["ru"],
+      "language_count": 1,
+      "capabilities": {
+        "translate": false,
+        "lang_detect": false
+      },
+      "speed_score": 0.90,
+      "accuracy_score": 0.85,
+      "recommended": true
+    },
+    {
+      "id": "canary-180m-flash",
+      "name": "Canary 180M Flash",
+      "engine": "canary",
+      "filename": "canary-180m-flash",
+      "archive": "https://blob.handy.computer/canary-180m-flash.tar.gz",
+      "bytes": 153194652,
+      "sha256": "6d9cfca6118b296e196eaedc1c8fa9788305a7b0f1feafdb6dc91932ab6e53f7",
+      "parameters": "180M",
+      "description": "Very fast. English, German, Spanish, French. Supports translation.",
+      "languages": ["en", "de", "es", "fr"],
+      "language_count": 4,
+      "capabilities": {
+        "translate": true,
+        "lang_detect": false
+      },
+      "speed_score": 0.85,
+      "accuracy_score": 0.75,
+      "recommended": false
+    },
+    {
+      "id": "canary-1b-v2",
+      "name": "Canary 1B v2",
+      "engine": "canary",
+      "filename": "canary-1b-v2",
+      "archive": "https://blob.handy.computer/canary-1b-v2.tar.gz",
+      "bytes": 725374161,
+      "sha256": "02305b2a25f9cf3e7deaffa7f94df00efa44f442cd55c101c2cb9c000f904666",
+      "parameters": "1B",
+      "description": "Accurate multilingual. 25 European languages. Supports translation.",
+      "languages": [
+        "bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv",
+        "lt", "mt", "pl", "pt", "ro", "sk", "sl", "es", "sv", "ru", "uk"
+      ],
+      "language_count": 25,
+      "capabilities": {
+        "translate": true,
+        "lang_detect": false
+      },
+      "speed_score": 0.70,
+      "accuracy_score": 0.85,
+      "recommended": false
+    },
+    {
+      "id": "cohere-int8",
+      "name": "Cohere",
+      "engine": "cohere",
+      "filename": "cohere-int8",
+      "archive": "https://blob.handy.computer/cohere-int8.tar.gz",
+      "bytes": 1791654555,
+      "sha256": "ea2257d52434f3644574f187dcdcf666e302cd11b92866116ab8e14cd9c887f0",
+      "parameters": "Large",
+      "description": "A large, slower, but very accurate multilingual model.",
+      "languages": [
+        "en", "fr", "de", "it", "es", "pt", "el", "nl", "pl", "zh", "ja", "ko", "vi", "ar"
+      ],
+      "language_count": 14,
+      "capabilities": {
+        "translate": false,
+        "lang_detect": true
+      },
+      "speed_score": 0.60,
+      "accuracy_score": 0.90,
+      "recommended": false
     }
   ]
 }

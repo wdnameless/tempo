@@ -40,6 +40,7 @@ pub const SILERO_VAD_URLS: &[&str] = &[
 pub struct ModelInfo {
     pub id: String,
     pub name: String,
+    pub engine: String,
     pub description: String,
     pub filename: String,
     pub quant: String,
@@ -170,11 +171,18 @@ impl ModelManager {
             let active_dl = active.get(&cat.id);
             let is_downloading = active_dl.is_some();
 
-            let (chosen_file, installed, path_str) = match (installed_file, installed_path) {
-                (Some(f), Some(p)) => (f, true, Some(p.to_string_lossy().to_string())),
-                _ => (def_file.unwrap_or(&cat.files[0]), false, None),
+            let is_arch = cat.engine != "whisper" || cat.archive.is_some();
+            let (chosen_file, installed, path_str) = if is_arch {
+                let p = self.models_dir.join(&cat.filename);
+                let is_inst = p.is_dir() && p.join(".complete").is_file();
+                let p_str = if is_inst { Some(p.to_string_lossy().to_string()) } else { None };
+                (def_file.unwrap_or(&cat.files[0]), is_inst, p_str)
+            } else {
+                match (installed_file, installed_path) {
+                    (Some(f), Some(p)) => (f, true, Some(p.to_string_lossy().to_string())),
+                    _ => (def_file.unwrap_or(&cat.files[0]), false, None),
+                }
             };
-
             let partial_path = self.models_dir.join(format!("{}.part", chosen_file.filename));
             let partial_bytes = if is_downloading {
                 if let Some(dl) = active_dl {
@@ -194,6 +202,7 @@ impl ModelManager {
             results.push(ModelInfo {
                 id: cat.id.clone(),
                 name: cat.name.clone(),
+                engine: cat.engine.clone(),
                 description: cat.description.clone(),
                 filename: chosen_file.filename.clone(),
                 quant: chosen_file.quant.clone(),
@@ -236,6 +245,7 @@ impl ModelManager {
         results.push(ModelInfo {
             id: SILERO_VAD_MODEL_ID.to_string(),
             name: "Silero VAD".to_string(),
+            engine: "onnx".to_string(),
             description: "Neural Voice Activity Detection (Silero v4 ONNX)".to_string(),
             filename: SILERO_VAD_FILENAME.to_string(),
             quant: "ONNX".to_string(),
@@ -300,6 +310,7 @@ impl ModelManager {
                 results.push(ModelInfo {
                     id,
                     name,
+                    engine: "whisper".to_string(),
                     description: "Custom local model".to_string(),
                     filename: filename.clone(),
                     quant: quant.clone(),
@@ -345,29 +356,38 @@ impl ModelManager {
                 return Some(p2);
             }
         }
-
-        // 1. If catalog model, check its files in priority order
+        // 1. If catalog model, check its files or archive directory in priority order
         if let Some(cat) = catalog::find(trimmed) {
-            if let Some(def_file) = catalog::default_file(cat) {
-                let p = self.models_dir.join(&def_file.filename);
-                if p.is_file() {
+            if cat.engine != "whisper" || cat.archive.is_some() {
+                let p = self.models_dir.join(&cat.filename);
+                if p.is_dir() && p.join(".complete").is_file() {
                     return Some(p);
                 }
-            }
-            for f in &cat.files {
-                let p = self.models_dir.join(&f.filename);
-                if p.is_file() {
-                    return Some(p);
+            } else {
+                if let Some(def_file) = catalog::default_file(cat) {
+                    let p = self.models_dir.join(&def_file.filename);
+                    if p.is_file() {
+                        return Some(p);
+                    }
+                }
+                for f in &cat.files {
+                    let p = self.models_dir.join(&f.filename);
+                    if p.is_file() {
+                        return Some(p);
+                    }
                 }
             }
         }
-
         // 2. Direct path check in models_dir
         let candidates = [
             self.models_dir.join(trimmed),
             self.models_dir.join(format!("{trimmed}.gguf")),
             self.models_dir.join(format!("{trimmed}.bin")),
         ];
+        let dir_cand = self.models_dir.join(trimmed);
+        if dir_cand.is_dir() && dir_cand.join(".complete").is_file() {
+            return Some(dir_cand);
+        }
 
         for cand in candidates {
             if cand.is_file() {
@@ -398,12 +418,14 @@ impl ModelManager {
         model_id: &str,
         quant: Option<String>,
     ) -> Result<(), String> {
-        let (filename, size_bytes, sha256_val, urls) = if model_id.eq_ignore_ascii_case(SILERO_VAD_MODEL_ID) {
+        let (filename, size_bytes, sha256_val, urls, is_archive, engine_name) = if model_id.eq_ignore_ascii_case(SILERO_VAD_MODEL_ID) {
             (
                 SILERO_VAD_FILENAME.to_string(),
                 SILERO_VAD_SIZE_BYTES,
                 Some(SILERO_VAD_SHA256.to_string()),
                 SILERO_VAD_URLS.iter().map(|s| s.to_string()).collect(),
+                false,
+                "onnx".to_string(),
             )
         } else {
             let cat = catalog::find(model_id)
@@ -423,11 +445,12 @@ impl ModelManager {
                 quant_file.size_bytes,
                 quant_file.sha256.clone(),
                 catalog::download_urls(cat, quant_file),
+                cat.engine != "whisper" || cat.archive.is_some(),
+                cat.engine.clone(),
             )
         };
 
-        let target_path = self.models_dir.join(&filename);
-        if target_path.is_file() {
+        if self.installed_path(model_id).is_some() {
             return Ok(());
         }
 
@@ -544,20 +567,69 @@ impl ModelManager {
 
             match outcome {
                 Ok(DownloadOutcome::Completed) => {
-                    let final_path = partial_path.with_extension("");
-                    if let Err(e) = fs::rename(&partial_path, &final_path) {
-                        let err_msg = format!("fs_error: Failed to rename partial file: {e}");
-                        eprintln!("[stt/models] {err_msg}");
-                        if let Ok(guard) = app_handle_arc.try_lock() {
-                            if let Some(app) = guard.as_ref() {
-                                let _ = app.emit("stt://model-failed", serde_json::json!({
-                                    "modelId": model_id_owned,
-                                    "error": err_msg,
-                                }));
+                    let final_path = if is_archive {
+                        let target_dir = partial_path.with_extension("");
+                        if let Err(e) = extract_archive_safe(&partial_path, &target_dir) {
+                            let err_msg = format!("extract_error: Failed to extract archive: {e}");
+                            eprintln!("[stt/models] {err_msg}");
+                            let _ = fs::remove_file(&partial_path);
+                            if let Ok(guard) = app_handle_arc.try_lock() {
+                                if let Some(app) = guard.as_ref() {
+                                    let _ = app.emit("stt://model-failed", serde_json::json!({
+                                        "modelId": model_id_owned,
+                                        "error": err_msg,
+                                    }));
+                                }
                             }
+                            return;
                         }
-                        return;
-                    }
+                        if let Err(e) = verify_model_files(&target_dir, &engine_name) {
+                            let err_msg = format!("verify_error: Model verification failed: {e}");
+                            eprintln!("[stt/models] {err_msg}");
+                            let _ = fs::remove_dir_all(&target_dir);
+                            let _ = fs::remove_file(&partial_path);
+                            if let Ok(guard) = app_handle_arc.try_lock() {
+                                if let Some(app) = guard.as_ref() {
+                                    let _ = app.emit("stt://model-failed", serde_json::json!({
+                                        "modelId": model_id_owned,
+                                        "error": err_msg,
+                                    }));
+                                }
+                            }
+                            return;
+                        }
+                        if let Err(e) = fs::write(target_dir.join(".complete"), "ok") {
+                            let err_msg = format!("fs_error: Failed to write marker: {e}");
+                            eprintln!("[stt/models] {err_msg}");
+                            if let Ok(guard) = app_handle_arc.try_lock() {
+                                if let Some(app) = guard.as_ref() {
+                                    let _ = app.emit("stt://model-failed", serde_json::json!({
+                                        "modelId": model_id_owned,
+                                        "error": err_msg,
+                                    }));
+                                }
+                            }
+                            return;
+                        }
+                        let _ = fs::remove_file(&partial_path);
+                        target_dir
+                    } else {
+                        let final_file = partial_path.with_extension("");
+                        if let Err(e) = fs::rename(&partial_path, &final_file) {
+                            let err_msg = format!("fs_error: Failed to rename partial file: {e}");
+                            eprintln!("[stt/models] {err_msg}");
+                            if let Ok(guard) = app_handle_arc.try_lock() {
+                                if let Some(app) = guard.as_ref() {
+                                    let _ = app.emit("stt://model-failed", serde_json::json!({
+                                        "modelId": model_id_owned,
+                                        "error": err_msg,
+                                    }));
+                                }
+                            }
+                            return;
+                        }
+                        final_file
+                    };
                     if let Ok(mut p) = progress.try_lock() {
                         p.percentage = 100.0;
                         p.phase = "done".to_string();
@@ -710,6 +782,7 @@ impl ModelManager {
         let info = ModelInfo {
             id,
             name,
+            engine: "whisper".to_string(),
             description: "Custom local model".to_string(),
             filename: filename.to_string(),
             quant: quant.clone(),
@@ -1075,6 +1148,133 @@ fn extract_quant(stem: &str) -> String {
     "custom".to_string()
 }
 
+/// Extracts a .tar.gz archive safely into target_dir with zip-slip prevention.
+pub fn extract_archive_safe(archive_path: &Path, target_dir: &Path) -> Result<(), String> {
+    use flate2::read::GzDecoder;
+    use tar::Archive;
+
+    let tar_gz = File::open(archive_path)
+        .map_err(|e| format!("Failed to open archive: {e}"))?;
+    let tar = GzDecoder::new(tar_gz);
+    let mut archive = Archive::new(tar);
+
+    let temp_extract_dir = target_dir.with_extension("extracting");
+    if temp_extract_dir.exists() {
+        let _ = fs::remove_dir_all(&temp_extract_dir);
+    }
+    fs::create_dir_all(&temp_extract_dir)
+        .map_err(|e| format!("Failed to create temp extract dir: {e}"))?;
+
+    for entry_res in archive.entries().map_err(|e| format!("Corrupt tar archive: {e}"))? {
+        let mut entry = entry_res.map_err(|e| format!("Failed to read archive entry: {e}"))?;
+        let path = entry.path().map_err(|e| format!("Invalid path in archive: {e}"))?;
+
+        // Zip-slip defense: reject any parent dir components or prefix/root escapes
+        for comp in path.components() {
+            if matches!(comp, std::path::Component::ParentDir | std::path::Component::Prefix(_)) {
+                let _ = fs::remove_dir_all(&temp_extract_dir);
+                return Err("zip_slip: Archive member path escapes target directory".to_string());
+            }
+        }
+        if path.is_absolute() {
+            let _ = fs::remove_dir_all(&temp_extract_dir);
+            return Err("zip_slip: Archive member path is absolute".to_string());
+        }
+
+        let out_path = temp_extract_dir.join(&path);
+        if let Some(parent) = out_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create parent dirs: {e}"))?;
+        }
+
+        entry.unpack(&out_path).map_err(|e| {
+            let _ = fs::remove_dir_all(&temp_extract_dir);
+            format!("Failed to unpack entry: {e}")
+        })?;
+    }
+
+    // Check for nested single directory (e.g. archive unpacked into moonshine-tiny-streaming-en/...)
+    let subdirs: Vec<_> = fs::read_dir(&temp_extract_dir)
+        .map_err(|e| format!("Failed to read temp dir: {e}"))?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let fname = e.file_name();
+            let name_str = fname.to_string_lossy();
+            !name_str.starts_with("._") && !name_str.starts_with("__MACOSX")
+        })
+        .collect();
+
+    let is_single_subdir = subdirs.len() == 1 && subdirs[0].file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+
+    if target_dir.exists() {
+        let _ = fs::remove_dir_all(target_dir);
+    }
+
+    if is_single_subdir {
+        let inner_dir = subdirs[0].path();
+        fs::rename(&inner_dir, target_dir)
+            .map_err(|e| format!("Failed to move extracted dir: {e}"))?;
+        let _ = fs::remove_dir_all(&temp_extract_dir);
+    } else {
+        fs::rename(&temp_extract_dir, target_dir)
+            .map_err(|e| format!("Failed to move temp extract dir: {e}"))?;
+    }
+
+    Ok(())
+}
+
+/// Verifies that all expected model files exist in the model directory.
+pub fn verify_model_files(model_dir: &Path, engine: &str) -> Result<(), String> {
+    match engine.to_ascii_lowercase().as_str() {
+        "gigaam" => {
+            let has_model = model_dir.join("model.int8.onnx").is_file()
+                || model_dir.join("model.onnx").is_file();
+            let has_vocab = model_dir.join("vocab.txt").is_file();
+            if !has_model || !has_vocab {
+                return Err(format!("gigaam model incomplete: model={has_model}, vocab={has_vocab}"));
+            }
+        }
+        "sensevoice" => {
+            let has_model = model_dir.join("model.int8.onnx").is_file()
+                || model_dir.join("model.onnx").is_file();
+            let has_tokens = model_dir.join("tokens.txt").is_file();
+            if !has_model || !has_tokens {
+                return Err(format!("sensevoice model incomplete: model={has_model}, tokens={has_tokens}"));
+            }
+        }
+        "parakeet" => {
+            let has_pre = model_dir.join("nemo128.onnx").is_file();
+            let has_vocab = model_dir.join("vocab.txt").is_file();
+            if !has_pre || !has_vocab {
+                return Err(format!("parakeet model incomplete: nemo128={has_pre}, vocab={has_vocab}"));
+            }
+        }
+        "canary" => {
+            let has_pre = model_dir.join("nemo128.onnx").is_file();
+            let has_vocab = model_dir.join("vocab.txt").is_file();
+            if !has_pre || !has_vocab {
+                return Err(format!("canary model incomplete: nemo128={has_pre}, vocab={has_vocab}"));
+            }
+        }
+        "cohere" => {
+            let has_vocab = model_dir.join("tokens.txt").is_file()
+                || model_dir.join("vocabulary.txt").is_file();
+            if !has_vocab {
+                return Err("cohere model incomplete: tokens.txt missing".to_string());
+            }
+        }
+        "moonshine" => {
+            let has_cfg = model_dir.join("streaming_config.json").is_file();
+            let has_tok = model_dir.join("tokenizer.json").is_file();
+            if !has_cfg && !has_tok {
+                return Err("moonshine model incomplete: neither streaming_config.json nor tokenizer.json found".to_string());
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1179,5 +1379,56 @@ mod tests {
         // Test delete
         mgr.delete(&imported.id).expect("delete failed");
         assert!(mgr.installed_path(&imported.id).is_none());
+    }
+
+    #[test]
+    fn test_zip_slip_rejection() {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+        use tar::Builder;
+
+        let dir = tempdir().unwrap();
+        let archive_path = dir.path().join("malicious.tar.gz");
+        let dest_dir = dir.path().join("extracted");
+
+        // Create a tar.gz with a path traversal entry "../evil.txt"
+        {
+            let f = File::create(&archive_path).unwrap();
+            let gz = GzEncoder::new(f, Compression::default());
+            let mut tar = Builder::new(gz);
+
+            let mut header = tar::Header::new_gnu();
+            header.as_mut_bytes()[..11].copy_from_slice(b"../evil.txt");
+            header.set_size(12);
+            header.set_cksum();
+            tar.append(&header, &b"evil payload"[..]).unwrap();
+            tar.finish().unwrap();
+        }
+
+        let res = extract_archive_safe(&archive_path, &dest_dir);
+        assert!(res.is_err(), "Expected zip-slip error, got: {:?}", res);
+        let err_msg = res.unwrap_err();
+        assert!(err_msg.contains("zip_slip"), "Error message should mention zip_slip: {}", err_msg);
+        assert!(!dir.path().join("evil.txt").exists(), "Evil file should NOT be written outside target dir");
+    }
+
+    #[tokio::test]
+    async fn test_no_re_download_of_installed_model() {
+        let dir = tempdir().unwrap();
+        let models_dir = dir.path().to_path_buf();
+        let mgr = ModelManager::new(models_dir.clone());
+
+        // Fake an installed gigaam-v3 model directory with .complete marker
+        let giga_dir = models_dir.join("giga-am-v3-int8");
+        fs::create_dir_all(&giga_dir).unwrap();
+        fs::write(giga_dir.join(".complete"), "ok").unwrap();
+
+        // Verify installed_path finds it
+        assert!(mgr.installed_path("gigaam-v3").is_some());
+
+        // start_download should return Ok(()) immediately without downloading
+        let res = mgr.start_download("gigaam-v3", None).await;
+        assert!(res.is_ok());
+        assert!(!models_dir.join("giga-am-v3-int8.part").exists(), "Should not create .part file for installed model");
     }
 }
