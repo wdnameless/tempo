@@ -11,8 +11,9 @@
 //! - Hangover tail (450 ms): holds the speech gate open after voicing pauses, capturing soft trailing word endings.
 
 use std::collections::VecDeque;
+use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 use serde::{Deserialize, Serialize};
-
 /// Available VAD detection backends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -20,6 +21,7 @@ pub enum VadBackend {
     #[default]
     Energy,
     Earshot,
+    Silero,
 }
 
 /// Configuration for speech detection and temporal smoothing.
@@ -32,6 +34,8 @@ pub struct VadConfig {
     pub onset_ms: u32,
     pub hangover_ms: u32,
     pub sample_rate: u32,
+    #[serde(default)]
+    pub silero_model_path: Option<PathBuf>,
 }
 
 impl Default for VadConfig {
@@ -43,6 +47,7 @@ impl Default for VadConfig {
             onset_ms: 60,
             hangover_ms: 450,
             sample_rate: 16_000,
+            silero_model_path: None,
         }
     }
 }
@@ -209,6 +214,153 @@ impl VoiceActivityDetector for EarshotVad {
 
     fn reset(&mut self) {
         self.engine.reset();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Silero Neural VAD Backend
+// ---------------------------------------------------------------------------
+
+/// Expected frame size for Silero: 30 ms at 16 kHz = 480 samples.
+pub const SILERO_FRAME_SAMPLES: usize = 480;
+
+/// Frame-size adapter that buffers audio of arbitrary chunk sizes and invokes
+/// a closure on every complete `target_samples` (480-sample) chunk.
+#[derive(Debug, Default)]
+pub struct FrameAdapter {
+    buffer: Vec<f32>,
+    target_samples: usize,
+}
+
+impl FrameAdapter {
+    pub fn new(target_samples: usize) -> Self {
+        Self {
+            buffer: Vec::with_capacity(target_samples * 2),
+            target_samples,
+        }
+    }
+
+    pub fn push_samples<F>(&mut self, samples: &[f32], mut process_frame: F)
+    where
+        F: FnMut(&[f32]),
+    {
+        self.buffer.extend_from_slice(samples);
+        while self.buffer.len() >= self.target_samples {
+            let frame: Vec<f32> = self.buffer.drain(..self.target_samples).collect();
+            process_frame(&frame);
+        }
+    }
+
+    pub fn buffered_samples(&self) -> usize {
+        self.buffer.len()
+    }
+
+    pub fn reset(&mut self) {
+        self.buffer.clear();
+    }
+}
+
+static LAST_FALLBACK_REASON: RwLock<Option<String>> = RwLock::new(None);
+
+pub fn last_fallback_reason() -> Option<String> {
+    LAST_FALLBACK_REASON.read().ok().and_then(|guard| guard.clone())
+}
+
+pub fn set_last_fallback_reason(reason: Option<String>) {
+    if let Ok(mut guard) = LAST_FALLBACK_REASON.write() {
+        *guard = reason;
+    }
+}
+
+pub fn resolve_default_silero_model_path() -> Option<PathBuf> {
+    let candidate_names = ["silero_vad.onnx", "silero_vad_v4.onnx"];
+    let mut candidate_dirs = Vec::new();
+    for (var, subdir) in [("LOCALAPPDATA", "tempo"), ("LOCALAPPDATA", "Alarmer"), ("APPDATA", "tempo"), ("APPDATA", "Alarmer")] {
+        if let Ok(base) = std::env::var(var) {
+            candidate_dirs.push(PathBuf::from(base).join(subdir).join("models"));
+        }
+    }
+    candidate_dirs.push(PathBuf::from("models"));
+    candidate_dirs.push(PathBuf::from("."));
+
+    for dir in candidate_dirs {
+        for name in &candidate_names {
+            let p = dir.join(name);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+pub struct SileroVad {
+    engine: transcribe_rs::vad::SileroVad,
+    threshold: f32,
+    adapter: FrameAdapter,
+    last_prob: f32,
+}
+
+impl SileroVad {
+    pub fn new(model_path: impl AsRef<Path>, threshold: f32) -> Result<Self, String> {
+        let path = model_path.as_ref();
+        if !path.is_file() {
+            return Err(format!("Silero model not found at {}", path.display()));
+        }
+        let engine = transcribe_rs::vad::SileroVad::new(path, threshold)
+            .map_err(|e| format!("Failed to initialize Silero VAD from {}: {e}", path.display()))?;
+        Ok(Self {
+            engine,
+            threshold,
+            adapter: FrameAdapter::new(SILERO_FRAME_SAMPLES),
+            last_prob: 0.0,
+        })
+    }
+
+    pub fn from_config(cfg: &VadConfig) -> Result<Self, String> {
+        let model_path = match &cfg.silero_model_path {
+            Some(p) if p.is_file() => p.clone(),
+            Some(p) => return Err(format!("Silero model file does not exist at {}", p.display())),
+            None => {
+                resolve_default_silero_model_path()
+                    .ok_or_else(|| "Silero VAD model is not installed. Please download 'silero-vad' in models settings.".to_string())?
+            }
+        };
+        Self::new(model_path, 0.5)
+    }
+}
+
+impl VoiceActivityDetector for SileroVad {
+    fn push_frame<'a>(&'a mut self, frame: &'a [f32]) -> VadFrame<'a> {
+        if frame.len() == SILERO_FRAME_SAMPLES {
+            let prob = self.engine.speech_probability(frame).unwrap_or(0.0);
+            self.last_prob = prob;
+        } else {
+            let engine = &mut self.engine;
+            let last_prob = &mut self.last_prob;
+            self.adapter.push_samples(frame, |chunk| {
+                if let Ok(prob) = engine.speech_probability(chunk) {
+                    *last_prob = prob;
+                }
+            });
+        }
+
+        if self.last_prob >= self.threshold {
+            VadFrame::Speech(frame)
+        } else {
+            VadFrame::Noise(frame)
+        }
+    }
+
+    fn frame_samples(&self) -> usize {
+        SILERO_FRAME_SAMPLES
+    }
+
+    fn reset(&mut self) {
+        use transcribe_rs::vad::Vad;
+        self.engine.reset();
+        self.adapter.reset();
+        self.last_prob = 0.0;
     }
 }
 
@@ -390,11 +542,31 @@ impl VoiceActivityDetector for SmoothedVad {
 /// Builds a fully configured, smoothed [`VoiceActivityDetector`] based on `cfg`.
 pub fn build(cfg: &VadConfig) -> Box<dyn VoiceActivityDetector + Send> {
     let inner: Box<dyn VoiceActivityDetector + Send> = match cfg.backend {
-        VadBackend::Energy => Box::new(EnergyVad::new(cfg.energy_threshold, cfg.sample_rate)),
+        VadBackend::Energy => {
+            set_last_fallback_reason(None);
+            Box::new(EnergyVad::new(cfg.energy_threshold, cfg.sample_rate))
+        }
         VadBackend::Earshot => match EarshotVad::new(0.5) {
-            Ok(vad) => Box::new(vad),
+            Ok(vad) => {
+                set_last_fallback_reason(None);
+                Box::new(vad)
+            }
             Err(err) => {
-                eprintln!("STT EarshotVad initialization failed ({err}), falling back to EnergyVad");
+                let reason = format!("STT EarshotVad initialization failed ({err}), falling back to EnergyVad");
+                eprintln!("{reason}");
+                set_last_fallback_reason(Some(reason));
+                Box::new(EnergyVad::new(cfg.energy_threshold, cfg.sample_rate))
+            }
+        },
+        VadBackend::Silero => match SileroVad::from_config(cfg) {
+            Ok(vad) => {
+                set_last_fallback_reason(None);
+                Box::new(vad)
+            }
+            Err(err) => {
+                let reason = format!("STT SileroVad initialization failed ({err}), falling back to EnergyVad");
+                eprintln!("{reason}");
+                set_last_fallback_reason(Some(reason));
                 Box::new(EnergyVad::new(cfg.energy_threshold, cfg.sample_rate))
             }
         },
@@ -581,5 +753,116 @@ mod tests {
         let report = smoothed.tail_report().unwrap();
         assert!(!report.in_speech);
         assert_eq!(report.withheld_frames, 0);
+    }
+
+    #[test]
+    fn test_vad_backend_setting_round_trips_silero() {
+        let backend = VadBackend::Silero;
+        let json = serde_json::to_string(&backend).expect("serialize silero");
+        assert_eq!(json, "\"silero\"");
+        let parsed: VadBackend = serde_json::from_str(&json).expect("deserialize silero");
+        assert_eq!(parsed, VadBackend::Silero);
+    }
+
+    #[test]
+    fn test_silero_vad_fallback_on_missing_model_with_reason() {
+        let cfg = VadConfig {
+            backend: VadBackend::Silero,
+            silero_model_path: Some(PathBuf::from("nonexistent_silero_path_12345.onnx")),
+            energy_threshold: 0.02,
+            prefill_ms: 300,
+            onset_ms: 60,
+            hangover_ms: 300,
+            sample_rate: 16000,
+        };
+
+        let mut detector = build(&cfg);
+        // Fallback to EnergyVad frame size (30ms at 16kHz = 480)
+        assert_eq!(detector.frame_samples(), 480);
+
+        let reason = last_fallback_reason();
+        assert!(reason.is_some(), "Fallback reason must be set on missing model");
+        let reason_str = reason.unwrap();
+        assert!(
+            reason_str.contains("Silero") && reason_str.contains("EnergyVad"),
+            "Reason was: {reason_str}"
+        );
+
+        // The fallback detector must actually work. It sits behind the same
+        // smoothing the app uses, so one loud frame is still onset: speech is
+        // declared once the onset window (60 ms = two 30 ms frames) is filled.
+        let quiet = vec![0.0f32; 480];
+        let loud = vec![0.5f32; 480];
+        assert!(detector.push_frame(&quiet).is_noise());
+        let declared_speech = (0..4).any(|_| detector.push_frame(&loud).is_speech());
+        assert!(declared_speech, "the energy fallback must still find speech");
+    }
+
+    #[test]
+    fn test_silero_frame_size_adapter() {
+        let mut adapter = FrameAdapter::new(480);
+        let mut processed_frames = Vec::new();
+
+        // Push 3 chunks of 200 samples each = 600 samples
+        let chunk1 = vec![1.0f32; 200];
+        adapter.push_samples(&chunk1, |frame| processed_frames.push(frame.to_vec()));
+        assert_eq!(processed_frames.len(), 0);
+        assert_eq!(adapter.buffered_samples(), 200);
+
+        let chunk2 = vec![2.0f32; 200];
+        adapter.push_samples(&chunk2, |frame| processed_frames.push(frame.to_vec()));
+        assert_eq!(processed_frames.len(), 0);
+        assert_eq!(adapter.buffered_samples(), 400);
+
+        let chunk3 = vec![3.0f32; 200];
+        adapter.push_samples(&chunk3, |frame| processed_frames.push(frame.to_vec()));
+        // 400 + 200 = 600 -> 1 frame of 480 drained, 120 remain
+        assert_eq!(processed_frames.len(), 1);
+        assert_eq!(processed_frames[0].len(), 480);
+        assert_eq!(adapter.buffered_samples(), 120);
+
+        // Push remaining 360 samples -> 120 + 360 = 480 -> 2nd frame
+        let chunk4 = vec![4.0f32; 360];
+        adapter.push_samples(&chunk4, |frame| processed_frames.push(frame.to_vec()));
+        assert_eq!(processed_frames.len(), 2);
+        assert_eq!(adapter.buffered_samples(), 0);
+    }
+
+    #[test]
+    fn test_silero_synthetic_speech_and_silence() {
+        let model_path = resolve_default_silero_model_path();
+        let path = match model_path {
+            Some(p) if p.is_file() => p,
+            _ => {
+                eprintln!("[INFO] Silero model not present locally; skipping live inference test");
+                return;
+            }
+        };
+
+        let mut silero = SileroVad::new(&path, 0.5).expect("SileroVad initialization");
+        assert_eq!(silero.frame_samples(), 480);
+
+        // Silence must never be reported as speech, over a run of frames.
+        let silence = vec![0.0f32; 480];
+        let silence_as_speech = (0..10).filter(|_| silero.push_frame(&silence).is_speech()).count();
+        assert_eq!(silence_as_speech, 0, "silence must not be classified as speech");
+
+        // Speech is fed as a run of frames, the way the detector is driven in
+        // production: the model carries recurrent state, so a single 30 ms frame
+        // is not enough context for a decision.
+        let mut declared = 0;
+        for _ in 0..15 {
+            let mut speech = vec![0.0f32; 480];
+            for (i, sample) in speech.iter_mut().enumerate() {
+                let t = i as f32 / 16000.0;
+                *sample = 0.5 * (2.0 * std::f32::consts::PI * 300.0 * t).sin()
+                    + 0.3 * (2.0 * std::f32::consts::PI * 800.0 * t).sin()
+                    + 0.2 * (2.0 * std::f32::consts::PI * 2500.0 * t).sin();
+            }
+            if silero.push_frame(&speech).is_speech() {
+                declared += 1;
+            }
+        }
+        assert!(declared > 0, "a run of speech frames must be detected as speech");
     }
 }

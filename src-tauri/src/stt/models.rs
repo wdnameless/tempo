@@ -26,6 +26,15 @@ pub const DOWNLOAD_STALL_TIMEOUT: Duration = Duration::from_secs(60);
 pub const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 pub const PROGRESS_EMIT_THROTTLE: Duration = Duration::from_millis(100);
 
+pub const SILERO_VAD_MODEL_ID: &str = "silero-vad";
+pub const SILERO_VAD_FILENAME: &str = "silero_vad.onnx";
+pub const SILERO_VAD_SIZE_BYTES: u64 = 1_807_522;
+pub const SILERO_VAD_SHA256: &str = "a35ebf52fd3ce5f1469b2a36158dba761bc47b973ea3382b3186ca15b1f5af28";
+pub const SILERO_VAD_URLS: &[&str] = &[
+    "https://raw.githubusercontent.com/snakers4/silero-vad/v4.0/files/silero_vad.onnx",
+    "https://huggingface.co/onnx-community/silero-vad/resolve/main/onnx/model.onnx",
+];
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelInfo {
@@ -208,6 +217,52 @@ impl ModelManager {
                 source: "catalog".to_string(),
             });
         }
+        // Silero VAD catalog entry
+        let silero_installed_path = self.installed_path(SILERO_VAD_MODEL_ID);
+        let silero_installed = silero_installed_path.is_some();
+        // `active` is the guard taken at the top of this function: taking the
+        // same mutex again here deadlocks, because a tokio Mutex is not reentrant.
+        let (silero_is_downloading, silero_partial_bytes) = {
+            if let Some(dl) = active.get(SILERO_VAD_MODEL_ID) {
+                let p = dl.progress.lock().await;
+                (true, p.received)
+            } else {
+                let part = self.models_dir.join(format!("{}.part", SILERO_VAD_FILENAME));
+                let partial = part.metadata().map(|m| m.len()).unwrap_or(0);
+                (false, partial)
+            }
+        };
+
+        results.push(ModelInfo {
+            id: SILERO_VAD_MODEL_ID.to_string(),
+            name: "Silero VAD".to_string(),
+            description: "Neural Voice Activity Detection (Silero v4 ONNX)".to_string(),
+            filename: SILERO_VAD_FILENAME.to_string(),
+            quant: "ONNX".to_string(),
+            quants: vec!["ONNX".to_string()],
+            bytes: SILERO_VAD_SIZE_BYTES,
+            sha256: Some(SILERO_VAD_SHA256.to_string()),
+            revision: Some("v4.0".to_string()),
+            languages: Vec::new(),
+            language_count: 0,
+            speed_score: 0.99,
+            accuracy_score: 0.95,
+            parameters: "4.2M".to_string(),
+            recommended: false,
+            supports_translation: false,
+            supports_language_detect: false,
+            installed: silero_installed,
+            path: silero_installed_path.map(|p| p.to_string_lossy().to_string()),
+            is_downloading: silero_is_downloading,
+            partial_bytes: silero_partial_bytes,
+            is_custom: false,
+            source: "catalog".to_string(),
+        });
+        // Both spellings the Silero file has shipped under; discovery must not
+        // report them as custom models.
+        seen_filenames.insert(SILERO_VAD_FILENAME.to_string(), SILERO_VAD_MODEL_ID.to_string());
+        seen_filenames.insert("silero_vad_v4.onnx".to_string(), SILERO_VAD_MODEL_ID.to_string());
+
 
         // 2. Discover custom models in models_dir (*.gguf, *.bin not in catalog)
         if let Ok(entries) = fs::read_dir(&self.models_dir) {
@@ -280,6 +335,17 @@ impl ModelManager {
             return None;
         }
 
+        if trimmed.eq_ignore_ascii_case(SILERO_VAD_MODEL_ID) || trimmed.eq_ignore_ascii_case("silero_vad") {
+            let p1 = self.models_dir.join(SILERO_VAD_FILENAME);
+            if p1.is_file() {
+                return Some(p1);
+            }
+            let p2 = self.models_dir.join("silero_vad_v4.onnx");
+            if p2.is_file() {
+                return Some(p2);
+            }
+        }
+
         // 1. If catalog model, check its files in priority order
         if let Some(cat) = catalog::find(trimmed) {
             if let Some(def_file) = catalog::default_file(cat) {
@@ -332,30 +398,45 @@ impl ModelManager {
         model_id: &str,
         quant: Option<String>,
     ) -> Result<(), String> {
-        let cat = catalog::find(model_id)
-            .ok_or_else(|| format!("no_model: Model '{model_id}' not found in catalog"))?;
-
-        let quant_file = if let Some(q) = quant {
-            cat.files
-                .iter()
-                .find(|f| f.quant.eq_ignore_ascii_case(&q))
-                .ok_or_else(|| format!("no_model: Quant '{q}' not found for model '{model_id}'"))?
+        let (filename, size_bytes, sha256_val, urls) = if model_id.eq_ignore_ascii_case(SILERO_VAD_MODEL_ID) {
+            (
+                SILERO_VAD_FILENAME.to_string(),
+                SILERO_VAD_SIZE_BYTES,
+                Some(SILERO_VAD_SHA256.to_string()),
+                SILERO_VAD_URLS.iter().map(|s| s.to_string()).collect(),
+            )
         } else {
-            catalog::default_file(cat)
-                .ok_or_else(|| format!("no_model: No quant files available for model '{model_id}'"))?
+            let cat = catalog::find(model_id)
+                .ok_or_else(|| format!("no_model: Model '{model_id}' not found in catalog"))?;
+
+            let quant_file = if let Some(q) = quant {
+                cat.files
+                    .iter()
+                    .find(|f| f.quant.eq_ignore_ascii_case(&q))
+                    .ok_or_else(|| format!("no_model: Quant '{q}' not found for model '{model_id}'"))?
+            } else {
+                catalog::default_file(cat)
+                    .ok_or_else(|| format!("no_model: No quant files available for model '{model_id}'"))?
+            };
+            (
+                quant_file.filename.clone(),
+                quant_file.size_bytes,
+                quant_file.sha256.clone(),
+                catalog::download_urls(cat, quant_file),
+            )
         };
 
-        let target_path = self.models_dir.join(&quant_file.filename);
+        let target_path = self.models_dir.join(&filename);
         if target_path.is_file() {
             return Ok(());
         }
 
         // Check available disk space
         let free_space = check_disk_space(&self.models_dir).unwrap_or(u64::MAX);
-        if free_space < quant_file.size_bytes {
+        if free_space < size_bytes {
             let err = format!(
                 "disk_full: Not enough disk space. Required: {} MB, available: {} MB",
-                quant_file.size_bytes / (1024 * 1024),
+                size_bytes / (1024 * 1024),
                 free_space / (1024 * 1024)
             );
             self.emit_event(
@@ -369,7 +450,7 @@ impl ModelManager {
         let progress = Arc::new(Mutex::new(DownloadProgress {
             model_id: model_id.to_string(),
             received: 0,
-            total: quant_file.size_bytes,
+            total: size_bytes,
             percentage: 0.0,
             speed_bps: 0.0,
             eta_secs: None,
@@ -388,10 +469,9 @@ impl ModelManager {
             active.insert(model_id.to_string(), Arc::clone(&active_dl));
         }
 
-        let urls = catalog::download_urls(cat, quant_file);
-        let partial_path = self.models_dir.join(format!("{}.part", quant_file.filename));
-        let expected_size = quant_file.size_bytes;
-        let expected_sha256 = quant_file.sha256.clone();
+        let partial_path = self.models_dir.join(format!("{}.part", filename));
+        let expected_size = size_bytes;
+        let expected_sha256 = sha256_val;
         let model_id_owned = model_id.to_string();
 
         let app_handle_arc = Arc::clone(&self.app_handle);
@@ -408,11 +488,7 @@ impl ModelManager {
             let on_progress = move |received: u64, total: u64| {
                 let now = Instant::now();
                 let elapsed = start_time.elapsed().as_secs_f64();
-                let speed = if elapsed > 0.0 {
-                    (received as f64) / elapsed
-                } else {
-                    0.0
-                };
+                let speed = if elapsed > 0.0 { (received as f64) / elapsed } else { 0.0 };
                 let eta = if speed > 0.0 && total > received {
                     Some(((total - received) as f64 / speed) as u64)
                 } else {
@@ -424,36 +500,29 @@ impl ModelManager {
                     0.0
                 };
 
-                let p = DownloadProgress {
-                    model_id: model_id_cb.clone(),
-                    received,
-                    total,
-                    percentage: pct,
-                    speed_bps: speed,
-                    eta_secs: eta,
-                    phase: "downloading".to_string(),
-                    error: None,
-                };
-
-                if let Ok(mut lock) = progress_cb.try_lock() {
-                    *lock = p.clone();
+                if let Ok(mut p) = progress_cb.try_lock() {
+                    p.received = received;
+                    p.total = total;
+                    p.percentage = pct;
+                    p.speed_bps = speed;
+                    p.eta_secs = eta;
+                    p.phase = "downloading".to_string();
                 }
 
-                let should_emit = if let Ok(mut guard) = last_emit.try_lock() {
-                    if now.duration_since(*guard) >= PROGRESS_EMIT_THROTTLE || received == total {
-                        *guard = now;
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                };
-
-                if should_emit {
-                    if let Ok(guard) = app_cb.try_lock() {
-                        if let Some(app) = guard.as_ref() {
-                            let _ = app.emit("stt://model-progress", &p);
+                if let Ok(mut last) = last_emit.try_lock() {
+                    if last.elapsed() >= PROGRESS_EMIT_THROTTLE {
+                        *last = now;
+                        if let Ok(guard) = app_cb.try_lock() {
+                            if let Some(app) = guard.as_ref() {
+                                let _ = app.emit("stt://model-progress", serde_json::json!({
+                                    "modelId": model_id_cb,
+                                    "received": received,
+                                    "total": total,
+                                    "percentage": pct,
+                                    "speedBps": speed,
+                                    "etaSecs": eta,
+                                }));
+                            }
                         }
                     }
                 }
@@ -466,80 +535,60 @@ impl ModelManager {
                 expected_sha256.as_deref(),
                 &cancel,
                 &on_progress,
-            )
-            .await;
+            ).await;
 
-            // Remove from active downloads
             {
                 let mut active = active_downloads_arc.lock().await;
                 active.remove(&model_id_owned);
             }
 
-            let emit_failed = |phase: &str, err: &str| {
-                if let Ok(mut lock) = progress.try_lock() {
-                    lock.phase = phase.to_string();
-                    lock.error = Some(err.to_string());
-                }
-                if let Ok(guard) = app_handle_arc.try_lock() {
-                    if let Some(app) = guard.as_ref() {
-                        let _ = app.emit(
-                            "stt://model-failed",
-                            serde_json::json!({ "modelId": model_id_owned, "error": err }),
-                        );
-                    }
-                }
-            };
-
             match outcome {
                 Ok(DownloadOutcome::Completed) => {
-                    if let Ok(mut lock) = progress.try_lock() {
-                        lock.phase = "verifying".to_string();
+                    let final_path = partial_path.with_extension("");
+                    if let Err(e) = fs::rename(&partial_path, &final_path) {
+                        let err_msg = format!("fs_error: Failed to rename partial file: {e}");
+                        eprintln!("[stt/models] {err_msg}");
+                        if let Ok(guard) = app_handle_arc.try_lock() {
+                            if let Some(app) = guard.as_ref() {
+                                let _ = app.emit("stt://model-failed", serde_json::json!({
+                                    "modelId": model_id_owned,
+                                    "error": err_msg,
+                                }));
+                            }
+                        }
+                        return;
+                    }
+                    if let Ok(mut p) = progress.try_lock() {
+                        p.percentage = 100.0;
+                        p.phase = "done".to_string();
                     }
                     if let Ok(guard) = app_handle_arc.try_lock() {
                         if let Some(app) = guard.as_ref() {
-                            if let Ok(lock) = progress.try_lock() {
-                                let _ = app.emit("stt://model-progress", &*lock);
-                            }
-                        }
-                    }
-
-                    let verify_res = if let Some(expected) = &expected_sha256 {
-                        verify_sha256(&partial_path, expected)
-                    } else {
-                        Ok(())
-                    };
-
-                    match verify_res {
-                        Ok(()) => {
-                            if let Err(e) = fs::rename(&partial_path, &target_path) {
-                                emit_failed("error", &format!("Failed to finalize model file: {e}"));
-                            } else {
-                                if let Ok(mut lock) = progress.try_lock() {
-                                    lock.phase = "done".to_string();
-                                    lock.percentage = 100.0;
-                                }
-                                if let Ok(guard) = app_handle_arc.try_lock() {
-                                    if let Some(app) = guard.as_ref() {
-                                        let _ = app.emit(
-                                            "stt://model-complete",
-                                            serde_json::json!({ "modelId": model_id_owned }),
-                                        );
-                                        let _ = app.emit("stt://models-updated", serde_json::json!({}));
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            let _ = fs::remove_file(&partial_path);
-                            emit_failed("error", &format!("model_verify_failed: {e}"));
+                            let _ = app.emit("stt://model-ready", serde_json::json!({
+                                "modelId": model_id_owned,
+                                "path": final_path.to_string_lossy(),
+                            }));
                         }
                     }
                 }
                 Ok(DownloadOutcome::Cancelled) => {
-                    emit_failed("cancelled", "cancelled");
+                    if let Ok(mut p) = progress.try_lock() {
+                        p.phase = "cancelled".to_string();
+                    }
                 }
-                Err(err_msg) => {
-                    emit_failed("error", &err_msg);
+                Err(e) => {
+                    if let Ok(mut p) = progress.try_lock() {
+                        p.phase = "error".to_string();
+                        p.error = Some(e.clone());
+                    }
+                    if let Ok(guard) = app_handle_arc.try_lock() {
+                        if let Some(app) = guard.as_ref() {
+                            let _ = app.emit("stt://model-failed", serde_json::json!({
+                                "modelId": model_id_owned,
+                                "error": e,
+                            }));
+                        }
+                    }
                 }
             }
         });
@@ -564,6 +613,18 @@ impl ModelManager {
     /// Deletes all installed files and partial downloads for a model.
     pub fn delete(&self, model_id: &str) -> Result<(), String> {
         let mut deleted = false;
+
+        if model_id.eq_ignore_ascii_case(SILERO_VAD_MODEL_ID) {
+            let p1 = self.models_dir.join(SILERO_VAD_FILENAME);
+            if p1.is_file() {
+                fs::remove_file(p1).map_err(|e| format!("delete_error: {e}"))?;
+            }
+            let p2 = self.models_dir.join(format!("{}.part", SILERO_VAD_FILENAME));
+            if p2.is_file() {
+                let _ = fs::remove_file(p2);
+            }
+            return Ok(());
+        }
 
         // If catalog model, delete its quant files
         if let Some(cat) = catalog::find(model_id) {

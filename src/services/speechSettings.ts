@@ -6,7 +6,7 @@ import { isTauri } from './platform';
 import { applySpeechConfig } from './stt';
 
 export type ShortcutActivation = 'toggle' | 'push_to_talk' | 'hold_or_toggle';
-export type VadBackend = 'energy' | 'earshot';
+export type VadBackend = 'energy' | 'earshot' | 'silero';
 export type PasteMethod = 'ctrl_v' | 'shift_insert' | 'direct';
 export type ClipboardBehavior = 'restore' | 'keep';
 export type SoundTheme = 'default' | 'soft' | 'mechanical' | string;
@@ -23,6 +23,7 @@ export interface SpeechConfig {
   channel: number | null;
   vadBackend: VadBackend | string;
   vadEnergyThreshold: number;
+  vadFallbackReason?: string | null;
   language: string | null;
   translateToEnglish: boolean;
   customWords: string[];
@@ -70,6 +71,7 @@ export const DEFAULT_SPEECH_CONFIG: SpeechConfig = {
   vadBackend: 'earshot',
   vadEnergyThreshold: 0.015,
   language: null,
+  vadFallbackReason: null,
   translateToEnglish: false,
   customWords: [],
   removeFillerWords: false,
@@ -163,7 +165,7 @@ function parseActivation(val: unknown, fallback: ShortcutActivation): ShortcutAc
 }
 
 function parseVadBackend(val: unknown, fallback: VadBackend): VadBackend {
-  if (val === 'energy' || val === 'earshot') {
+  if (val === 'energy' || val === 'earshot' || val === 'silero') {
     return val;
   }
   return fallback;
@@ -221,6 +223,7 @@ export function loadSpeechConfig(): SpeechConfig {
       getSpeechPref('vad_energy_threshold', DEFAULT_SPEECH_CONFIG.vadEnergyThreshold),
       DEFAULT_SPEECH_CONFIG.vadEnergyThreshold,
     ),
+    vadFallbackReason: parseNullableString(getSpeechPref('vad_fallback_reason', DEFAULT_SPEECH_CONFIG.vadFallbackReason ?? null), DEFAULT_SPEECH_CONFIG.vadFallbackReason ?? null),
     language: parseNullableString(getSpeechPref('language', DEFAULT_SPEECH_CONFIG.language), DEFAULT_SPEECH_CONFIG.language),
     translateToEnglish: parseBoolean(
       getSpeechPref('translate_to_english', DEFAULT_SPEECH_CONFIG.translateToEnglish),
@@ -361,6 +364,10 @@ export function mergeSpeechConfig(base: SpeechConfig, patch: Partial<SpeechConfi
       patch.vadEnergyThreshold !== undefined
         ? parseNumber(patch.vadEnergyThreshold, base.vadEnergyThreshold)
         : base.vadEnergyThreshold,
+    vadFallbackReason:
+      patch.vadFallbackReason !== undefined
+        ? parseNullableString(patch.vadFallbackReason, base.vadFallbackReason ?? null)
+        : base.vadFallbackReason,
     language: patch.language !== undefined ? parseNullableString(patch.language, base.language) : base.language,
     translateToEnglish:
       patch.translateToEnglish !== undefined
@@ -459,6 +466,7 @@ const FIELD_TO_PREF: Record<keyof SpeechConfig, string> = {
   vadEnergyThreshold: 'tempo_speech_vad_energy_threshold',
   language: 'tempo_speech_language',
   translateToEnglish: 'tempo_speech_translate_to_english',
+  vadFallbackReason: 'tempo_speech_vad_fallback_reason',
   customWords: 'tempo_speech_custom_words',
   removeFillerWords: 'tempo_speech_remove_filler_words',
   pasteMethod: 'tempo_speech_paste_method',

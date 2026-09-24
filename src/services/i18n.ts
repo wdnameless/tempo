@@ -280,6 +280,14 @@ export interface Translations {
   settingsSpeechVadBackend: string;
   settingsSpeechVadEnergy: string;
   settingsSpeechVadEarshot: string;
+  settingsSpeechVadSilero: string;
+  settingsSpeechVadSileroDesc: string;
+  settingsSpeechVadSileroReady: string;
+  settingsSpeechVadSileroNeedsDownload: string;
+  settingsSpeechVadSileroDownloadBtn: string;
+  settingsSpeechVadSileroDownloading: string;
+  settingsSpeechVadSileroCatalogHint: string;
+  settingsSpeechVadFallbackNotice: string;
   settingsSpeechVadThreshold: string;
   settingsSpeechTestMic: string;
   settingsSpeechTestMicStop: string;
@@ -1087,6 +1095,14 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechVadBackend: 'Детектор активности (VAD)',
     settingsSpeechVadEnergy: 'По энергии (RMS)',
     settingsSpeechVadEarshot: 'Earshot (Нейросеть)',
+    settingsSpeechVadSilero: 'Silero (Нейросеть)',
+    settingsSpeechVadSileroDesc: 'Нейросетевой детектор находит речь при низком отношении сигнал/шум, где пороги по энергии бессильны.',
+    settingsSpeechVadSileroReady: 'Модель Silero VAD установлена и готова к работе.',
+    settingsSpeechVadSileroNeedsDownload: 'Требуется загрузка модели Silero VAD (каталог: silero-vad, ~1.8 МБ).',
+    settingsSpeechVadSileroDownloadBtn: 'Скачать silero-vad',
+    settingsSpeechVadSileroDownloading: 'Загрузка silero-vad...',
+    settingsSpeechVadSileroCatalogHint: 'Модель доступна в каталоге под именем «silero-vad».',
+    settingsSpeechVadFallbackNotice: 'Внимание: используется резервный детектор по энергии. Причина:',
     settingsSpeechVadThreshold: 'Порог чувствительности VAD',
     settingsSpeechTestMic: 'Проверить микрофон',
     settingsSpeechTestMicStop: 'Остановить проверку',
@@ -1749,6 +1765,14 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsSpeechVadBackend: 'Voice Activity Detection (VAD)',
     settingsSpeechVadEnergy: 'Energy (RMS)',
     settingsSpeechVadEarshot: 'Earshot (Neural)',
+    settingsSpeechVadSilero: 'Silero (Neural)',
+    settingsSpeechVadSileroDesc: 'Neural detector finds speech at a low signal-to-noise ratio where energy thresholds give up.',
+    settingsSpeechVadSileroReady: 'Silero VAD model is installed and ready.',
+    settingsSpeechVadSileroNeedsDownload: 'Silero VAD model needs downloading (catalog: silero-vad, ~1.8 MB).',
+    settingsSpeechVadSileroDownloadBtn: 'Download silero-vad',
+    settingsSpeechVadSileroDownloading: 'Downloading silero-vad...',
+    settingsSpeechVadSileroCatalogHint: 'The model is available in the catalog under "silero-vad".',
+    settingsSpeechVadFallbackNotice: 'Notice: falling back to energy detector. Reason:',
     settingsSpeechVadThreshold: 'VAD Sensitivity Threshold',
     settingsSpeechTestMic: 'Test Microphone',
     settingsSpeechTestMicStop: 'Stop Test',

@@ -10,6 +10,12 @@ vi.mock('../../services/stt', () => ({
   ]),
   inputChannels: vi.fn().mockResolvedValue(2),
   micLevel: vi.fn().mockResolvedValue(0),
+  listModels: vi.fn().mockResolvedValue([]),
+  downloadModel: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../services/sttEvents', () => ({
+  onSttEvent: vi.fn(() => () => {}),
 }));
 
 describe('AudioSettings - Test Microphone Probe', () => {
@@ -297,5 +303,121 @@ describe('AudioSettings - Noise Suppression & Audio Filters', () => {
     expect(screen.getByText(/Срезает низкочастотный гул/i)).toBeDefined();
     expect(screen.getByText(/Глушит фоновый шум и дыхание/i)).toBeDefined();
     expect(screen.getByText(/Выравнивает уровень громкости/i)).toBeDefined();
+  });
+});
+
+describe('AudioSettings - VAD Backend & Silero Neural Detector', () => {
+  it('offers three VAD backends in the selector with one-line explanation of neural detector', () => {
+    const config: SpeechConfig = {
+      ...DEFAULT_SPEECH_CONFIG,
+      vadBackend: 'energy',
+    };
+    render(<AudioSettings config={config} onChange={vi.fn()} />);
+
+    // Segmented should have Energy, Earshot, and Silero options
+    const segmented = screen.getByTestId('vad-backend-segmented');
+    expect(segmented).toBeDefined();
+
+    const radios = screen.getAllByRole('radio');
+    const radioLabels = radios.map((r) => r.textContent);
+    expect(radioLabels.some((l) => /энергии|energy/i.test(l || ''))).toBe(true);
+    expect(radioLabels.some((l) => /earshot/i.test(l || ''))).toBe(true);
+    expect(radioLabels.some((l) => /silero/i.test(l || ''))).toBe(true);
+
+    // One-line explanation of neural detector advantage
+    expect(screen.getByText(/сигнал\/шум|signal-to-noise/i)).toBeDefined();
+  });
+
+  it('choosing Silero writes "silero" to config and preserves the selected state without folding into another backend', () => {
+    const onChange = vi.fn();
+    const config: SpeechConfig = {
+      ...DEFAULT_SPEECH_CONFIG,
+      vadBackend: 'energy',
+    };
+    const { rerender } = render(<AudioSettings config={config} onChange={onChange} />);
+
+    // Click Silero option
+    const sileroRadio = screen.getByRole('radio', { name: /silero/i });
+    fireEvent.click(sileroRadio);
+    expect(onChange).toHaveBeenCalledWith({ vadBackend: 'silero' });
+
+    // When config has vadBackend: 'silero', it should stay 'silero' (not become earshot or energy)
+    rerender(<AudioSettings config={{ ...config, vadBackend: 'silero' }} onChange={onChange} />);
+    const activeRadio = screen.getByRole('radio', { name: /silero/i });
+    expect(activeRadio.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('shows download hint with catalog entry name and download button when model is not installed', async () => {
+    vi.mocked(stt.listModels).mockResolvedValue([
+      {
+        id: 'silero-vad',
+        name: 'Silero VAD',
+        bytes: 1807522,
+        languages: [],
+        installed: false,
+      },
+    ]);
+
+    const config: SpeechConfig = {
+      ...DEFAULT_SPEECH_CONFIG,
+      vadBackend: 'silero',
+    };
+    render(<AudioSettings config={config} onChange={vi.fn()} />);
+
+    // Wait for model query to resolve
+    await waitFor(() => {
+      expect(screen.getByTestId('silero-download-card')).toBeDefined();
+    });
+
+    // Mentions silero-vad catalog entry
+    expect(screen.getAllByText(/silero-vad/i).length).toBeGreaterThan(0);
+    // Click download button
+    const downloadBtn = screen.getByTestId('silero-download-btn');
+    expect(downloadBtn).toBeDefined();
+    fireEvent.click(downloadBtn);
+    expect(stt.downloadModel).toHaveBeenCalledWith('silero-vad');
+  });
+
+  it('says Silero is ready when the model is installed', async () => {
+    vi.mocked(stt.listModels).mockResolvedValue([
+      {
+        id: 'silero-vad',
+        name: 'Silero VAD',
+        bytes: 1807522,
+        languages: [],
+        installed: true,
+      },
+    ]);
+
+    const config: SpeechConfig = {
+      ...DEFAULT_SPEECH_CONFIG,
+      vadBackend: 'silero',
+    };
+    render(<AudioSettings config={config} onChange={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('silero-ready-badge')).toBeDefined();
+    });
+
+    expect(screen.getByText(/готова к работе|is ready/i)).toBeDefined();
+    expect(screen.queryByTestId('silero-download-btn')).toBeNull();
+  });
+
+  it('shows reported fallback reason instead of pretending neural detector is running', () => {
+    const config: SpeechConfig = {
+      ...DEFAULT_SPEECH_CONFIG,
+      vadBackend: 'silero',
+      vadFallbackReason: 'Silero ONNX session creation failed: file missing or corrupt',
+    };
+    render(<AudioSettings config={config} onChange={vi.fn()} />);
+
+    expect(screen.getByTestId('silero-fallback-notice')).toBeDefined();
+    expect(
+      screen.getByText(/Silero ONNX session creation failed: file missing or corrupt/),
+    ).toBeDefined();
+
+    // Selected value is still silero, not silently downgraded
+    const sileroRadio = screen.getByRole('radio', { name: /silero/i });
+    expect(sileroRadio.getAttribute('aria-checked')).toBe('true');
   });
 });

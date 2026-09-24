@@ -306,6 +306,7 @@ pub fn vad_trim_silence(
         onset_ms: 60,
         hangover_ms: 450,
         sample_rate,
+        silero_model_path: None,
     };
     vad_trim_with_config(pcm, &cfg)
 }

@@ -4,14 +4,18 @@ import {
   inputDevices,
   inputChannels,
   micLevel,
+  listModels,
+  downloadModel,
+  type ModelInfo,
   type AudioDeviceInfo,
 } from '../../services/stt';
+import { onSttEvent } from '../../services/sttEvents';
 import { I18nService } from '../../services/i18n';
 import { Segmented } from '../ui/Segmented';
 import { Slider } from '../ui/Slider';
 import { Toggle } from '../ui/Toggle';
 import { Row } from '../ui/Row';
-import { Mic, Activity } from 'lucide-react';
+import { Mic, Activity, AlertTriangle, CheckCircle2, Download, Loader2 } from 'lucide-react';
 
 export interface SpeechSectionProps {
   config: SpeechConfig;
@@ -33,6 +37,70 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({
   const [meterLevel, setMeterLevel] = useState(0);
   const [probeNotice, setProbeNotice] = useState<string | null>(null);
 
+  const [sileroModel, setSileroModel] = useState<ModelInfo | null>(null);
+  const [isSileroDownloading, setIsSileroDownloading] = useState(false);
+  const [sileroDownloadProgress, setSileroDownloadProgress] = useState<number | null>(null);
+  const [sileroError, setSileroError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchSileroModel = async () => {
+      try {
+        const list = await listModels();
+        if (mounted) {
+          const silero = list.find((m) => m.id === 'silero-vad') ?? null;
+          setSileroModel(silero);
+          if (silero && (silero.isDownloading || silero.is_downloading)) {
+            setIsSileroDownloading(true);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to list models for Silero VAD:', err);
+      }
+    };
+
+    void fetchSileroModel();
+
+    const unsubscribe = onSttEvent((e) => {
+      if (e.type === 'model-progress') {
+        const id = e.progress.modelId || e.progress.model_id;
+        if (id === 'silero-vad') {
+          setIsSileroDownloading(true);
+          if (typeof e.progress.percentage === 'number') {
+            setSileroDownloadProgress(Math.round(e.progress.percentage));
+          }
+        }
+      } else if (e.type === 'model-complete' && e.modelId === 'silero-vad') {
+        setIsSileroDownloading(false);
+        setSileroDownloadProgress(null);
+        setSileroError(null);
+        void fetchSileroModel();
+      } else if (e.type === 'model-failed' && e.modelId === 'silero-vad') {
+        setIsSileroDownloading(false);
+        setSileroDownloadProgress(null);
+        setSileroError(e.error);
+        void fetchSileroModel();
+      } else if (e.type === 'models-updated') {
+        void fetchSileroModel();
+      }
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  const handleDownloadSilero = async () => {
+    setIsSileroDownloading(true);
+    setSileroError(null);
+    try {
+      await downloadModel('silero-vad');
+    } catch (err) {
+      setIsSileroDownloading(false);
+      setSileroError(err instanceof Error ? err.message : String(err));
+    }
+  };
   // Load input devices on mount
   useEffect(() => {
     let mounted = true;
@@ -198,10 +266,15 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({
   const vadOptions: { value: VadBackend; label: string }[] = [
     { value: 'energy', label: t.settingsSpeechVadEnergy || 'Energy (RMS)' },
     { value: 'earshot', label: t.settingsSpeechVadEarshot || 'Earshot (Neural)' },
+    { value: 'silero', label: t.settingsSpeechVadSilero || 'Silero (Neural)' },
   ];
 
   const currentVadBackend: VadBackend =
-    config.vadBackend === 'energy' ? 'energy' : 'earshot';
+    config.vadBackend === 'energy'
+      ? 'energy'
+      : config.vadBackend === 'silero'
+        ? 'silero'
+        : 'earshot';
 
   return (
     <div data-testid="audio-settings" className="space-y-4">
@@ -279,10 +352,13 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({
         className="p-4 rounded-[10px] border space-y-4"
         style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
       >
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-0.5">
           <div className="text-sm font-medium" style={{ color: 'var(--text)' }}>
             {t.settingsSpeechVadBackend}
           </div>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {t.settingsSpeechVadSileroDesc}
+          </p>
         </div>
 
         <div data-testid="vad-backend-segmented">
@@ -317,6 +393,104 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({
                 disabled={disabled}
               />
             </div>
+          </div>
+        )}
+
+        {/* Silero VAD Status, Download, & Fallback */}
+        {currentVadBackend === 'silero' && (
+          <div
+            data-testid="silero-status-section"
+            className="pt-2 border-t space-y-3"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            {/* Fallback Reason Notice */}
+            {config.vadFallbackReason && (
+              <div
+                data-testid="silero-fallback-notice"
+                className="p-3 rounded-lg border flex flex-col gap-1 text-xs"
+                style={{
+                  backgroundColor: 'rgba(234, 179, 8, 0.08)',
+                  borderColor: 'rgba(234, 179, 8, 0.25)',
+                  color: 'var(--text)',
+                }}
+              >
+                <div className="flex items-center gap-1.5 font-medium text-amber-500">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{t.settingsSpeechVadFallbackNotice}</span>
+                </div>
+                <div className="font-mono text-xs opacity-90 pl-5 break-all">
+                  {config.vadFallbackReason}
+                </div>
+              </div>
+            )}
+
+            {/* Ready state vs Needs Download */}
+            {sileroModel?.installed ? (
+              <div
+                data-testid="silero-ready-badge"
+                className="flex items-center gap-2 p-2.5 rounded-lg border text-xs"
+                style={{
+                  backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                  borderColor: 'rgba(34, 197, 94, 0.25)',
+                  color: 'var(--text)',
+                }}
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                  {t.settingsSpeechVadSileroReady}
+                </span>
+              </div>
+            ) : (
+              <div
+                data-testid="silero-download-card"
+                className="p-3 rounded-lg border space-y-2 text-xs"
+                style={{
+                  backgroundColor: 'var(--elevated)',
+                  borderColor: 'var(--border)',
+                }}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="space-y-0.5">
+                    <div className="font-medium" style={{ color: 'var(--text)' }}>
+                      {t.settingsSpeechVadSileroNeedsDownload}
+                    </div>
+                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {t.settingsSpeechVadSileroCatalogHint}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="silero-download-btn"
+                    disabled={disabled || isSileroDownloading}
+                    onClick={handleDownloadSilero}
+                    className="px-3 py-1.5 rounded-md font-medium text-xs flex items-center justify-center gap-1.5 transition-colors shrink-0 disabled:opacity-50 cursor-pointer"
+                    style={{
+                      backgroundColor: 'var(--accent)',
+                      color: 'var(--bg)',
+                    }}
+                  >
+                    {isSileroDownloading ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>
+                          {sileroDownloadProgress !== null
+                            ? `${sileroDownloadProgress}%`
+                            : t.settingsSpeechVadSileroDownloading}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-3.5 h-3.5" />
+                        <span>{t.settingsSpeechVadSileroDownloadBtn}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                {sileroError && (
+                  <div className="text-xs text-red-500 font-medium">{sileroError}</div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

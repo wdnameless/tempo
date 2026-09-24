@@ -89,6 +89,8 @@ pub struct SpeechConfig {
     pub channel: Option<u16>,
     pub vad_backend: String,
     pub vad_energy_threshold: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vad_fallback_reason: Option<String>,
     pub language: Option<String>,
     pub translate_to_english: bool,
     pub custom_words: Vec<String>,
@@ -141,6 +143,7 @@ impl Default for SpeechConfig {
             channel: None,
             vad_backend: "earshot".to_string(),
             vad_energy_threshold: 0.015,
+            vad_fallback_reason: None,
             language: None,
             translate_to_english: false,
             custom_words: Vec::new(),
@@ -190,6 +193,7 @@ pub struct SpeechConfigPatch {
     pub channel: Option<u16>,
     pub vad_backend: Option<String>,
     pub vad_energy_threshold: Option<f32>,
+    pub vad_fallback_reason: Option<String>,
     pub language: Option<String>,
     pub translate_to_english: Option<bool>,
     pub custom_words: Option<Vec<String>>,
@@ -422,6 +426,20 @@ pub fn load_speech_config(app: &AppHandle) -> SpeechConfig {
         let denoise_agc: bool = pref_read(conn, "tempo_speech_denoise_agc", None, false);
         let denoise_agc_target_db: f32 = pref_read(conn, "tempo_speech_denoise_agc_target_db", None, -20.0);
 
+        // Resolved before the struct literal: the reason is derived from the backend
+        // value that the literal moves into the config.
+        let vad_fallback_reason = if vad_backend.eq_ignore_ascii_case("silero") {
+            if let Some(reason) = vad::last_fallback_reason() {
+                Some(reason)
+            } else if vad::resolve_default_silero_model_path().is_none() {
+                Some("Silero VAD model is not installed. Download it in models settings.".to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         Ok(SpeechConfig {
             enabled,
             activation,
@@ -434,6 +452,7 @@ pub fn load_speech_config(app: &AppHandle) -> SpeechConfig {
             channel,
             vad_backend,
             vad_energy_threshold,
+            vad_fallback_reason,
             language,
             translate_to_english,
             custom_words,
@@ -506,7 +525,18 @@ impl DictationDriver for TempoDictationDriver {
 
         let vad_mode = match cfg.vad_backend.to_ascii_lowercase().as_str() {
             "energy" => VadBackend::Energy,
+            "silero" => VadBackend::Silero,
             _ => VadBackend::Earshot,
+        };
+
+        let silero_model_path = if vad_mode == VadBackend::Silero {
+            use tauri::Manager;
+            self.app
+                .try_state::<SttState>()
+                .and_then(|state| state.models.installed_path(crate::stt::models::SILERO_VAD_MODEL_ID))
+                .or_else(vad::resolve_default_silero_model_path)
+        } else {
+            None
         };
 
         let vad_cfg = VadConfig {
@@ -516,6 +546,7 @@ impl DictationDriver for TempoDictationDriver {
             onset_ms: 60,
             hangover_ms: 450,
             sample_rate: 16000,
+            silero_model_path,
         };
 
         let opts = CaptureOptions {
