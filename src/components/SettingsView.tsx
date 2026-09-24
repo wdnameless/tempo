@@ -618,7 +618,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Navigation sidebar (macOS System Settings style) */}
         <aside
-          className="w-60 shrink-0 border-r overflow-y-auto p-3 flex flex-col gap-1 select-none"
+          className="w-48 shrink-0 border-r overflow-y-auto p-3 flex flex-col gap-1 select-none"
           style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
           role="tablist"
           aria-orientation="vertical"
@@ -679,17 +679,17 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
         </aside>
 
         {/* Main content scroll container */}
-        <div ref={contentRef} className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-4xl w-full mx-auto space-y-6">
+        <div ref={contentRef} className="flex-1 overflow-y-auto p-7">
+          <div className="max-w-4xl w-full mx-auto space-y-7">
             {/* ========================================================================= */}
             {/* 1. GENERAL SECTION                                                        */}
             {/* ========================================================================= */}
             {activeSection === 'general' && (
-              <section id="section-general" role="tabpanel" aria-label={t.settingsGeneral} className="space-y-6">
+              <section id="section-general" role="tabpanel" aria-label={t.settingsGeneral} className="space-y-7">
                 {/* Timer & Pomodoro Configuration */}
                 <div
                   id="general-timer-focus"
-                  className="p-5 rounded-lg border space-y-4 scroll-mt-4"
+                  className="p-5 rounded-xl border space-y-4 scroll-mt-4"
                   style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
                 >
               <h2 className="text-sm font-semibold tracking-wide" style={{ color: 'var(--text-muted)' }}>
@@ -840,7 +840,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
             {/* Day rollover */}
             <div
               id="general-rollover"
-              className="p-5 rounded-lg border space-y-4 scroll-mt-4"
+              className="p-5 rounded-xl border space-y-4 scroll-mt-4"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
             >
               <div className="flex items-center justify-between">
@@ -898,8 +898,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
             {/* Media Usage & Pruning (R43) */}
             <div
               id="general-media"
-              className="p-5 rounded-lg border space-y-4 scroll-mt-4"
-              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+              className="p-5 rounded-xl border space-y-4 scroll-mt-4"
             >
               <div className="flex items-center justify-between">
                 <div>
@@ -953,9 +952,9 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
         {/* 2. AI SECTION                                                             */}
         {/* ========================================================================= */}
         {activeSection === 'ai' && (
-          <section id="section-ai" role="tabpanel" aria-label={t.settingsAiTab} className="space-y-6">
+          <section id="section-ai" role="tabpanel" aria-label={t.settingsAiTab} className="space-y-7">
             <div
-              className="p-5 rounded-lg border space-y-5"
+              className="p-5 rounded-xl border space-y-5"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
             >
               <div className="flex items-center gap-2">
@@ -1178,9 +1177,9 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
         {/* 2. INTEGRATIONS SECTION (R21)                                             */}
         {/* ========================================================================= */}
         {activeSection === 'integrations' && (
-          <section id="section-integrations" role="tabpanel" aria-label={t.settingsIntegrationsTab} className="space-y-6">
+          <section id="section-integrations" role="tabpanel" aria-label={t.settingsIntegrationsTab} className="space-y-7">
             <div
-              className="p-5 rounded-lg border space-y-4"
+              className="p-5 rounded-xl border space-y-4"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
             >
               <div>
@@ -1192,7 +1191,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
 
               {/* Google Calendar Honest State */}
               <div
-                className="p-4 rounded-lg border flex flex-col md:flex-row md:items-center justify-between gap-4"
+                className="p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4"
                 style={{ backgroundColor: 'var(--elevated)', borderColor: 'var(--border)' }}
               >
                 <div className="space-y-1">
@@ -1232,10 +1231,10 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
         {/* 3. SPEECH TO TEXT SECTION                                                 */}
         {/* ========================================================================= */}
         {activeSection === 'speech' && (
-          <section id="section-speech" role="tabpanel" aria-label={t.settingsSpeechToText} className="space-y-6">
+          <section id="section-speech" role="tabpanel" aria-label={t.settingsSpeechToText} className="space-y-7">
             <div
               data-testid="settings-speech-pointer"
-              className="p-5 rounded-lg border flex items-center justify-between gap-4"
+              className="p-5 rounded-xl border flex items-center justify-between gap-4"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
             >
               <div className="flex items-center gap-3">
@@ -1277,9 +1276,9 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
         {/* 4. SHORTCUTS SECTION                                                      */}
         {/* ========================================================================= */}
         {activeSection === 'shortcuts' && (
-          <section id="section-shortcuts" role="tabpanel" aria-label={t.settingsShortcutsTab} className="space-y-6">
+          <section id="section-shortcuts" role="tabpanel" aria-label={t.settingsShortcutsTab} className="space-y-7">
             <div
-              className="p-5 rounded-lg border space-y-4"
+              className="p-5 rounded-xl border space-y-4"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
             >
               <div>
@@ -1318,7 +1317,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                         {group}
                       </h3>
                       <div
-                        className="divide-y rounded-lg border overflow-hidden"
+                        className="divide-y rounded-xl border overflow-hidden"
                         style={{ backgroundColor: 'var(--elevated)', borderColor: 'var(--border)' }}
                       >
                         {groupItems.map((sc) => (
@@ -1383,9 +1382,9 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
         {/* 5. ABOUT & ACCOUNT SECTION                                                */}
         {/* ========================================================================= */}
         {activeSection === 'about' && (
-          <section id="section-about" role="tabpanel" aria-label={t.settingsAboutTab} className="space-y-6">
+          <section id="section-about" role="tabpanel" aria-label={t.settingsAboutTab} className="space-y-7">
             <div
-              className="p-5 rounded-lg border space-y-4"
+              className="p-5 rounded-xl border space-y-4"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
             >
               <div>
@@ -1666,7 +1665,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
 
               {/* Account / Google state */}
               <div
-                className="p-4 rounded-lg border space-y-2"
+                className="p-4 rounded-xl border space-y-2"
                 style={{ backgroundColor: 'var(--elevated)', borderColor: 'var(--border)' }}
               >
                 <div className="flex items-center justify-between">
@@ -1693,7 +1692,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
 
               {/* Device Sync (R26, R27) */}
               <div
-                className="p-4 rounded-lg border space-y-4"
+                className="p-4 rounded-xl border space-y-4"
                 style={{ backgroundColor: 'var(--elevated)', borderColor: 'var(--border)' }}
               >
                 <div className="flex items-center justify-between">

@@ -79,7 +79,13 @@ describe('App Shell', () => {
   it('reads initial collapsed state from tempo_sidebar_collapsed', () => {
     StoreService.setPreference('tempo_sidebar_collapsed', true);
     render(<App />);
-    expect(screen.getByTestId('sidebar').className).toContain('w-14');
+    expect(screen.getByTestId('sidebar').className).toContain('w-12');
+  });
+
+  it('renders expanded sidebar width w-44 by default', () => {
+    StoreService.setPreference('tempo_sidebar_collapsed', false);
+    render(<App />);
+    expect(screen.getByTestId('sidebar').className).toContain('w-44');
   });
 
   /** Which screen the shell considers active, read the way a screen reader would. */

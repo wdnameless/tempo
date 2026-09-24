@@ -229,7 +229,7 @@ export const SpeechPanel: React.FC<SpeechPanelProps> = ({
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Navigation sidebar (macOS System Settings style) */}
         <aside
-          className="w-60 shrink-0 border-r overflow-y-auto p-3 flex flex-col gap-1 select-none"
+          className="w-48 shrink-0 border-r overflow-y-auto p-3 flex flex-col gap-1 select-none"
           style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
           role="tablist"
           aria-orientation="vertical"
@@ -274,7 +274,7 @@ export const SpeechPanel: React.FC<SpeechPanelProps> = ({
 
         {/* Main Content Pane */}
         <div
-          className="flex-1 overflow-y-auto p-6 min-w-0 space-y-6"
+          className="flex-1 overflow-y-auto p-7 min-w-0 space-y-7"
           style={{ backgroundColor: 'var(--bg)' }}
         >
           {/* Action Error Banner */}
@@ -308,7 +308,7 @@ export const SpeechPanel: React.FC<SpeechPanelProps> = ({
             >
               {/* STT Engine Selector */}
               <div
-                className="flex items-center justify-between p-4 rounded-[10px] border"
+                className="flex items-center justify-between p-4 rounded-xl border"
                 style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
               >
                 <div>
@@ -333,7 +333,7 @@ export const SpeechPanel: React.FC<SpeechPanelProps> = ({
               {/* Cloud Mode Explanation */}
               {engineValue === 'cloud' && (
                 <div
-                  className="p-4 rounded-[10px] border text-xs"
+                  className="p-4 rounded-xl border text-xs"
                   style={{ borderColor: 'var(--border)', backgroundColor: 'var(--elevated)' }}
                 >
                   <p style={{ color: 'var(--text-muted)' }}>
@@ -378,7 +378,7 @@ export const SpeechPanel: React.FC<SpeechPanelProps> = ({
               className="space-y-4"
             >
               <div
-                className="p-5 rounded-lg border space-y-5"
+                className="p-5 rounded-xl border space-y-5"
                 style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
               >
                 <div className="flex items-start justify-between gap-4">
@@ -447,7 +447,7 @@ export const SpeechPanel: React.FC<SpeechPanelProps> = ({
               role="tabpanel"
               aria-label={t.sttTabSound}
               data-testid="speech-panel-sound"
-              className="space-y-6"
+              className="space-y-7"
             >
               <div data-testid="speech-panel-feedback">
                 <FeedbackSettings config={config} onChange={handleChange} disabled={disabled} />
@@ -465,7 +465,7 @@ export const SpeechPanel: React.FC<SpeechPanelProps> = ({
               role="tabpanel"
               aria-label={t.sttTabText}
               data-testid="speech-panel-text"
-              className="space-y-6"
+              className="space-y-7"
             >
               <div data-testid="speech-panel-delivery">
                 <DeliverySettings config={config} onChange={handleChange} disabled={disabled} />
@@ -499,7 +499,7 @@ export const SpeechPanel: React.FC<SpeechPanelProps> = ({
               role="tabpanel"
               aria-label={t.sttTabAdvanced}
               data-testid="speech-panel-advanced"
-              className="space-y-6"
+              className="space-y-7"
             >
               <AdvancedSettings config={config} onChange={handleChange} disabled={disabled} />
               <div data-testid="speech-panel-debug">

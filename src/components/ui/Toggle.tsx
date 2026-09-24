@@ -36,13 +36,18 @@ export function Toggle({ checked, onChange, disabled = false }: ToggleProps) {
       }`}
       style={{
         backgroundColor: checked ? 'var(--accent)' : 'var(--elevated)',
-        border: '1px solid var(--border)',
+        border: checked
+          ? '1px solid var(--accent)'
+          : '1px solid var(--border-strong, rgba(255, 255, 255, 0.2))',
       }}
     >
       <span
-        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-[var(--text)] shadow-sm transition-transform duration-200 ${
+        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full shadow-sm transition-transform duration-200 ${
           checked ? 'translate-x-6' : 'translate-x-1'
         }`}
+        style={{
+          backgroundColor: checked ? 'var(--accent-fg)' : 'var(--text-muted)',
+        }}
       />
     </button>
   );

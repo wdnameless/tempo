@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Keyboard, X, AlertCircle } from 'lucide-react';
 import { validateHotkey, suspendShortcuts, resumeShortcuts } from '../../services/stt';
 import { Kbd } from '../ui/Kbd';
@@ -27,18 +27,33 @@ function parseAcceleratorToKeys(accel: string): string[] {
     });
 }
 
+const MODIFIER_NAMES = ['Control', 'Shift', 'Alt', 'Meta'];
+
+function isModifierKey(e: KeyboardEvent): boolean {
+  if (MODIFIER_NAMES.includes(e.key)) return true;
+  const code = e.code || '';
+  return (
+    code.startsWith('Control') ||
+    code.startsWith('Shift') ||
+    code.startsWith('Alt') ||
+    code.startsWith('Meta')
+  );
+}
+
 function getNormalizedKey(e: KeyboardEvent): string {
-  const code = e.code;
+  const code = e.code || '';
   if (code.match(/^F\d+$/)) return code;
   if (code.match(/^Key[A-Z]$/)) return code.replace('Key', '');
   if (code.match(/^Digit\d$/)) return code.replace('Digit', '');
   if (code.match(/^Numpad\d$/)) return code.replace('Numpad', 'Num');
-  if (code === 'Space') return 'Space';
-  if (code === 'Escape') return 'Escape';
-  if (code === 'Enter') return 'Enter';
-  if (code === 'Tab') return 'Tab';
-  if (code === 'Backspace') return 'Backspace';
-  return e.key;
+  if (code === 'Space' || e.key === ' ' || e.key === 'Space') return 'Space';
+  if (code === 'Escape' || e.key === 'Escape' || e.key === 'Esc') return 'Escape';
+  if (code === 'Enter' || e.key === 'Enter') return 'Enter';
+  if (code === 'Tab' || e.key === 'Tab') return 'Tab';
+  if (code === 'Backspace' || e.key === 'Backspace') return 'Backspace';
+  if (code === 'Delete' || e.key === 'Delete' || e.key === 'Del') return 'Delete';
+  if (e.key && e.key.length === 1) return e.key.toUpperCase();
+  return e.key || code;
 }
 
 export const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
@@ -52,10 +67,28 @@ export const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
   const [currentKeys, setCurrentKeys] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const keysRef = useRef<string[]>([]);
+  const isCommittingRef = useRef(false);
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
-  const startRecording = async () => {
+  const stopRecording = useCallback(async () => {
+    setIsRecording(false);
+    keysRef.current = [];
+    setCurrentKeys([]);
+    try {
+      await resumeShortcuts();
+    } catch {
+      // Ignored in non-Tauri
+    }
+  }, []);
+
+  const startRecording = useCallback(async () => {
     if (disabled || isRecording) return;
     setError(null);
+    keysRef.current = [];
     setCurrentKeys([]);
     setIsRecording(true);
     try {
@@ -63,17 +96,7 @@ export const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
     } catch {
       // Ignored in non-Tauri
     }
-  };
-
-  const stopRecording = async () => {
-    setIsRecording(false);
-    setCurrentKeys([]);
-    try {
-      await resumeShortcuts();
-    } catch {
-      // Ignored in non-Tauri
-    }
-  };
+  }, [disabled, isRecording]);
 
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -83,7 +106,6 @@ export const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
 
   useEffect(() => {
     if (!isRecording) return;
-
 
     const handleKeyDown = (e: KeyboardEvent) => {
       e.preventDefault();
@@ -97,13 +119,21 @@ export const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
       if (e.shiftKey) keysList.push('Shift');
       if (e.metaKey) keysList.push('Super');
 
+      const isMod = isModifierKey(e);
       const norm = getNormalizedKey(e);
-      const isMod = ['Control', 'Shift', 'Alt', 'Meta'].includes(e.key);
 
       if (!isMod) {
         keysList.push(norm);
+      } else {
+        const existingNonMod = keysRef.current.find(
+          (k) => !['Ctrl', 'Alt', 'Shift', 'Super'].includes(k)
+        );
+        if (existingNonMod) {
+          keysList.push(existingNonMod);
+        }
       }
 
+      keysRef.current = keysList;
       setCurrentKeys(keysList);
     };
 
@@ -111,16 +141,39 @@ export const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
       e.preventDefault();
       e.stopPropagation();
 
-      if (currentKeys.length > 0) {
-        const accelerator = currentKeys.join('+');
+      const isMod = isModifierKey(e);
+
+      if (isMod) {
+        const hasNonModifier = keysRef.current.some(
+          (k) => !['Ctrl', 'Alt', 'Shift', 'Super'].includes(k)
+        );
+        if (!hasNonModifier) {
+          keysRef.current = [];
+          setCurrentKeys([]);
+        }
+        return;
+      }
+
+      if (isCommittingRef.current) return;
+
+      const keysToCommit = [...keysRef.current];
+      const hasNonMod = keysToCommit.some(
+        (k) => !['Ctrl', 'Alt', 'Shift', 'Super'].includes(k)
+      );
+
+      if (keysToCommit.length > 0 && hasNonMod) {
+        const accelerator = keysToCommit.join('+');
         try {
+          isCommittingRef.current = true;
           await validateHotkey(accelerator);
-          onChange(accelerator);
+          onChangeRef.current(accelerator);
           setError(null);
           await stopRecording();
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Invalid or busy shortcut');
           await stopRecording();
+        } finally {
+          isCommittingRef.current = false;
         }
       }
     };
@@ -138,7 +191,7 @@ export const HotkeyRecorder: React.FC<HotkeyRecorderProps> = ({
       window.removeEventListener('keyup', handleKeyUp, true);
       window.removeEventListener('blur', handleWindowBlur);
     };
-  }, [isRecording, currentKeys, onChange]);
+  }, [isRecording, stopRecording]);
 
   const displayKeys = isRecording
     ? currentKeys.length > 0

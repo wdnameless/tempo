@@ -133,6 +133,10 @@ pub fn parse_accelerator(s: &str) -> Result<Shortcut, String> {
                 has_non_modifier = true;
                 "ARROWRIGHT"
             }
+            "SPACE" | "SPACEBAR" => {
+                has_non_modifier = true;
+                "SPACE"
+            }
 
             _ => {
                 has_non_modifier = true;
@@ -402,6 +406,43 @@ mod tests {
     fn parse_alt_space() {
         let shortcut = parse_accelerator("Alt+Space").expect("parse Alt+Space");
         assert!(shortcut.matches(Modifiers::ALT, Code::Space));
+    }
+
+    #[test]
+    fn parse_ctrl_space() {
+        let shortcut = parse_accelerator("Ctrl+Space").expect("parse Ctrl+Space");
+        assert!(shortcut.matches(Modifiers::CONTROL, Code::Space));
+
+        let lower = parse_accelerator("ctrl+space").expect("parse ctrl+space");
+        assert!(lower.matches(Modifiers::CONTROL, Code::Space));
+
+        let upper = parse_accelerator("CTRL+SPACE").expect("parse CTRL+SPACE");
+        assert!(upper.matches(Modifiers::CONTROL, Code::Space));
+    }
+
+    #[test]
+    fn parse_ctrl_space_matches_space_same_as_alt_space() {
+        // Ctrl+Space does not differ in parser structure from Alt+Space: both parse "Space"
+        // into Code::Space and the modifier into Modifiers::CONTROL (or Modifiers::ALT).
+        // The issue where Ctrl+Space was rejected occurred in the frontend HotkeyRecorder,
+        // which submitted "Ctrl" alone due to reading stale React state on keyup.
+        let ctrl_space = parse_accelerator("Ctrl+Space").expect("parse Ctrl+Space");
+        assert!(ctrl_space.matches(Modifiers::CONTROL, Code::Space));
+
+        let alt_space = parse_accelerator("Alt+Space").expect("parse Alt+Space");
+        assert!(alt_space.matches(Modifiers::ALT, Code::Space));
+
+        let spacebar = parse_accelerator("Ctrl+Spacebar").expect("parse Ctrl+Spacebar");
+        assert!(spacebar.matches(Modifiers::CONTROL, Code::Space));
+    }
+
+    #[test]
+    fn parse_shift_space_and_single_space() {
+        let shift_space = parse_accelerator("Shift+Space").expect("parse Shift+Space");
+        assert!(shift_space.matches(Modifiers::SHIFT, Code::Space));
+
+        let single_space = parse_accelerator("Space").expect("parse single Space");
+        assert!(single_space.matches(Modifiers::empty(), Code::Space));
     }
 
     #[test]

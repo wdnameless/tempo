@@ -56,7 +56,7 @@ export function Card({
             }
           : undefined
       }
-      className={`rounded-[14px] transition-colors ${VARIANT_BG[variant]} ${PADDING_MAP[padding]} ${
+      className={`rounded-xl transition-colors ${VARIANT_BG[variant]} ${PADDING_MAP[padding]} ${
         isClickable
           ? 'cursor-pointer hover:border-[var(--border-strong)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]'
           : ''

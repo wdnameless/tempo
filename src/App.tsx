@@ -500,7 +500,7 @@ function MainShell() {
           <aside
             data-testid="sidebar"
             className={`border-r border-white/10 bg-[#060608] flex flex-col justify-between transition-[width] duration-200 shrink-0 select-none z-30 ${
-              sidebarCollapsed ? 'w-14' : 'w-52'
+              sidebarCollapsed ? 'w-12' : 'w-44'
             }`}
           >
             <div className="flex flex-col p-2 gap-1">

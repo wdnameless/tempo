@@ -68,6 +68,27 @@ describe('UI Kit components and design constants', () => {
       fireEvent.click(toggle);
       expect(onChange).not.toHaveBeenCalled();
     });
+
+    it('contrasts the knob colour with the track colour when checked', () => {
+      const { container } = render(<Toggle checked={true} onChange={() => {}} />);
+      const track = screen.getByRole('switch');
+      const knob = container.querySelector('span');
+      expect(knob).not.toBeNull();
+      expect(track.style.backgroundColor).toBe('var(--accent)');
+      expect(knob?.style.backgroundColor).toBe('var(--accent-fg)');
+      expect(track.style.backgroundColor).not.toBe(knob?.style.backgroundColor);
+    });
+
+    it('contrasts the knob colour with the track colour and has a visible outline when unchecked', () => {
+      const { container } = render(<Toggle checked={false} onChange={() => {}} />);
+      const track = screen.getByRole('switch');
+      const knob = container.querySelector('span');
+      expect(knob).not.toBeNull();
+      expect(track.style.backgroundColor).toBe('var(--elevated)');
+      expect(knob?.style.backgroundColor).toBe('var(--text-muted)');
+      expect(track.style.backgroundColor).not.toBe(knob?.style.backgroundColor);
+      expect(track.style.border).toContain('var(--border-strong');
+    });
   });
 
   describe('Segmented', () => {
