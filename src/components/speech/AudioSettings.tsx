@@ -9,6 +9,7 @@ import {
   type ModelInfo,
   type AudioDeviceInfo,
 } from '../../services/stt';
+import { isTauri } from '../../services/platform';
 import { onSttEvent } from '../../services/sttEvents';
 import { I18nService } from '../../services/i18n';
 import { Segmented } from '../ui/Segmented';
@@ -140,7 +141,6 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({
       mounted = false;
     };
   }, [config.device]);
-
   // Live mic probe / polling when test microphone is active
   useEffect(() => {
     if (!isTestingMic) {
@@ -152,7 +152,7 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({
     let audioCtx: AudioContext | null = null;
     let intervalId: number | null = null;
 
-    const startProbe = async () => {
+    const startBrowserProbe = async () => {
       // SAFETY: webkitAudioContext is a legacy WebKit prefix fallback on window
       const AudioCtxClass =
         typeof window !== 'undefined'
@@ -213,36 +213,45 @@ export const AudioSettings: React.FC<AudioSettingsProps> = ({
           }, 50);
           return;
         } catch (err) {
-          console.warn('WebAudio mic probe failed, falling back to backend micLevel():', err);
-          if (active) {
-            setProbeNotice(
-              I18nService.getLang() === 'ru'
-                ? 'Для проверки микрофона требуется доступ к аудио; уровень будет отображаться во время диктовки.'
-                : 'Live microphone test requires audio permission or active dictation.'
-            );
-          }
-        }
-      } else {
-        if (active) {
-          setProbeNotice(
-            I18nService.getLang() === 'ru'
-              ? 'Для проверки микрофона требуется доступ к аудио; уровень будет отображаться во время диктовки.'
-              : 'Live microphone test requires audio permission or active dictation.'
-          );
+          console.warn('WebAudio mic fallback probe failed:', err);
         }
       }
 
-      // Fallback: poll backend micLevel()
-      intervalId = window.setInterval(async () => {
+      if (active) {
+        setProbeNotice(
+          I18nService.getLang() === 'ru'
+            ? 'Для проверки микрофона требуется доступ к аудио; уровень будет отображаться во время диктовки.'
+            : 'Live microphone test requires audio permission or active dictation.'
+        );
+      }
+    };
+
+    const startProbe = async () => {
+      // Inside Tauri, backend micLevel() runs through the denoise pipeline (post-chain probe)
+      if (isTauri()) {
         try {
-          const lvl = await micLevel();
-          if (active) {
-            setMeterLevel(Math.max(0, Math.min(1, lvl)));
-          }
-        } catch {
-          // Silently ignore device/backend polling failures
+          const initial = await micLevel();
+          if (!active) return;
+          setMeterLevel(Math.max(0, Math.min(1, initial)));
+
+          intervalId = window.setInterval(async () => {
+            try {
+              const lvl = await micLevel();
+              if (active) {
+                setMeterLevel(Math.max(0, Math.min(1, lvl)));
+              }
+            } catch {
+              // Silently ignore device/backend polling failures
+            }
+          }, 50);
+          return;
+        } catch (err) {
+          console.warn('Backend micLevel probe failed, falling back to WebAudio:', err);
         }
-      }, 100);
+      }
+
+      // Web preview or backend probe unavailable: fallback to browser WebAudio meter
+      await startBrowserProbe();
     };
 
     void startProbe();

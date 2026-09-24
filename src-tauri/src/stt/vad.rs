@@ -273,13 +273,32 @@ pub fn set_last_fallback_reason(reason: Option<String>) {
 }
 
 pub fn resolve_default_silero_model_path() -> Option<PathBuf> {
+    resolve_silero_model_path(None)
+}
+
+pub fn resolve_silero_model_path(models_dir: Option<&Path>) -> Option<PathBuf> {
     let candidate_names = ["silero_vad.onnx", "silero_vad_v4.onnx"];
+    if let Some(dir) = models_dir {
+        for name in &candidate_names {
+            let p = dir.join(name);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
     let mut candidate_dirs = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            candidate_dirs.push(parent.join("data").join("models"));
+            candidate_dirs.push(parent.join("models"));
+        }
+    }
     for (var, subdir) in [("LOCALAPPDATA", "tempo"), ("LOCALAPPDATA", "Alarmer"), ("APPDATA", "tempo"), ("APPDATA", "Alarmer")] {
         if let Ok(base) = std::env::var(var) {
             candidate_dirs.push(PathBuf::from(base).join(subdir).join("models"));
         }
     }
+    candidate_dirs.push(PathBuf::from("data").join("models"));
     candidate_dirs.push(PathBuf::from("models"));
     candidate_dirs.push(PathBuf::from("."));
 
@@ -540,34 +559,34 @@ impl VoiceActivityDetector for SmoothedVad {
 }
 
 /// Builds a fully configured, smoothed [`VoiceActivityDetector`] based on `cfg`.
-pub fn build(cfg: &VadConfig) -> Box<dyn VoiceActivityDetector + Send> {
-    let inner: Box<dyn VoiceActivityDetector + Send> = match cfg.backend {
+pub fn build_with_reason(cfg: &VadConfig) -> (Box<dyn VoiceActivityDetector + Send>, Option<String>) {
+    let (inner, fallback_reason): (Box<dyn VoiceActivityDetector + Send>, Option<String>) = match cfg.backend {
         VadBackend::Energy => {
             set_last_fallback_reason(None);
-            Box::new(EnergyVad::new(cfg.energy_threshold, cfg.sample_rate))
+            (Box::new(EnergyVad::new(cfg.energy_threshold, cfg.sample_rate)), None)
         }
         VadBackend::Earshot => match EarshotVad::new(0.5) {
             Ok(vad) => {
                 set_last_fallback_reason(None);
-                Box::new(vad)
+                (Box::new(vad), None)
             }
             Err(err) => {
                 let reason = format!("STT EarshotVad initialization failed ({err}), falling back to EnergyVad");
                 eprintln!("{reason}");
-                set_last_fallback_reason(Some(reason));
-                Box::new(EnergyVad::new(cfg.energy_threshold, cfg.sample_rate))
+                set_last_fallback_reason(Some(reason.clone()));
+                (Box::new(EnergyVad::new(cfg.energy_threshold, cfg.sample_rate)), Some(reason))
             }
         },
         VadBackend::Silero => match SileroVad::from_config(cfg) {
             Ok(vad) => {
                 set_last_fallback_reason(None);
-                Box::new(vad)
+                (Box::new(vad), None)
             }
             Err(err) => {
                 let reason = format!("STT SileroVad initialization failed ({err}), falling back to EnergyVad");
                 eprintln!("{reason}");
-                set_last_fallback_reason(Some(reason));
-                Box::new(EnergyVad::new(cfg.energy_threshold, cfg.sample_rate))
+                set_last_fallback_reason(Some(reason.clone()));
+                (Box::new(EnergyVad::new(cfg.energy_threshold, cfg.sample_rate)), Some(reason))
             }
         },
     };
@@ -577,12 +596,18 @@ pub fn build(cfg: &VadConfig) -> Box<dyn VoiceActivityDetector + Send> {
     let hangover_frames = frames_for_duration_ms(cfg.hangover_ms, frame_samples, cfg.sample_rate);
     let onset_frames = frames_for_duration_ms(cfg.onset_ms, frame_samples, cfg.sample_rate);
 
-    Box::new(SmoothedVad::new(
+    let smoothed = Box::new(SmoothedVad::new(
         inner,
         prefill_frames,
         hangover_frames,
         onset_frames,
-    ))
+    ));
+    (smoothed, fallback_reason)
+}
+
+/// Builds a fully configured, smoothed [`VoiceActivityDetector`] based on `cfg`.
+pub fn build(cfg: &VadConfig) -> Box<dyn VoiceActivityDetector + Send> {
+    build_with_reason(cfg).0
 }
 
 // ---------------------------------------------------------------------------
@@ -864,5 +889,50 @@ mod tests {
             }
         }
         assert!(declared > 0, "a run of speech frames must be detected as speech");
+    }
+
+    #[test]
+    fn test_silero_model_path_resolves_in_custom_portable_dir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().join("models");
+        std::fs::create_dir_all(&models_dir).unwrap();
+
+        let dummy_model = models_dir.join("silero_vad.onnx");
+        std::fs::write(&dummy_model, b"fake-silero-weights").unwrap();
+
+        // ModelManager resolves it in custom portable directory
+        let mgr = crate::stt::models::ModelManager::new(models_dir.clone());
+        let resolved_by_mgr = mgr.installed_path(crate::stt::models::SILERO_VAD_MODEL_ID);
+        assert_eq!(resolved_by_mgr, Some(dummy_model.clone()));
+
+        // vad::resolve_silero_model_path resolves it
+        let resolved = resolve_silero_model_path(Some(&models_dir));
+        assert_eq!(resolved, Some(dummy_model));
+    }
+
+    #[test]
+    fn test_silero_vad_fallback_reports_reason_when_initialization_fails() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let invalid_model = temp_dir.path().join("corrupted_silero.onnx");
+        std::fs::write(&invalid_model, b"not-a-valid-onnx-model").unwrap();
+
+        let cfg = VadConfig {
+            backend: VadBackend::Silero,
+            silero_model_path: Some(invalid_model.clone()),
+            sample_rate: 16000,
+            energy_threshold: 0.005,
+            prefill_ms: 100,
+            hangover_ms: 300,
+            onset_ms: 60,
+        };
+
+        let (_detector, reason) = build_with_reason(&cfg);
+        assert!(reason.is_some(), "Fallback reason must be reported when Silero init fails");
+        let r = reason.unwrap();
+        assert!(
+            r.contains("SileroVad initialization failed"),
+            "Reported reason was: {r}"
+        );
+        assert_eq!(last_fallback_reason(), Some(r));
     }
 }

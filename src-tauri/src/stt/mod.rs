@@ -310,6 +310,19 @@ pub fn resolve_data_dir(app: &AppHandle) -> PathBuf {
     crate::app_data_root(app).unwrap_or_else(|_| PathBuf::from("."))
 }
 
+pub fn resolve_silero_path_for_app(app: &AppHandle) -> Option<PathBuf> {
+    use tauri::Manager;
+    let data_dir = resolve_data_dir(app);
+    app.try_state::<SttState>()
+        .and_then(|state| state.models.installed_path(crate::stt::models::SILERO_VAD_MODEL_ID))
+        .or_else(|| {
+            let mgr = crate::stt::models::ModelManager::new(data_dir.join("models"));
+            mgr.installed_path(crate::stt::models::SILERO_VAD_MODEL_ID)
+        })
+        .or_else(|| vad::resolve_silero_model_path(Some(&data_dir.join("models"))))
+        .or_else(vad::resolve_default_silero_model_path)
+}
+
 // ----------------------------------------------------------------------------
 // Preference helpers
 // ----------------------------------------------------------------------------
@@ -428,10 +441,12 @@ pub fn load_speech_config(app: &AppHandle) -> SpeechConfig {
 
         // Resolved before the struct literal: the reason is derived from the backend
         // value that the literal moves into the config.
+        let silero_installed = resolve_silero_path_for_app(app);
+
         let vad_fallback_reason = if vad_backend.eq_ignore_ascii_case("silero") {
             if let Some(reason) = vad::last_fallback_reason() {
                 Some(reason)
-            } else if vad::resolve_default_silero_model_path().is_none() {
+            } else if silero_installed.is_none() {
                 Some("Silero VAD model is not installed. Download it in models settings.".to_string())
             } else {
                 None
@@ -530,11 +545,7 @@ impl DictationDriver for TempoDictationDriver {
         };
 
         let silero_model_path = if vad_mode == VadBackend::Silero {
-            use tauri::Manager;
-            self.app
-                .try_state::<SttState>()
-                .and_then(|state| state.models.installed_path(crate::stt::models::SILERO_VAD_MODEL_ID))
-                .or_else(vad::resolve_default_silero_model_path)
+            resolve_silero_path_for_app(&self.app)
         } else {
             None
         };
@@ -571,6 +582,12 @@ impl DictationDriver for TempoDictationDriver {
                 }
                 if let Ok(mut lock) = self.recording_started_at.try_lock() {
                     *lock = Some(Instant::now());
+                }
+                if let Some(reason) = self.capture_state.fallback_reason() {
+                    let _ = self.app.emit(
+                        "stt://vad-fallback",
+                        serde_json::json!({ "reason": reason, "backend": "energy" }),
+                    );
                 }
 
                 let mode_str = match cfg.activation {
@@ -1352,7 +1369,9 @@ pub fn resolve_mic_level(
 }
 
 #[tauri::command]
-pub async fn stt_mic_level(state: State<'_, SttState>) -> Result<f32, String> {
+pub async fn stt_mic_level(state: State<'_, SttState>, app: AppHandle) -> Result<f32, String> {
+    let denoise = crate::stt::denoise::read_denoise_preference(&app);
+    capture::set_probe_denoise_config(denoise);
     resolve_mic_level(
         state.capture_state.is_recording(),
         state.capture_state.level(),

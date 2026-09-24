@@ -323,6 +323,25 @@ pub struct AudioRecordingSession {
     pause_start: Arc<Mutex<Option<Instant>>>,
 }
 
+static DEFAULT_DENOISE_CONFIG: std::sync::RwLock<Option<crate::stt::denoise::DenoiseConfig>> =
+    std::sync::RwLock::new(None);
+
+/// Sets the default denoise configuration used when starting internal recording sessions.
+pub fn set_default_denoise_config(cfg: crate::stt::denoise::DenoiseConfig) {
+    if let Ok(mut guard) = DEFAULT_DENOISE_CONFIG.write() {
+        *guard = Some(cfg);
+    }
+}
+
+/// Returns the current default denoise configuration for internal recording sessions.
+pub fn get_default_denoise_config() -> crate::stt::denoise::DenoiseConfig {
+    DEFAULT_DENOISE_CONFIG
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .unwrap_or_default()
+}
+
 impl AudioRecordingSession {
     pub fn start(
         output_path: PathBuf,
@@ -335,7 +354,7 @@ impl AudioRecordingSession {
             mic_device_id,
             sys_device_id,
             channels,
-            crate::stt::denoise::DenoiseConfig::default(),
+            get_default_denoise_config(),
         )
     }
 
@@ -504,16 +523,12 @@ fn run_audio_capture_loop(
 
                 let mic_buf_clone = Arc::clone(&mic_buffer);
                 let err_fn = |err| eprintln!("CPAL stream error: {err}");
+                let mut denoise_pipeline = crate::stt::denoise::DenoisePipeline::new(denoise_cfg, sample_rate, channels);
                 let stream_res = dev.build_input_stream(
                     &config.into(),
                     move |data: &[f32], _: &_| {
                         let mut mic_data = data.to_vec();
-                        crate::stt::denoise::apply_denoise_chain(
-                            &mut mic_data,
-                            sample_rate,
-                            channels,
-                            &denoise_cfg,
-                        );
+                        denoise_pipeline.process(&mut mic_data);
                         let resampled = resample_linear(&mic_data, sample_rate, TARGET_SAMPLE_RATE, channels);
                         let converted = convert_channels(&resampled, channels, target_channels);
                         let mut buf = mic_buf_clone.lock().unwrap();

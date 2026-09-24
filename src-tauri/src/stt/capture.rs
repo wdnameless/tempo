@@ -156,6 +156,7 @@ pub struct AudioCaptureState {
     current_level: Arc<Mutex<f32>>,
     _captured_samples: Arc<Mutex<Vec<f32>>>,
     is_active: Arc<AtomicBool>,
+    fallback_reason: Arc<Mutex<Option<String>>>,
 }
 
 pub type CaptureState = AudioCaptureState;
@@ -167,6 +168,7 @@ impl AudioCaptureState {
             current_level: Arc::new(Mutex::new(0.0)),
             _captured_samples: Arc::new(Mutex::new(Vec::new())),
             is_active: Arc::new(AtomicBool::new(false)),
+            fallback_reason: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -178,11 +180,20 @@ impl AudioCaptureState {
         *self.current_level.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    pub fn fallback_reason(&self) -> Option<String> {
+        self.fallback_reason.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    pub fn set_fallback_reason(&self, reason: Option<String>) {
+        if let Ok(mut lock) = self.fallback_reason.lock() {
+            *lock = reason;
+        }
+    }
+
     pub fn request_stop(&self) {
         self.stop_signal.store(true, Ordering::SeqCst);
     }
 }
-
 impl Default for AudioCaptureState {
     fn default() -> Self {
         Self::new()
@@ -256,12 +267,14 @@ pub fn vad_trim_with_config(pcm: &[f32], cfg: &VadConfig) -> Result<Vec<f32>, Ca
         return Err(CaptureError::NoSpeech);
     }
 
-    let mut detector = vad::build(cfg);
+    let (mut detector, fallback_reason) = vad::build_with_reason(cfg);
+    if let Some(reason) = fallback_reason {
+        vad::set_last_fallback_reason(Some(reason));
+    }
     let frame_size = detector.frame_samples();
     if frame_size == 0 {
         return Err(CaptureError::NoSpeech);
     }
-
     let mut speech_samples = Vec::new();
     let mut had_speech_onset = false;
 
@@ -323,57 +336,10 @@ fn resolve_channel_index(selected_channel: Option<u16>, channels: u16) -> Option
     }
 }
 
-fn calculate_channel_rms(data: &[f32], channels: u16, selected_channel: Option<u16>) -> f32 {
-    if data.is_empty() || channels == 0 {
-        return 0.0;
-    }
-    let ch = resolve_channel_index(selected_channel, channels);
-
-    let mut sum_sq = 0.0f32;
-    let mut count = 0usize;
-
+fn extract_mono(data: &[f32], channels: u16, selected_channel: Option<u16>) -> Vec<f32> {
     if channels == 1 {
-        for &s in data {
-            sum_sq += s * s;
-        }
-        count = data.len();
-    } else if let Some(target_ch) = ch {
-        for chunk in data.chunks_exact(channels as usize) {
-            let s = chunk[target_ch];
-            sum_sq += s * s;
-            count += 1;
-        }
-    } else {
-        for chunk in data.chunks_exact(channels as usize) {
-            let avg: f32 = chunk.iter().sum::<f32>() / channels as f32;
-            sum_sq += avg * avg;
-            count += 1;
-        }
-    }
-
-    if count == 0 {
-        0.0
-    } else {
-        (sum_sq / count as f32).sqrt()
-    }
-}
-
-fn process_input_chunk(
-    data: &[f32],
-    channels: u16,
-    selected_channel: Option<u16>,
-    buffer: &Arc<Mutex<Vec<f32>>>,
-    level: &Arc<Mutex<f32>>,
-) {
-    if data.is_empty() || channels == 0 {
-        return;
-    }
-
-    let ch = resolve_channel_index(selected_channel, channels);
-
-    let mono: Vec<f32> = if channels == 1 {
         data.to_vec()
-    } else if let Some(target_ch) = ch {
+    } else if let Some(target_ch) = resolve_channel_index(selected_channel, channels) {
         data.chunks_exact(channels as usize)
             .map(|frame| frame[target_ch])
             .collect()
@@ -381,7 +347,35 @@ fn process_input_chunk(
         data.chunks_exact(channels as usize)
             .map(|frame| frame.iter().sum::<f32>() / channels as f32)
             .collect()
-    };
+    }
+}
+
+pub fn calculate_channel_rms(data: &[f32], channels: u16, selected_channel: Option<u16>) -> f32 {
+    let mono = extract_mono(data, channels, selected_channel);
+    if mono.is_empty() {
+        return 0.0;
+    }
+    let sum_sq: f32 = mono.iter().map(|&s| s * s).sum();
+    (sum_sq / mono.len() as f32).sqrt()
+}
+
+fn process_input_chunk(
+    data: &[f32],
+    channels: u16,
+    selected_channel: Option<u16>,
+    pipeline: &Arc<Mutex<crate::stt::denoise::DenoisePipeline>>,
+    buffer: &Arc<Mutex<Vec<f32>>>,
+    level: &Arc<Mutex<f32>>,
+) {
+    if data.is_empty() || channels == 0 {
+        return;
+    }
+
+    let mut mono = extract_mono(data, channels, selected_channel);
+
+    if let Ok(mut pipe) = pipeline.lock() {
+        pipe.process(&mut mono);
+    }
 
     let mut sum_sq = 0.0f32;
     for &sample in &mono {
@@ -405,6 +399,24 @@ static PROBE_RUNNING: AtomicBool = AtomicBool::new(false);
 static PROBE_STOP: AtomicBool = AtomicBool::new(false);
 static PROBE_LEVEL: AtomicU32 = AtomicU32::new(0); // stores f32::to_bits()
 static PROBE_LAST_PING: AtomicU64 = AtomicU64::new(0);
+static PROBE_DENOISE_CONFIG: std::sync::RwLock<Option<crate::stt::denoise::DenoiseConfig>> =
+    std::sync::RwLock::new(None);
+
+/// Updates the denoise settings used by the microphone level probe.
+pub fn set_probe_denoise_config(cfg: crate::stt::denoise::DenoiseConfig) {
+    if let Ok(mut guard) = PROBE_DENOISE_CONFIG.write() {
+        *guard = Some(cfg);
+    }
+}
+
+/// Returns the current denoise configuration for the microphone level probe.
+pub fn get_probe_denoise_config() -> crate::stt::denoise::DenoiseConfig {
+    PROBE_DENOISE_CONFIG
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .unwrap_or_default()
+}
 
 fn now_millis() -> u64 {
     SystemTime::now()
@@ -417,7 +429,6 @@ fn now_millis() -> u64 {
 pub fn stop_probe() {
     PROBE_STOP.store(true, Ordering::SeqCst);
 }
-
 fn spawn_probe_thread(device_name: Option<String>, selected_channel: Option<u16>) -> Result<(), String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -444,9 +455,23 @@ fn spawn_probe_thread(device_name: Option<String>, selected_channel: Option<u16>
 
     std::thread::spawn(move || {
         let err_fn = |err| eprintln!("STT probe stream error: {err}");
+        let sample_rate = config.sample_rate().0;
+        let initial_cfg = get_probe_denoise_config();
+        let mut pipeline = crate::stt::denoise::DenoisePipeline::new(initial_cfg, sample_rate, 1);
 
-        let on_chunk = move |data: &[f32]| {
-            let rms = calculate_channel_rms(data, channels, selected_channel);
+        let mut on_chunk = move |data: &[f32]| {
+            let mut mono = extract_mono(data, channels, selected_channel);
+            let latest_cfg = get_probe_denoise_config();
+            if pipeline.config() != &latest_cfg {
+                pipeline = crate::stt::denoise::DenoisePipeline::new(latest_cfg, sample_rate, 1);
+            }
+            pipeline.process(&mut mono);
+
+            let mut sum_sq = 0.0f32;
+            for &sample in &mono {
+                sum_sq += sample * sample;
+            }
+            let rms = (sum_sq / mono.len().max(1) as f32).sqrt();
             PROBE_LEVEL.store(rms.to_bits(), Ordering::SeqCst);
         };
 
@@ -603,6 +628,17 @@ pub fn start_audio_capture(
         let raw_samples = Arc::new(Mutex::new(Vec::<f32>::new()));
         let raw_samples_cb = Arc::clone(&raw_samples);
         let level_cb = Arc::clone(&state_clone.current_level);
+        let denoise_pipeline = Arc::new(Mutex::new(crate::stt::denoise::DenoisePipeline::new(
+            denoise_cfg,
+            sample_rate,
+            1,
+        )));
+        let denoise_cb = Arc::clone(&denoise_pipeline);
+
+        let (mut _vad_detector, fallback_reason) = vad::build_with_reason(&vad_cfg);
+        if let Some(reason) = fallback_reason {
+            state_clone.set_fallback_reason(Some(reason));
+        }
 
         let err_fn = |err| eprintln!("STT CPAL stream error: {err}");
 
@@ -610,7 +646,7 @@ pub fn start_audio_capture(
             cpal::SampleFormat::F32 => device.build_input_stream(
                 &config.into(),
                 move |data: &[f32], _: &_| {
-                    process_input_chunk(data, channels, channel_opt, &raw_samples_cb, &level_cb);
+                    process_input_chunk(data, channels, channel_opt, &denoise_cb, &raw_samples_cb, &level_cb);
                 },
                 err_fn,
                 None,
@@ -622,7 +658,7 @@ pub fn start_audio_capture(
                         .iter()
                         .map(|&s| s as f32 / if s < 0 { 32768.0 } else { 32767.0 })
                         .collect();
-                    process_input_chunk(&f32_data, channels, channel_opt, &raw_samples_cb, &level_cb);
+                    process_input_chunk(&f32_data, channels, channel_opt, &denoise_cb, &raw_samples_cb, &level_cb);
                 },
                 err_fn,
                 None,
@@ -634,7 +670,7 @@ pub fn start_audio_capture(
                         .iter()
                         .map(|&s| (s as f32 - 32768.0) / 32768.0)
                         .collect();
-                    process_input_chunk(&f32_data, channels, channel_opt, &raw_samples_cb, &level_cb);
+                    process_input_chunk(&f32_data, channels, channel_opt, &denoise_cb, &raw_samples_cb, &level_cb);
                 },
                 err_fn,
                 None,
@@ -646,7 +682,7 @@ pub fn start_audio_capture(
                         .iter()
                         .map(|&s| s as f32 / 2147483648.0)
                         .collect();
-                    process_input_chunk(&f32_data, channels, channel_opt, &raw_samples_cb, &level_cb);
+                    process_input_chunk(&f32_data, channels, channel_opt, &denoise_cb, &raw_samples_cb, &level_cb);
                 },
                 err_fn,
                 None,
@@ -682,17 +718,9 @@ pub fn start_audio_capture(
             return Err(CaptureError::NoSpeech);
         }
 
-        // Apply noise suppression chain before resampling and VAD
-        let mut processed = gathered;
-        crate::stt::denoise::apply_denoise_chain(
-            &mut processed,
-            sample_rate,
-            1,
-            &denoise_cfg,
-        );
-
+        // Audio in gathered was already processed in real time through the continuous session pipeline.
         // Resample from hardware sample_rate to 16 kHz
-        let pcm_16k = resample_linear(&processed, sample_rate, SAMPLE_RATE);
+        let pcm_16k = resample_linear(&gathered, sample_rate, SAMPLE_RATE);
         // Trim silence and isolated transient noise with smoothed VAD
         let trimmed = vad_trim_with_config(&pcm_16k, &vad_cfg)?;
         Ok(trimmed)
@@ -802,5 +830,43 @@ mod tests {
         // Averaging both channels -> 0.5
         let rms_avg = calculate_channel_rms(&stereo, 2, None);
         assert!((rms_avg - 0.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_probe_level_reflects_gate_filtering() {
+        // Test that processing through the probe's denoise pipeline actively modifies the measured RMS:
+        // quiet audio below gate threshold (-60 dB) is silenced to 0.0 with gate enabled, but passes when gate disabled.
+        let sample_rate = 48000;
+        let quiet_audio = vec![0.001f32; 1440]; // -60 dB
+
+        let gate_enabled_cfg = crate::stt::denoise::DenoiseConfig {
+            denoise_highpass: false,
+            denoise_highpass_hz: 80.0,
+            denoise_gate: true,
+            denoise_gate_db: -45.0,
+            denoise_rnnoise: false,
+            denoise_agc: false,
+            denoise_agc_target_db: -20.0,
+        };
+        let mut gated_pipeline = crate::stt::denoise::DenoisePipeline::new(gate_enabled_cfg, sample_rate, 1);
+        let mut gated_samples = quiet_audio.clone();
+        gated_pipeline.process(&mut gated_samples);
+        let gated_rms = (gated_samples.iter().map(|&s| s * s).sum::<f32>() / gated_samples.len() as f32).sqrt();
+        assert_eq!(gated_rms, 0.0, "Gated signal must be 0.0 on the meter");
+
+        let gate_disabled_cfg = crate::stt::denoise::DenoiseConfig {
+            denoise_highpass: false,
+            denoise_highpass_hz: 80.0,
+            denoise_gate: false,
+            denoise_gate_db: -45.0,
+            denoise_rnnoise: false,
+            denoise_agc: false,
+            denoise_agc_target_db: -20.0,
+        };
+        let mut ungated_pipeline = crate::stt::denoise::DenoisePipeline::new(gate_disabled_cfg, sample_rate, 1);
+        let mut ungated_samples = quiet_audio;
+        ungated_pipeline.process(&mut ungated_samples);
+        let ungated_rms = (ungated_samples.iter().map(|&s| s * s).sum::<f32>() / ungated_samples.len() as f32).sqrt();
+        assert!(ungated_rms > 0.0005, "Ungated signal must register positive RMS on the meter");
     }
 }

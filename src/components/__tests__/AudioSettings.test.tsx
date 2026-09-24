@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { AudioSettings } from '../speech/AudioSettings';
 import { DEFAULT_SPEECH_CONFIG, type SpeechConfig } from '../../services/speechSettings';
 import * as stt from '../../services/stt';
-
+import * as platform from '../../services/platform';
 vi.mock('../../services/stt', () => ({
   inputDevices: vi.fn().mockResolvedValue([
     { name: 'Default Mic', isDefault: true, channels: 2 },
@@ -27,6 +27,7 @@ describe('AudioSettings - Test Microphone Probe', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(platform, 'isTauri').mockReturnValue(true);
     originalAudioContext = window.AudioContext;
     originalMediaDevices = navigator.mediaDevices;
 
@@ -38,6 +39,7 @@ describe('AudioSettings - Test Microphone Probe', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     window.AudioContext = originalAudioContext;
     Object.defineProperty(navigator, 'mediaDevices', {
       value: originalMediaDevices,
@@ -45,8 +47,93 @@ describe('AudioSettings - Test Microphone Probe', () => {
       writable: true,
     });
   });
+  it('prefers backend micLevel probe when available and updates level meter', async () => {
+    vi.mocked(stt.micLevel).mockResolvedValue(0.45);
 
-  it('starts live probe capture on toggle on and stops on toggle off', async () => {
+    const config: SpeechConfig = {
+      ...DEFAULT_SPEECH_CONFIG,
+      device: null,
+    };
+    const onChange = vi.fn();
+
+    render(<AudioSettings config={config} onChange={onChange} />);
+
+    // Toggle on Test Microphone
+    const testMicToggle = screen.getByTestId('test-mic-toggle').querySelector('button');
+    expect(testMicToggle).toBeDefined();
+
+    await act(async () => {
+      fireEvent.click(testMicToggle!);
+    });
+
+    await waitFor(() => {
+      expect(stt.micLevel).toHaveBeenCalled();
+    });
+
+    // Level meter should have updated from backend probe (45%)
+    await waitFor(() => {
+      const meter = screen.getByTestId('mic-level-meter').firstElementChild as HTMLElement;
+      expect(meter.style.width).toBe('45%');
+    });
+
+    // Level meter follows updated value from backend probe
+    vi.mocked(stt.micLevel).mockResolvedValue(0.8);
+    await waitFor(() => {
+      const meter = screen.getByTestId('mic-level-meter').firstElementChild as HTMLElement;
+      expect(meter.style.width).toBe('80%');
+    });
+
+    // Drops to zero when source reports silence
+    vi.mocked(stt.micLevel).mockResolvedValue(0);
+    await waitFor(() => {
+      const meter = screen.getByTestId('mic-level-meter').firstElementChild as HTMLElement;
+      expect(meter.style.width).toBe('0%');
+    });
+
+    // Toggle off resets meter to 0%
+    await act(async () => {
+      fireEvent.click(testMicToggle!);
+    });
+
+    await waitFor(() => {
+      const meter = screen.getByTestId('mic-level-meter').firstElementChild as HTMLElement;
+      expect(meter.style.width).toBe('0%');
+    });
+  });
+
+  it('stops polling backend probe when unmounting while active', async () => {
+    vi.mocked(stt.micLevel).mockResolvedValue(0.2);
+
+    const config: SpeechConfig = {
+      ...DEFAULT_SPEECH_CONFIG,
+      device: null,
+    };
+    const onChange = vi.fn();
+
+    const { unmount } = render(<AudioSettings config={config} onChange={onChange} />);
+
+    const testMicToggle = screen.getByTestId('test-mic-toggle').querySelector('button');
+    await act(async () => {
+      fireEvent.click(testMicToggle!);
+    });
+
+    await waitFor(() => {
+      expect(stt.micLevel).toHaveBeenCalled();
+    });
+
+    const callsBeforeUnmount = vi.mocked(stt.micLevel).mock.calls.length;
+    unmount();
+
+    // Verify polling stops after unmount
+    const { promise, resolve } = Promise.withResolvers<void>();
+    setTimeout(resolve, 150);
+    await promise;
+    expect(vi.mocked(stt.micLevel).mock.calls.length).toBe(callsBeforeUnmount);
+  });
+
+  it('falls back to browser WebAudio probe when backend probe is unavailable (isTauri is false)', async () => {
+    vi.spyOn(platform, 'isTauri').mockReturnValue(false);
+
     const getUserMediaMock = vi.fn().mockResolvedValue(mockStream);
     Object.defineProperty(navigator, 'mediaDevices', {
       value: { getUserMedia: getUserMediaMock },
@@ -58,7 +145,6 @@ describe('AudioSettings - Test Microphone Probe', () => {
       fftSize = 256;
       frequencyBinCount = 128;
       getFloatTimeDomainData(arr: Float32Array) {
-        // simulate speech waveform with RMS ~ 0.15
         for (let i = 0; i < arr.length; i++) {
           arr[i] = 0.15 * Math.sin(i);
         }
@@ -93,10 +179,7 @@ describe('AudioSettings - Test Microphone Probe', () => {
 
     render(<AudioSettings config={config} onChange={onChange} />);
 
-    // Toggle on Test Microphone
     const testMicToggle = screen.getByTestId('test-mic-toggle').querySelector('button');
-    expect(testMicToggle).toBeDefined();
-
     await act(async () => {
       fireEvent.click(testMicToggle!);
     });
@@ -105,13 +188,13 @@ describe('AudioSettings - Test Microphone Probe', () => {
       expect(getUserMediaMock).toHaveBeenCalled();
     });
 
-    // Level meter should have updated from speech
+    // Fallback produces a level on screen
     await waitFor(() => {
       const meter = screen.getByTestId('mic-level-meter').firstElementChild as HTMLElement;
       expect(meter.style.width).not.toBe('0%');
     });
 
-    // Toggle off
+    // Toggle off cleans up browser resources
     await act(async () => {
       fireEvent.click(testMicToggle!);
     });
@@ -119,63 +202,12 @@ describe('AudioSettings - Test Microphone Probe', () => {
     await waitFor(() => {
       expect(mockTrackStop).toHaveBeenCalled();
       expect(mockAudioContextClose).toHaveBeenCalled();
-      const meter = screen.getByTestId('mic-level-meter').firstElementChild as HTMLElement;
-      expect(meter.style.width).toBe('0%');
     });
   });
 
-  it('stops probe capture when unmounting while active', async () => {
-    const getUserMediaMock = vi.fn().mockResolvedValue(mockStream);
-    Object.defineProperty(navigator, 'mediaDevices', {
-      value: { getUserMedia: getUserMediaMock },
-      configurable: true,
-      writable: true,
-    });
+  it('shows honest notice when both backend probe and browser probe fail', async () => {
+    vi.spyOn(platform, 'isTauri').mockReturnValue(false);
 
-    class MockAudioContext {
-      state = 'running';
-      createMediaStreamSource() {
-        return { connect: vi.fn() };
-      }
-      createAnalyser() {
-        return {
-          fftSize: 256,
-          frequencyBinCount: 128,
-          getFloatTimeDomainData: vi.fn(),
-          getByteFrequencyData: vi.fn(),
-        };
-      }
-      resume = vi.fn().mockResolvedValue(undefined);
-      close = mockAudioContextClose;
-    }
-
-    // @ts-expect-error test mock
-    window.AudioContext = MockAudioContext;
-
-    const config: SpeechConfig = {
-      ...DEFAULT_SPEECH_CONFIG,
-      device: null,
-    };
-    const onChange = vi.fn();
-
-    const { unmount } = render(<AudioSettings config={config} onChange={onChange} />);
-
-    const testMicToggle = screen.getByTestId('test-mic-toggle').querySelector('button');
-    await act(async () => {
-      fireEvent.click(testMicToggle!);
-    });
-
-    await waitFor(() => {
-      expect(getUserMediaMock).toHaveBeenCalled();
-    });
-
-    unmount();
-
-    expect(mockTrackStop).toHaveBeenCalled();
-    expect(mockAudioContextClose).toHaveBeenCalled();
-  });
-
-  it('falls back to micLevel and shows honest notice when probe fails', async () => {
     Object.defineProperty(navigator, 'mediaDevices', {
       value: {
         getUserMedia: vi.fn().mockRejectedValue(new Error('Permission denied')),
@@ -183,8 +215,6 @@ describe('AudioSettings - Test Microphone Probe', () => {
       configurable: true,
       writable: true,
     });
-
-    vi.mocked(stt.micLevel).mockResolvedValue(0.42);
 
     const config: SpeechConfig = {
       ...DEFAULT_SPEECH_CONFIG,
@@ -202,10 +232,63 @@ describe('AudioSettings - Test Microphone Probe', () => {
     await waitFor(() => {
       expect(screen.getByTestId('mic-probe-notice')).toBeDefined();
     });
+  });
 
-    // Fallback polling receives micLevel
+  it('drops to zero when browser probe reports silence', async () => {
+    vi.spyOn(platform, 'isTauri').mockReturnValue(false);
+
+    const getUserMediaMock = vi.fn().mockResolvedValue(mockStream);
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getUserMedia: getUserMediaMock },
+      configurable: true,
+      writable: true,
+    });
+
+    class SilentAnalyser {
+      fftSize = 256;
+      frequencyBinCount = 128;
+      getFloatTimeDomainData(arr: Float32Array) {
+        arr.fill(0);
+      }
+      getByteFrequencyData(arr: Uint8Array) {
+        arr.fill(0);
+      }
+    }
+
+    class MockAudioContext {
+      state = 'running';
+      createMediaStreamSource() {
+        return { connect: vi.fn() };
+      }
+      createAnalyser() {
+        return new SilentAnalyser();
+      }
+      resume = vi.fn().mockResolvedValue(undefined);
+      close = mockAudioContextClose;
+    }
+
+    // @ts-expect-error test mock
+    window.AudioContext = MockAudioContext;
+
+    const config: SpeechConfig = {
+      ...DEFAULT_SPEECH_CONFIG,
+      device: null,
+    };
+
+    render(<AudioSettings config={config} onChange={vi.fn()} />);
+
+    const testMicToggle = screen.getByTestId('test-mic-toggle').querySelector('button');
+    await act(async () => {
+      fireEvent.click(testMicToggle!);
+    });
+
     await waitFor(() => {
-      expect(stt.micLevel).toHaveBeenCalled();
+      expect(getUserMediaMock).toHaveBeenCalled();
+    });
+
+    await waitFor(() => {
+      const meter = screen.getByTestId('mic-level-meter').firstElementChild as HTMLElement;
+      expect(meter.style.width).toBe('0%');
     });
   });
 });

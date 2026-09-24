@@ -135,6 +135,7 @@ struct SessionRecord {
 pub struct RecordingManager {
     inner: Mutex<Option<SessionRecord>>,
     channels: Mutex<Option<u16>>,
+    denoise: Mutex<Option<crate::stt::denoise::DenoiseConfig>>,
 }
 
 impl RecordingManager {
@@ -142,6 +143,7 @@ impl RecordingManager {
         Self {
             inner: Mutex::new(None),
             channels: Mutex::new(None),
+            denoise: Mutex::new(None),
         }
     }
 
@@ -158,6 +160,19 @@ impl RecordingManager {
             .unwrap_or(audio::DEFAULT_RECORDING_CHANNELS)
     }
 
+    pub fn set_denoise_config(&self, cfg: crate::stt::denoise::DenoiseConfig) {
+        let mut guard = self.denoise.lock().unwrap();
+        *guard = Some(cfg.clone());
+        audio::set_default_denoise_config(cfg);
+    }
+
+    pub fn get_denoise_config(&self) -> crate::stt::denoise::DenoiseConfig {
+        if let Some(cfg) = self.denoise.lock().unwrap().clone() {
+            return cfg;
+        }
+        audio::get_default_denoise_config()
+    }
+
     pub fn start(&self, options: StartOptions, assets_dir: &Path) -> Result<StartResult, RecordingError> {
         let ch = options.channels.unwrap_or_else(|| self.get_channels());
         self.start_with_channels(options, assets_dir, ch)
@@ -169,11 +184,12 @@ impl RecordingManager {
         assets_dir: &Path,
         channels: u16,
     ) -> Result<StartResult, RecordingError> {
+        let denoise = self.get_denoise_config();
         self.start_with_channels_and_denoise(
             options,
             assets_dir,
             channels,
-            crate::stt::denoise::DenoiseConfig::default(),
+            denoise,
         )
     }
 
@@ -444,6 +460,7 @@ pub fn recording_start(
         .channels
         .unwrap_or_else(|| read_channels_preference(&app));
     let denoise = crate::stt::denoise::read_denoise_preference(&app);
+    state.set_denoise_config(denoise.clone());
     state
         .start_with_channels_and_denoise(options, &dir, channels, denoise)
         .map_err(String::from)
@@ -694,5 +711,26 @@ mod tests {
         crate::storage::repo::pref_set(&conn, audio::PREF_RECORDING_CHANNELS, "surround").unwrap();
         let raw = crate::storage::repo::pref_get(&conn, audio::PREF_RECORDING_CHANNELS).unwrap();
         assert_eq!(audio::parse_channel_preference(raw.as_deref()), 2);
+    }
+
+    #[test]
+    fn test_recording_manager_denoise_setting_and_internal_session_inheritance() {
+        let manager = RecordingManager::new();
+        let default_cfg = crate::stt::denoise::DenoiseConfig::default();
+        assert_eq!(manager.get_denoise_config(), default_cfg);
+
+        let custom_cfg = crate::stt::denoise::DenoiseConfig {
+            denoise_highpass: false,
+            denoise_highpass_hz: 120.0,
+            denoise_gate: false,
+            denoise_gate_db: -30.0,
+            denoise_rnnoise: true,
+            denoise_agc: true,
+            denoise_agc_target_db: -16.0,
+        };
+
+        manager.set_denoise_config(custom_cfg.clone());
+        assert_eq!(manager.get_denoise_config(), custom_cfg);
+        assert_eq!(audio::get_default_denoise_config(), custom_cfg);
     }
 }
