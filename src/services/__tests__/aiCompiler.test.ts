@@ -380,4 +380,72 @@ describe('AICompilerService (R36)', () => {
     expect(genSpy).toHaveBeenCalled();
     expect(plan.explanation).toBe('Ответ от удалённой модели');
   });
+
+  it('parses RU workout schedule with >=3 tasks into create_alarms drafts', () => {
+    const plan = AICompilerService.compileLocalIntent('09:00 зарядка, 10:00 завтрак, 18:00 тренировка');
+    expect(plan.action).toBe('create_alarms');
+    expect(plan.alarms).toHaveLength(3);
+    expect(plan.alarms?.[0]).toEqual(
+      expect.objectContaining({ label: 'Зарядка', time: '09:00', repeat: 'once' }),
+    );
+    expect(plan.alarms?.[1]).toEqual(
+      expect.objectContaining({ label: 'Завтрак', time: '10:00', repeat: 'once' }),
+    );
+    expect(plan.alarms?.[2]).toEqual(
+      expect.objectContaining({ label: 'Тренировка', time: '18:00', repeat: 'once' }),
+    );
+  });
+
+  it('parses hourly reminder with window «пить воду каждый час с 9 до 18» into interval draft', () => {
+    const plan = AICompilerService.compileLocalIntent('пить воду каждый час с 9 до 18');
+    expect(plan.action).toBe('create_alarms');
+    expect(plan.alarms).toHaveLength(1);
+    expect(plan.alarms?.[0]).toEqual(
+      expect.objectContaining({
+        label: 'Пить воду',
+        time: '09:00',
+        repeat: 'interval',
+        intervalMinutes: 60,
+        windowStart: '09:00',
+        windowEnd: '18:00',
+      }),
+    );
+  });
+
+  it('parses multi-line day schedule with mixed fixed alarms and interval reminder', () => {
+    const scheduleText = `09:00 зарядка
+10:00 завтрак
+пить воду каждый час с 9 до 18
+18:00 тренировка`;
+    const plan = AICompilerService.compileLocalIntent(scheduleText);
+    expect(plan.action).toBe('create_alarms');
+    expect(plan.alarms).toHaveLength(4);
+    expect(plan.alarms?.[0]).toEqual(expect.objectContaining({ label: 'Зарядка', time: '09:00' }));
+    expect(plan.alarms?.[1]).toEqual(expect.objectContaining({ label: 'Завтрак', time: '10:00' }));
+    expect(plan.alarms?.[2]).toEqual(
+      expect.objectContaining({
+        label: 'Пить воду',
+        repeat: 'interval',
+        intervalMinutes: 60,
+        windowStart: '09:00',
+        windowEnd: '18:00',
+      }),
+    );
+    expect(plan.alarms?.[3]).toEqual(expect.objectContaining({ label: 'Тренировка', time: '18:00' }));
+  });
+
+  it('parses English interval reminder into interval alarm draft', () => {
+    const plan = AICompilerService.compileLocalIntent('stretch every 45 minutes from 10:00 to 17:00');
+    expect(plan.action).toBe('create_alarms');
+    expect(plan.alarms).toHaveLength(1);
+    expect(plan.alarms?.[0]).toEqual(
+      expect.objectContaining({
+        label: 'Stretch',
+        repeat: 'interval',
+        intervalMinutes: 45,
+        windowStart: '10:00',
+        windowEnd: '17:00',
+      }),
+    );
+  });
 });
