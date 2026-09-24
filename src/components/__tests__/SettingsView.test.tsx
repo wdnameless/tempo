@@ -291,8 +291,8 @@ describe('SettingsView Component', () => {
     // Click Speech to Text tab
     fireEvent.click(speechTab);
     await waitFor(() => {
-      expect(screen.getByTestId('speech-panel')).toBeDefined();
-      expect(screen.getByText(t.settingsSpeech)).toBeDefined();
+      expect(screen.getByTestId('settings-speech-pointer')).toBeDefined();
+      expect(screen.queryByTestId('speech-panel')).toBeNull();
     });
 
     // Click Shortcuts tab. The heading repeats the tab's words on purpose, so it
@@ -329,58 +329,25 @@ describe('SettingsView Component', () => {
         expect.objectContaining({ timerMode: 'block' })
       );
     });
-
-    // Switch to Speech to Text tab and toggle enable
-    const speechTab = screen.getByRole('tab', { name: t.settingsSpeechToText });
-    fireEvent.click(speechTab);
-
-    const enableToggle = await screen.findByLabelText(t.settingsSpeechEnable);
-    fireEvent.click(enableToggle);
-
-    await waitFor(() => {
-      expect(mockSaveSpeechSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ enabled: true })
-      );
-    });
+    expect(mockSaveGeneralSettings).toHaveBeenCalled();
   });
 
-  it('renders the SpeechPanel with all sub-tabs and switches panels correctly', async () => {
-    render(<SettingsView />);
+  it('speech section in Settings no longer renders moved controls and points to the new STT section', async () => {
+    const onNavigate = vi.fn();
+    render(<SettingsView onNavigate={onNavigate} />);
 
     const speechTab = screen.getByRole('tab', { name: t.settingsSpeechToText });
     fireEvent.click(speechTab);
 
     await waitFor(() => {
-      expect(screen.getByTestId('speech-panel')).toBeDefined();
+      expect(screen.getByTestId('settings-speech-pointer')).toBeDefined();
+      expect(screen.queryByTestId('speech-panel')).toBeNull();
     });
 
-    // Check all 9 sub-tab buttons are present
-    const subTabIds = [
-      'models',
-      'ptt',
-      'audio',
-      'delivery',
-      'feedback',
-      'language',
-      'history',
-      'postprocess',
-      'debug',
-    ];
-    for (const id of subTabIds) {
-      expect(screen.getByTestId(`speech-tab-${id}`)).toBeDefined();
-    }
-
-    // Switch to Audio tab
-    fireEvent.click(screen.getByTestId('speech-tab-audio'));
-    await waitFor(() => {
-      expect(screen.getByTestId('audio-settings')).toBeDefined();
-    });
-
-    // Switch to Feedback tab
-    fireEvent.click(screen.getByTestId('speech-tab-feedback'));
-    await waitFor(() => {
-      expect(screen.getByTestId('feedback-settings')).toBeDefined();
-    });
+    const gotoBtn = screen.getByTestId('settings-goto-stt-btn');
+    expect(gotoBtn).toBeDefined();
+    fireEvent.click(gotoBtn);
+    expect(onNavigate).toHaveBeenCalledWith('stt');
   });
 
   it('Shortcuts section renders one row per listShortcuts() entry', async () => {

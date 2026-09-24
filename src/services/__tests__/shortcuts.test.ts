@@ -5,6 +5,9 @@ import {
   installShortcutLayer,
   clearShortcuts,
   registerDefaultShortcuts,
+  setDictationRecording,
+  isDictationRecording,
+  setDictationActive,
 } from '../shortcuts';
 
 describe('shortcuts service', () => {
@@ -350,10 +353,14 @@ describe('shortcuts service', () => {
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true, cancelable: true }));
     expect(navigateSpy).toHaveBeenCalledWith(expect.objectContaining({ detail: 'tasks' }));
 
-    // 2. ⌘S -> toggle sidebar
-    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true, cancelable: true }));
+    // 2. ⌘B -> toggle sidebar (moved from ⌘S so dictation gets Ctrl+S)
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true }));
     expect(toggleSidebarSpy).toHaveBeenCalled();
+    toggleSidebarSpy.mockClear();
 
+    // ⌘S must NOT trigger toggle sidebar
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true, cancelable: true }));
+    expect(toggleSidebarSpy).not.toHaveBeenCalled();
     // 3. ⌘K -> spotlight
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true, cancelable: true }));
     expect(spotlightSpy).toHaveBeenCalled();
@@ -361,5 +368,86 @@ describe('shortcuts service', () => {
     window.removeEventListener('tempo:navigate', navigateSpy);
     window.removeEventListener('tempo:toggle-sidebar', toggleSidebarSpy);
     window.removeEventListener('tempo:spotlight', spotlightSpy);
+  });
+
+  it('sidebar toggle answers Ctrl+B and no longer answers Ctrl+S', () => {
+    uninstall = installShortcutLayer();
+
+    const toggleSidebarSpy = vi.fn();
+    window.addEventListener('tempo:toggle-sidebar', toggleSidebarSpy);
+
+    // Press Ctrl+S: must NOT trigger toggle sidebar
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(toggleSidebarSpy).not.toHaveBeenCalled();
+
+    // Press Ctrl+B: MUST trigger toggle sidebar
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(toggleSidebarSpy).toHaveBeenCalledTimes(1);
+
+    window.removeEventListener('tempo:toggle-sidebar', toggleSidebarSpy);
+  });
+
+  it('does NOT fire app-level shortcuts when dictation is recording', () => {
+    uninstall = installShortcutLayer();
+
+    const toggleSidebarSpy = vi.fn();
+    const spotlightSpy = vi.fn();
+    const navigateSpy = vi.fn();
+
+    window.addEventListener('tempo:toggle-sidebar', toggleSidebarSpy);
+    window.addEventListener('tempo:spotlight', spotlightSpy);
+    window.addEventListener('tempo:navigate', navigateSpy);
+
+    setDictationActive(true);
+    expect(isDictationRecording()).toBe(true);
+
+    // All shortcuts should be suppressed while dictating
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, bubbles: true, cancelable: true }));
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true }));
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true, cancelable: true }));
+
+    expect(toggleSidebarSpy).not.toHaveBeenCalled();
+    expect(spotlightSpy).not.toHaveBeenCalled();
+    expect(navigateSpy).not.toHaveBeenCalled();
+
+    // Once dictation ends, app-level shortcuts resume firing
+    setDictationRecording(false);
+    expect(isDictationRecording()).toBe(false);
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(toggleSidebarSpy).toHaveBeenCalledTimes(1);
+
+    window.removeEventListener('tempo:toggle-sidebar', toggleSidebarSpy);
+    window.removeEventListener('tempo:spotlight', spotlightSpy);
+    window.removeEventListener('tempo:navigate', navigateSpy);
+  });
+
+  it('ensures held-key dictation session is not interrupted by app-level handler', () => {
+    uninstall = installShortcutLayer();
+
+    const toggleSidebarSpy = vi.fn();
+    window.addEventListener('tempo:toggle-sidebar', toggleSidebarSpy);
+
+    // Dictation starts (key pressed and held for PTT)
+    window.dispatchEvent(new CustomEvent('tempo:dictation-state', { detail: { recording: true } }));
+    expect(isDictationRecording()).toBe(true);
+
+    // OS sends key repeats while holding the key
+    const heldEvent1 = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, repeat: true, bubbles: true, cancelable: true });
+    const heldEvent2 = new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, repeat: true, bubbles: true, cancelable: true });
+    document.body.dispatchEvent(heldEvent1);
+    document.body.dispatchEvent(heldEvent2);
+
+    expect(toggleSidebarSpy).not.toHaveBeenCalled();
+
+    // Key is released -> dictation stops
+    window.dispatchEvent(new CustomEvent('tempo:dictation-state', { detail: { recording: false } }));
+    expect(isDictationRecording()).toBe(false);
+
+    // After release, normal shortcuts work again
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(toggleSidebarSpy).toHaveBeenCalledTimes(1);
+
+    window.removeEventListener('tempo:toggle-sidebar', toggleSidebarSpy);
   });
 });

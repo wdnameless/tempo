@@ -44,6 +44,7 @@ import { rolloverSettings, setRolloverSettings } from '../services/rollover';
 import { EdgeTtsService } from '../services/edgeTts';
 import { I18nService, type Translations } from '../services/i18n';
 import { getPref } from '../services/settings';
+import type { ScreenId } from '../App';
 import { AIGateway } from '../services/aiGateway';
 import { checkForUpdate, currentVersion, detectPortable, installUpdate, type UpdateInfo } from '../services/update';
 import {
@@ -53,19 +54,12 @@ import {
   type GeneralSettings,
 } from '../services/generalSettings';
 import {
-  loadSpeechConfig,
-  saveSpeechConfig,
-  subscribeSpeechConfig,
-  type SpeechConfig,
-} from '../services/speechSettings';
-import { googleCalendarStatus, type IntegrationStatus } from '../services/integrations';
-import { listShortcuts, type ShortcutDef } from '../services/shortcuts';
-import { assetUsage, assetPrune, DEFAULT_MEDIA_LIMIT_BYTES, type AssetUsage } from '../services/assets';
-import {
   listModels,
   type ModelInfo,
 } from '../services/stt';
-import { SpeechPanel } from './speech/SpeechPanel';
+import { googleCalendarStatus, type IntegrationStatus } from '../services/integrations';
+import { listShortcuts, type ShortcutDef } from '../services/shortcuts';
+import { assetUsage, assetPrune, DEFAULT_MEDIA_LIMIT_BYTES, type AssetUsage } from '../services/assets';
 // Settings services
 import {
   getSyncStatus,
@@ -89,6 +83,8 @@ export interface SettingsViewProps {
   alarmVolume?: number;
   alarmEnabled?: boolean;
   onAlarmAudioChange?: (vol: number, en: boolean) => void;
+  onNavigate?: (tab: ScreenId) => void;
+  onOpenStt?: () => void;
   [key: string]: unknown;
 }
 
@@ -195,8 +191,6 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
 
   // General Settings state (loaded synchronously from cache)
   const [general, setGeneral] = useState<GeneralSettings>(() => loadGeneralSettings());
-  // Speech Settings state
-  const [speech, setSpeech] = useState<SpeechConfig>(() => loadSpeechConfig());
   const [models, setModels] = useState<ModelInfo[]>([]);
   // Integration status state
   const [calendarStatus, setCalendarStatus] = useState<IntegrationStatus>({
@@ -390,17 +384,6 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
     }
   };
 
-  const handleSaveSpeech = async (patch: Partial<SpeechConfig>) => {
-    const next = { ...speech, ...patch };
-    setSpeech(next);
-    try {
-      await saveSpeechConfig(patch);
-      notifySaved();
-    } catch (err) {
-      setSaveStatus('error');
-      setSaveErrorMessage(err instanceof Error ? err.message : 'Failed to save speech settings');
-    }
-  };
 
   // Sync models list for About tab recognition status
   useEffect(() => {
@@ -409,12 +392,6 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
     }
   }, [activeSection]);
 
-  // Subscribe to external speech config updates
-  useEffect(() => {
-    return subscribeSpeechConfig((cfg) => {
-      setSpeech(cfg);
-    });
-  }, []);
   const handlePruneMedia = async () => {
     setIsPruning(true);
     try {
@@ -1256,10 +1233,43 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
         {/* ========================================================================= */}
         {activeSection === 'speech' && (
           <section id="section-speech" role="tabpanel" aria-label={t.settingsSpeechToText} className="space-y-6">
-            <SpeechPanel
-              config={speech}
-              onChange={handleSaveSpeech}
-            />
+            <div
+              data-testid="settings-speech-pointer"
+              className="p-5 rounded-lg border flex items-center justify-between gap-4"
+              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: 'var(--elevated)' }}
+                >
+                  <Mic className="w-5 h-5 text-[var(--accent)]" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+                    {t.settingsSpeechMovedTitle}
+                  </h3>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    {t.settingsSpeechMovedHint}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                data-testid="settings-goto-stt-btn"
+                onClick={() => {
+                  if (typeof props.onOpenStt === 'function') {
+                    props.onOpenStt();
+                  } else if (typeof props.onNavigate === 'function') {
+                    props.onNavigate('stt');
+                  }
+                }}
+                className="px-4 py-2 text-xs font-medium rounded-lg text-white hover:opacity-90 transition-opacity cursor-pointer shrink-0"
+                style={{ backgroundColor: 'var(--accent)' }}
+              >
+                {t.settingsSpeechMovedAction}
+              </button>
+            </div>
           </section>
         )}
 

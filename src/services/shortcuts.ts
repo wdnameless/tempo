@@ -1,3 +1,5 @@
+import { onSttEvent } from './sttEvents';
+
 export type ShortcutScope = 'app' | 'global';
 
 export interface ShortcutDef {
@@ -33,6 +35,21 @@ const MODIFIER_KEYS: Record<string, true> = {
 let isInstalled = false;
 let globalListener: ((event: KeyboardEvent) => void) | null = null;
 const CUSTOM_STORAGE_KEY = 'tempo_custom_shortcuts';
+let dictationRecording = false;
+let unsubscribeStt: (() => void) | null = null;
+let dictationStateListener: ((e: Event) => void) | null = null;
+
+export function isDictationRecording(): boolean {
+  return dictationRecording;
+}
+
+export function setDictationRecording(recording: boolean): void {
+  dictationRecording = recording;
+}
+
+export const isDictationActive = isDictationRecording;
+export const setDictationActive = setDictationRecording;
+
 
 export const isMacPlatform = (): boolean => {
   if (typeof navigator === 'undefined') return false;
@@ -307,12 +324,19 @@ export function subscribeShortcuts(listener: () => void): () => void {
  */
 export function clearShortcuts(): void {
   registry.clear();
+  dictationRecording = false;
 }
 
 /**
  * Global keydown event handler.
  */
 function handleKeyDown(event: KeyboardEvent): void {
+  // If dictation is currently recording, app-level shortcuts must not fire,
+  // ensuring a held-key dictation session is not interrupted by the app-level handler.
+  if (dictationRecording) {
+    return;
+  }
+
   // Ignore key repeat events
   if (event.repeat) {
     return;
@@ -323,6 +347,11 @@ function handleKeyDown(event: KeyboardEvent): void {
     return;
   }
 
+  // Suppress default browser "Save Page As" behavior on Ctrl+S / Cmd+S so it does
+  // not steal focus or interfere with speech dictation.
+  if (matchesCombo(event, ['⌘', 'S'])) {
+    event.preventDefault();
+  }
   const inEditable = isEditableElement(event.target);
 
   for (const def of registry.values()) {
@@ -379,10 +408,12 @@ export function registerDefaultShortcuts(): void {
     },
   });
 
-  // 2. Toggle Sidebar (⌘S)
+  // 2. Toggle Sidebar (⌘B)
+  // Moved from ⌘S to ⌘B because ⌘S (Ctrl+S) is now the default hotkey for STT dictation.
+  // Moving this ensures sidebar toggle and speech dictation do not conflict or swallow each other.
   registerShortcut({
     id: 'toggle-sidebar',
-    keys: ['⌘', 'S'],
+    keys: ['⌘', 'B'],
     scope: 'app',
     group: 'general',
     description: 'shortcutToggleSidebar',
@@ -463,12 +494,40 @@ export function installShortcutLayer(): () => void {
     registerDefaultShortcuts();
     globalListener = handleKeyDown;
     window.addEventListener('keydown', globalListener, true);
+
+    unsubscribeStt = onSttEvent((e) => {
+      if (e.type === 'dictation-started') {
+        dictationRecording = true;
+      } else if (e.type === 'dictation-stopped' || e.type === 'dictation-cancelled') {
+        dictationRecording = false;
+      }
+    });
+
+    dictationStateListener = (e: Event) => {
+      const custom = e as CustomEvent<{ recording?: boolean; active?: boolean }>;
+      if (custom.detail) {
+        dictationRecording = Boolean(custom.detail.recording ?? custom.detail.active);
+      }
+    };
+    window.addEventListener('tempo:dictation-state', dictationStateListener);
+
     isInstalled = true;
   }
   return () => {
-    if (isInstalled && typeof window !== 'undefined' && globalListener) {
-      window.removeEventListener('keydown', globalListener, true);
-      globalListener = null;
+    if (isInstalled && typeof window !== 'undefined') {
+      if (globalListener) {
+        window.removeEventListener('keydown', globalListener, true);
+        globalListener = null;
+      }
+      if (unsubscribeStt) {
+        unsubscribeStt();
+        unsubscribeStt = null;
+      }
+      if (dictationStateListener) {
+        window.removeEventListener('tempo:dictation-state', dictationStateListener);
+        dictationStateListener = null;
+      }
+      dictationRecording = false;
       isInstalled = false;
     }
   };

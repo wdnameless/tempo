@@ -43,6 +43,8 @@ describe('DictationIndicator', () => {
     vi.mocked(speechSettings.loadSpeechConfig).mockReturnValue({
       ...speechSettings.DEFAULT_SPEECH_CONFIG,
       overlayEnabled: true,
+      dictationWave: true,
+      dictationWaveBars: 24,
     });
   });
 
@@ -62,7 +64,7 @@ describe('DictationIndicator', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders live level, mode, and timer when recording', async () => {
+  it('renders wave columns when dictationWave is true (default)', async () => {
     const startTime = Date.now() - 5000;
     vi.mocked(stt.dictationState).mockResolvedValue({
       recording: true,
@@ -79,14 +81,42 @@ describe('DictationIndicator', () => {
     // Shows dictation shortcut title from i18n
     expect(screen.getAllByText(I18nService.t().settingsSpeechHotkey).length).toBeGreaterThan(0);
 
-    // Volume level bar is rendered with 65% width
-    const levelBar = screen.getByTestId('dictation-level-bar');
-    expect(levelBar).toBeDefined();
-    expect(levelBar.style.width).toBe('65%');
+    // Wave is rendered with configured 24 bars
+    const wave = screen.getByTestId('dictation-wave');
+    expect(wave).toBeDefined();
+    const bars = screen.getAllByTestId('dictation-wave-bar');
+    expect(bars.length).toBe(24);
 
     // Mode and timer are displayed
     expect(screen.getByTestId('dictation-mode').textContent).toBe('insert');
     expect(screen.getByTestId('dictation-timer')).toBeDefined();
+  });
+
+  it('renders old level bar when dictationWave is false', async () => {
+    vi.mocked(speechSettings.loadSpeechConfig).mockReturnValue({
+      ...speechSettings.DEFAULT_SPEECH_CONFIG,
+      overlayEnabled: true,
+      dictationWave: false,
+    });
+
+    const startTime = Date.now() - 5000;
+    vi.mocked(stt.dictationState).mockResolvedValue({
+      recording: true,
+      level: 0.65,
+      since: startTime,
+    });
+
+    render(<DictationIndicator pollIntervalMs={100} defaultMode="insert" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dictation-indicator')).toBeDefined();
+    });
+
+    // Volume level bar is rendered with 65% width
+    const levelBar = screen.getByTestId('dictation-level-bar');
+    expect(levelBar).toBeDefined();
+    expect(levelBar.style.width).toBe('65%');
+    expect(screen.queryByTestId('dictation-wave')).toBeNull();
   });
 
   it('calls stopDictation when Stop button is clicked', async () => {
@@ -161,9 +191,12 @@ describe('DictationIndicator', () => {
       eventHandler?.({ type: 'dictation-level', level: 0.8 });
     });
 
-    const levelBar = screen.getByTestId('dictation-level-bar');
-    expect(levelBar.style.width).toBe('80%');
-
+    const bars = screen.getAllByTestId('dictation-wave-bar');
+    expect(bars.length).toBe(24);
+    // Peak center bar height increases with level
+    const centerBar = bars[12];
+    const heightPct = parseInt(centerBar.style.height, 10);
+    expect(heightPct).toBeGreaterThan(50);
     // Fire dictation-stopped event
     act(() => {
       eventHandler?.({
@@ -171,8 +204,9 @@ describe('DictationIndicator', () => {
         result: { text: 'ok', duration_ms: 100, engine: 'local' },
       });
     });
-
-    expect(screen.queryByTestId('dictation-indicator')).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByTestId('dictation-indicator')).toBeNull();
+    });
   });
 
   it('renders overlay variant correctly', async () => {
@@ -225,5 +259,61 @@ describe('DictationIndicator', () => {
     const { container } = render(<DictationIndicator variant="pill" pollIntervalMs={100} />);
 
     expect(container.firstChild).toBeNull();
+  });
+
+  it('renders custom number of wave bars when configured', async () => {
+    vi.mocked(speechSettings.loadSpeechConfig).mockReturnValue({
+      ...speechSettings.DEFAULT_SPEECH_CONFIG,
+      overlayEnabled: true,
+      dictationWave: true,
+      dictationWaveBars: 16,
+    });
+
+    vi.mocked(stt.dictationState).mockResolvedValue({
+      recording: true,
+      level: 0.5,
+      since: Date.now(),
+    });
+
+    render(<DictationIndicator pollIntervalMs={100} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dictation-indicator')).toBeDefined();
+    });
+
+    const bars = screen.getAllByTestId('dictation-wave-bar');
+    expect(bars.length).toBe(16);
+  });
+
+  it('respects prefers-reduced-motion without dynamic animation', async () => {
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    vi.mocked(stt.dictationState).mockResolvedValue({
+      recording: true,
+      level: 0.7,
+      since: Date.now(),
+    });
+
+    render(<DictationIndicator pollIntervalMs={100} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dictation-indicator')).toBeDefined();
+    });
+
+    const bars = screen.getAllByTestId('dictation-wave-bar');
+    expect(bars.length).toBe(24);
+    expect(bars[12].style.height).toBeDefined();
+
+    window.matchMedia = originalMatchMedia;
   });
 });

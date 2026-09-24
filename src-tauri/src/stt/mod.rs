@@ -134,7 +134,7 @@ impl Default for SpeechConfig {
         Self {
             enabled: true,
             activation: ShortcutActivation::HoldOrToggle,
-            hotkey: "Ctrl+Shift+D".to_string(),
+            hotkey: "Ctrl+S".to_string(),
             cancel_hotkey: "Escape".to_string(),
             hold_threshold_ms: 300,
             engine: "local".to_string(),
@@ -399,7 +399,7 @@ pub fn load_speech_config(app: &AppHandle) -> SpeechConfig {
             _ => ShortcutActivation::HoldOrToggle,
         };
 
-        let hotkey = pref_read_string(conn, "tempo_speech_hotkey", Some("alarmer_speech_hotkey"), "Ctrl+Shift+D");
+        let hotkey = pref_read_string(conn, "tempo_speech_hotkey", Some("alarmer_speech_hotkey"), "Ctrl+S");
         let cancel_hotkey = pref_read_string(conn, "tempo_speech_cancel_hotkey", Some("alarmer_speech_cancel_hotkey"), "Escape");
         let hold_threshold_ms: u64 = pref_read(conn, "tempo_speech_hold_threshold_ms", Some("alarmer_speech_hold_threshold_ms"), 300);
         let engine = pref_read_string(conn, "tempo_speech_engine", Some("alarmer_speech_engine"), "local");

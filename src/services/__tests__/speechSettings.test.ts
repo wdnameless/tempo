@@ -29,7 +29,9 @@ describe('speechSettings', () => {
     const settings = loadSpeechSettings();
     expect(settings).toEqual(DEFAULT_SPEECH_SETTINGS);
     expect(settings.enabled).toBe(false);
-    expect(settings.hotkey).toBe('');
+    expect(settings.hotkey).toBe('Ctrl+S');
+    expect(settings.dictationWave).toBe(true);
+    expect(settings.dictationWaveBars).toBe(24);
     expect(settings.modelId).toBe(null);
     expect(settings).toEqual(DEFAULT_SPEECH_SETTINGS);
   });

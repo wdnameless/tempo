@@ -59,7 +59,7 @@ describe('App Shell', () => {
   it('renders a sidebar entry for every section', () => {
     render(<App />);
     const t = I18nService.t();
-    for (const label of [t.sidebarAlarms, t.sidebarTasks, t.navCalendar, t.navNotes, t.navRecordings, t.navStats, t.tabSettings]) {
+    for (const label of [t.sidebarAlarms, t.sidebarTasks, t.navCalendar, t.navNotes, t.navRecordings, t.navStats, t.navStt, t.tabSettings]) {
       expect(screen.getByRole('button', { name: label })).toBeDefined();
     }
   });
@@ -95,8 +95,11 @@ describe('App Shell', () => {
 
     fireEvent.click(screen.getByRole('button', { name: t.sidebarTasks }));
     expect(activeScreen()).toBe(t.sidebarTasks);
-  });
 
+    fireEvent.click(screen.getByRole('button', { name: t.navStt }));
+    expect(activeScreen()).toBe(t.navStt);
+    expect(screen.getByTestId('speech-panel')).toBeDefined();
+  });
   it('clicking a sidebar entry opens its first sub-tab', () => {
     render(<App />);
     const t = I18nService.t();

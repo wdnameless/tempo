@@ -54,6 +54,8 @@ export interface SpeechConfig {
   denoise_rnnoise: boolean;
   denoise_agc: boolean;
   denoise_agc_target_db: number;
+  dictationWave: boolean;
+  dictationWaveBars: number;
 }
 
 export type SpeechSettings = SpeechConfig;
@@ -61,7 +63,7 @@ export type SpeechSettings = SpeechConfig;
 export const DEFAULT_SPEECH_CONFIG: SpeechConfig = {
   enabled: false,
   activation: 'hold_or_toggle',
-  hotkey: '',
+  hotkey: 'Ctrl+S',
   cancelHotkey: 'Escape',
   holdThresholdMs: 300,
   engine: 'local',
@@ -101,6 +103,8 @@ export const DEFAULT_SPEECH_CONFIG: SpeechConfig = {
   denoise_rnnoise: false,
   denoise_agc: false,
   denoise_agc_target_db: -20,
+  dictationWave: true,
+  dictationWaveBars: 24,
 };
 
 export const DEFAULT_SPEECH_SETTINGS: SpeechSettings = DEFAULT_SPEECH_CONFIG;
@@ -341,6 +345,14 @@ export function loadSpeechConfig(): SpeechConfig {
       getSpeechPref('denoise_agc_target_db', DEFAULT_SPEECH_CONFIG.denoise_agc_target_db),
       DEFAULT_SPEECH_CONFIG.denoise_agc_target_db,
     ),
+    dictationWave: parseBoolean(
+      getSpeechPref('dictation_wave', DEFAULT_SPEECH_CONFIG.dictationWave),
+      DEFAULT_SPEECH_CONFIG.dictationWave,
+    ),
+    dictationWaveBars: parseNumber(
+      getSpeechPref('dictation_wave_bars', DEFAULT_SPEECH_CONFIG.dictationWaveBars),
+      DEFAULT_SPEECH_CONFIG.dictationWaveBars,
+    ),
   };
 }
 
@@ -449,6 +461,14 @@ export function mergeSpeechConfig(base: SpeechConfig, patch: Partial<SpeechConfi
       patch.denoise_agc_target_db !== undefined
         ? parseNumber(patch.denoise_agc_target_db, base.denoise_agc_target_db)
         : base.denoise_agc_target_db,
+    dictationWave:
+      patch.dictationWave !== undefined
+        ? parseBoolean(patch.dictationWave, base.dictationWave)
+        : base.dictationWave,
+    dictationWaveBars:
+      patch.dictationWaveBars !== undefined
+        ? parseNumber(patch.dictationWaveBars, base.dictationWaveBars)
+        : base.dictationWaveBars,
   };
 }
 
@@ -495,6 +515,8 @@ const FIELD_TO_PREF: Record<keyof SpeechConfig, string> = {
   denoise_rnnoise: 'tempo_speech_denoise_rnnoise',
   denoise_agc: 'tempo_speech_denoise_agc',
   denoise_agc_target_db: 'tempo_speech_denoise_agc_target_db',
+  dictationWave: 'tempo_speech_dictation_wave',
+  dictationWaveBars: 'tempo_speech_dictation_wave_bars',
 };
 
 async function persistToLocalPrefs(config: SpeechConfig, patch: Partial<SpeechConfig>): Promise<void> {

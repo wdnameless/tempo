@@ -462,10 +462,29 @@ export interface Translations {
   settingsShortcutsTab: string;
   settingsAboutTab: string;
   navStats: string;
+  navStt: string;
   navSettings: string;
   navDailyPlanning: string;
   toggleSidebar: string;
-
+  sttScreenTitle: string;
+  sttScreenSubtitle: string;
+  sttTabModels: string;
+  sttTabKeys: string;
+  sttTabAnimation: string;
+  sttTabSound: string;
+  sttTabText: string;
+  sttTabHistory: string;
+  sttTabAdvanced: string;
+  sttAnimationTitle: string;
+  sttAnimationWave: string;
+  sttAnimationWaveDesc: string;
+  sttAnimationWaveBars: string;
+  sttAnimationWaveBarsDesc: string;
+  sttAnimationOverlay: string;
+  sttAnimationOverlayDesc: string;
+  settingsSpeechMovedTitle: string;
+  settingsSpeechMovedHint: string;
+  settingsSpeechMovedAction: string;
   // Screen titles & headings
   titleDashboard: string;
   titleAlarms: string;
@@ -1289,10 +1308,29 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settingsShortcutsTab: 'Горячие клавиши',
     settingsAboutTab: 'О программе и аккаунт',
     navStats: 'Статистика',
+    navStt: 'STT',
     navSettings: 'Настройки',
     navDailyPlanning: 'План на день',
     toggleSidebar: 'Свернуть/развернуть боковую панель',
-
+    sttScreenTitle: 'Распознавание речи (STT)',
+    sttScreenSubtitle: 'Настройки моделей, клавиш, индикации и звука',
+    sttTabModels: 'Модели',
+    sttTabKeys: 'Клавиши',
+    sttTabAnimation: 'Анимация',
+    sttTabSound: 'Звук',
+    sttTabText: 'Текст',
+    sttTabHistory: 'История',
+    sttTabAdvanced: 'Расширенные',
+    sttAnimationTitle: 'Внешний вид индикатора',
+    sttAnimationWave: 'Волна вместо полоски',
+    sttAnimationWaveDesc: 'Отображает живую ленту волн Handy с подсветкой при диктовке',
+    sttAnimationWaveBars: 'Количество столбиков волны',
+    sttAnimationWaveBarsDesc: 'Ширина и детализация ленты волны (от 12 до 48)',
+    sttAnimationOverlay: 'Отображать плавающий индикатор',
+    sttAnimationOverlayDesc: 'Показывать индикатор диктовки поверх всех окон',
+    settingsSpeechMovedTitle: 'Настройки речи перенесены в раздел STT',
+    settingsSpeechMovedHint: 'Управление моделями, горячими клавишами, волной и звуком теперь находится в отдельной вкладке бокового меню',
+    settingsSpeechMovedAction: 'Перейти в раздел STT',
     // Screen titles & headings
     titleDashboard: 'Дашборд',
     titleAlarms: 'Будильники',
@@ -2108,10 +2146,29 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     statsDoneOfTotal: '{done} of {total} done',
     statsPeakAt: 'Peak: {hour}:00',
     navStats: 'Stats',
+    navStt: 'STT',
     navSettings: 'Settings',
     navDailyPlanning: 'Daily Planning',
     toggleSidebar: 'Toggle sidebar',
-
+    sttScreenTitle: 'Speech to Text (STT)',
+    sttScreenSubtitle: 'Configure models, hotkeys, animation and sound',
+    sttTabModels: 'Models',
+    sttTabKeys: 'Hotkeys',
+    sttTabAnimation: 'Animation',
+    sttTabSound: 'Sound',
+    sttTabText: 'Text',
+    sttTabHistory: 'History',
+    sttTabAdvanced: 'Advanced',
+    sttAnimationTitle: 'Indicator appearance',
+    sttAnimationWave: 'Wave ribbon instead of bar',
+    sttAnimationWaveDesc: 'Displays a live Handy wave ribbon with glow during dictation',
+    sttAnimationWaveBars: 'Number of wave bars',
+    sttAnimationWaveBarsDesc: 'Width and detail of the wave ribbon (from 12 to 48)',
+    sttAnimationOverlay: 'Show floating indicator',
+    sttAnimationOverlayDesc: 'Display the dictation indicator on top of all windows',
+    settingsSpeechMovedTitle: 'Speech settings moved to STT section',
+    settingsSpeechMovedHint: 'Manage models, hotkeys, wave animation, and sound in the dedicated sidebar section',
+    settingsSpeechMovedAction: 'Go to STT section',
     // Screen titles & headings
     titleDashboard: 'Dashboard',
     titleAlarms: 'Alarms',

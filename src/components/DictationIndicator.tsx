@@ -4,18 +4,39 @@
 // Supports both floating 'pill' (default) and full 'overlay' (for mini-overlay window) variants.
 // Must not steal focus from previous active window.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Square, Mic, X } from 'lucide-react';
-import {
-  dictationState,
-  stopDictation,
-  cancelDictation,
-  type DictationState,
-} from '../services/stt';
+import { dictationState, stopDictation, cancelDictation } from '../services/stt';
+
+/** Shape of the dictation snapshot this indicator renders. Declared here, not in
+ *  the service: a test that mocks the service would otherwise erase the type the
+ *  component depends on, and a state updater would blow up on an undefined
+ *  `prev` — which is exactly what it did. */
+export interface DictationState {
+  recording: boolean;
+  level: number;
+  since: number | null;
+}
 import { onSttEvent } from '../services/sttEvents';
 import { loadSpeechConfig, subscribeSpeechConfig } from '../services/speechSettings';
 import { I18nService } from '../services/i18n';
 
+export function usePrefersReducedMotion(): boolean {
+  const [reducedMotion, setReducedMotion] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mql = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handler = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+
+  return reducedMotion;
+}
 export interface DictationIndicatorProps {
   /** Optional override for polling interval in ms (default 100ms) */
   pollIntervalMs?: number;
@@ -49,13 +70,62 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
       return true;
     }
   });
+  const [waveEnabled, setWaveEnabled] = useState<boolean>(() => {
+    try {
+      const cfg = loadSpeechConfig();
+      return cfg.dictationWave ?? true;
+    } catch {
+      return true;
+    }
+  });
+  const [waveBarsCount, setWaveBarsCount] = useState<number>(() => {
+    try {
+      const cfg = loadSpeechConfig();
+      return cfg.dictationWaveBars ?? 24;
+    } catch {
+      return 24;
+    }
+  });
 
+  // Fade out state: keep rendering while exiting
+  const [isExiting, setIsExiting] = useState(false);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const levelNormalized = Math.max(0, Math.min(1, state.level));
+  const levelPercent = Math.round(levelNormalized * 100);
+
+  // Calculate wave bar heights (must be called unconditionally before early returns)
+  const bars = useMemo(() => {
+    const count = Math.max(4, Math.min(64, waveBarsCount || 24));
+    const mid = (count - 1) / 2;
+    return Array.from({ length: count }, (_, i) => {
+      const distFromCenter = Math.abs(i - mid) / (mid || 1);
+      const envelope = Math.cos(distFromCenter * (Math.PI / 2.2));
+      const clampedEnvelope = Math.max(0.2, envelope);
+
+      if (prefersReducedMotion) {
+        const heightPct = Math.round(15 + levelNormalized * clampedEnvelope * 85);
+        return { heightPct, opacity: 0.8 + 0.2 * clampedEnvelope };
+      }
+
+      const phase = Math.sin((i / count) * Math.PI * 4);
+      const dynamicLevel = Math.max(0, levelNormalized + (levelNormalized > 0.05 ? phase * 0.15 * levelNormalized : 0));
+      const heightPct = Math.round(Math.min(100, Math.max(12, dynamicLevel * clampedEnvelope * 100)));
+      const opacity = 0.5 + 0.5 * clampedEnvelope;
+      return { heightPct, opacity };
+    });
+  }, [waveBarsCount, levelNormalized, prefersReducedMotion]);
   const t = I18nService.t();
   // Track overlayEnabled preference
   useEffect(() => {
     try {
       return subscribeSpeechConfig((cfg) => {
         setOverlayEnabled(cfg.overlayEnabled);
+        if (typeof cfg.dictationWave === 'boolean') {
+          setWaveEnabled(cfg.dictationWave);
+        }
+        if (typeof cfg.dictationWaveBars === 'number') {
+          setWaveBarsCount(cfg.dictationWaveBars);
+        }
       });
     } catch {
       return undefined;
@@ -75,6 +145,7 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
   useEffect(() => {
     const unsubscribe = onSttEvent((e) => {
       if (e.type === 'dictation-started') {
+        setIsExiting(false);
         if (e.mode) setMode(e.mode);
         setState((prev) => ({
           ...prev,
@@ -82,31 +153,32 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
           since: prev.since ?? Date.now(),
         }));
       } else if (e.type === 'dictation-level') {
+        setIsExiting(false);
         setState((prev) => ({
           ...prev,
           recording: true,
           level: e.level,
           since: prev.since ?? Date.now(),
         }));
-      } else if (e.type === 'dictation-stopped') {
-        setState({
-          recording: false,
-          level: 0,
-          since: null,
-        });
-        onStop?.();
-      } else if (e.type === 'dictation-cancelled') {
-        setState({
-          recording: false,
-          level: 0,
-          since: null,
-        });
+      } else if (e.type === 'dictation-stopped' || e.type === 'dictation-cancelled') {
+        if (prefersReducedMotion) {
+          setState({ recording: false, level: 0, since: null });
+          setIsExiting(false);
+        } else {
+          setIsExiting(true);
+          window.setTimeout(() => {
+            setState({ recording: false, level: 0, since: null });
+            setIsExiting(false);
+          }, 200);
+        }
+        if (e.type === 'dictation-stopped') {
+          onStop?.();
+        }
       }
     });
 
     return () => unsubscribe();
-  }, [onStop]);
-
+  }, [onStop, prefersReducedMotion]);
   // Fallback: poll dictationState()
   useEffect(() => {
     let mounted = true;
@@ -116,6 +188,11 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
       try {
         const current = await dictationState();
         if (!mounted) return;
+        // A backend reply that is missing its shape must not take the indicator
+        // down with it: treat it as "no news" and keep what we already show.
+        if (!current || typeof current !== 'object' || typeof current.recording !== 'boolean') {
+          return;
+        }
         setState((prev) => {
           // If already marked recording by event, preserve since timestamp if poll lacks it
           const since = current.since ?? (current.recording ? prev.since ?? Date.now() : null);
@@ -149,22 +226,59 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
     return null;
   }
 
-  // If not recording, render nothing
-  if (!state.recording) {
+  // If not recording and not exiting, render nothing
+  if (!state.recording && !isExiting) {
     return null;
   }
-
-  // Calculate audio level & timer
-  const levelNormalized = Math.max(0, Math.min(1, state.level));
-  const levelPercent = Math.round(levelNormalized * 100);
-
   const elapsedSeconds = state.since && now > 0
     ? Math.max(0, Math.floor((now - state.since) / 1000))
     : 0;
   const mins = Math.floor(elapsedSeconds / 60);
   const secs = elapsedSeconds % 60;
   const formattedTimer = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  const renderVisualizer = (isMini: boolean) => {
+    if (waveEnabled) {
+      return (
+        <div
+          data-testid="dictation-wave"
+          className={`flex items-center justify-between gap-[2px] w-full ${isMini ? 'h-4' : 'h-6 px-1'}`}
+        >
+          {bars.map((bar, idx) => (
+            <div
+              key={idx}
+              data-testid="dictation-wave-bar"
+              data-index={idx}
+              className="flex-1 rounded-full transition-all duration-75"
+              style={{
+                height: `${bar.heightPct}%`,
+                minHeight: isMini ? '2px' : '3px',
+                maxHeight: '100%',
+                backgroundColor: 'var(--accent)',
+                opacity: bar.opacity,
+                boxShadow: bar.heightPct > (isMini ? 40 : 30) ? `0 0 ${isMini ? 4 : 6}px var(--accent)` : 'none',
+              }}
+            />
+          ))}
+        </div>
+      );
+    }
 
+    return (
+      <div
+        className={`${isMini ? 'h-1.5' : 'h-2'} w-full rounded-full overflow-hidden`}
+        style={{ backgroundColor: 'var(--elevated)' }}
+      >
+        <div
+          data-testid="dictation-level-bar"
+          className="h-full transition-all duration-75 rounded-full"
+          style={{
+            width: `${levelPercent}%`,
+            backgroundColor: 'var(--accent)',
+          }}
+        />
+      </div>
+    );
+  };
   const handleStop = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -204,7 +318,9 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
         data-variant="overlay"
         role="status"
         aria-label={t.dictationIndicatorRecording || t.settingsSpeechHotkey}
-        className="absolute inset-0 z-50 flex flex-col justify-between p-3 select-none backdrop-blur-md transition-all duration-200"
+        className={`absolute inset-0 z-50 flex flex-col justify-between p-3 select-none backdrop-blur-md transition-all duration-200 ${
+          isExiting ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
+        }`}
         style={{
           backgroundColor: 'var(--surface)',
           borderColor: 'var(--border)',
@@ -240,23 +356,10 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
           </div>
         </div>
 
-        {/* Middle: Live level visualizer */}
+        {/* Middle: Live level wave / bar visualizer */}
         <div className="py-1">
-          <div
-            className="h-2 w-full rounded-full overflow-hidden"
-            style={{ backgroundColor: 'var(--elevated)' }}
-          >
-            <div
-              data-testid="dictation-level-bar"
-              className="h-full transition-all duration-75 rounded-full"
-              style={{
-                width: `${levelPercent}%`,
-                backgroundColor: 'var(--accent)',
-              }}
-            />
-          </div>
+          {renderVisualizer(false)}
         </div>
-
         {/* Bottom controls: Cancel and Stop */}
         <div className="flex items-center justify-end gap-2 pt-1">
           <button
@@ -303,7 +406,9 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
       data-variant="pill"
       role="status"
       aria-label={t.dictationIndicatorRecording || t.settingsSpeechHotkey}
-      className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-2.5 rounded-full border shadow-xl backdrop-blur-md transition-all duration-200 select-none pointer-events-auto"
+      className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-2.5 rounded-full border shadow-xl backdrop-blur-md transition-all duration-200 select-none pointer-events-auto ${
+        isExiting ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
+      }`}
       style={{
         outline: 'none',
         backgroundColor: 'var(--surface)',
@@ -322,8 +427,8 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
         </span>
       </div>
 
-      {/* Live Level Bar Indicator & Timer */}
-      <div className="flex flex-col min-w-[84px]">
+      {/* Live Level Bar / Wave Indicator & Timer */}
+      <div className="flex flex-col min-w-[120px]">
         <div className="flex items-center justify-between gap-2 text-xs font-medium">
           <span
             data-testid="dictation-mode"
@@ -340,21 +445,10 @@ export const DictationIndicator: React.FC<DictationIndicatorProps> = ({
             {formattedTimer}
           </span>
         </div>
-        <div
-          className="h-1.5 w-full rounded-full overflow-hidden mt-1"
-          style={{ backgroundColor: 'var(--elevated)' }}
-        >
-          <div
-            data-testid="dictation-level-bar"
-            className="h-full transition-all duration-75 rounded-full"
-            style={{
-              width: `${levelPercent}%`,
-              backgroundColor: 'var(--accent)',
-            }}
-          />
+        <div className="mt-1">
+          {renderVisualizer(true)}
         </div>
       </div>
-
       {/* Action buttons: Cancel and Stop */}
       <div className="flex items-center gap-1">
         <button

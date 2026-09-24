@@ -11,7 +11,9 @@ import {
   PanelLeftOpen,
   Mic,
   Power,
+  AudioLines,
 } from 'lucide-react';
+import { SpeechPanel } from './components/speech/SpeechPanel';
 
 import { TitleBar } from './components/TitleBar';
 import { MiniOverlay } from './components/MiniOverlay';
@@ -132,7 +134,9 @@ class ErrorBoundary extends React.Component<
           <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 mb-4 font-bold text-xl">
             !
           </div>
-          <h2 className="text-base font-semibold mb-1">Что-то пошло не так</h2>
+          <h2 className="text-base font-semibold mb-1" data-testid="app-crash-message">
+            {this.state.error?.message || 'Что-то пошло не так'}
+          </h2>
           <p className="text-xs text-[var(--text-muted)] max-w-[280px] text-center mb-5 leading-relaxed">
             Интерфейс столкнулся с непредвиденной ошибкой при рендере.
           </p>
@@ -157,8 +161,8 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-export type ScreenId = 'dashboard' | 'day' | 'calendar' | 'alarms' | 'tasks' | 'lists' | 'notes' | 'drawings' | 'recordings' | 'stats' | 'settings';
-type SectionId = 'dashboard' | 'day' | 'calendar' | 'notes' | 'recordings' | 'stats' | 'settings';
+export type ScreenId = 'dashboard' | 'day' | 'calendar' | 'alarms' | 'tasks' | 'lists' | 'notes' | 'drawings' | 'recordings' | 'stats' | 'stt' | 'settings';
+type SectionId = 'dashboard' | 'day' | 'calendar' | 'notes' | 'recordings' | 'stats' | 'stt' | 'settings';
 
 interface NavSection {
   id: SectionId;
@@ -426,6 +430,7 @@ function MainShell() {
     { id: 'notes', label: t.navNotes, icon: <FileText size={18} />, tabs: ['notes', 'drawings'] },
     { id: 'recordings', label: t.navRecordings, icon: <Mic size={18} />, tabs: ['recordings'] },
     { id: 'stats', label: t.navStats, icon: <BarChart2 size={18} />, tabs: ['stats'] },
+    { id: 'stt', label: t.navStt, icon: <AudioLines size={18} />, tabs: ['stt'] },
     { id: 'settings', label: t.navSettings, icon: <Settings size={18} />, tabs: ['settings'] },
   ];
 
@@ -447,6 +452,7 @@ function MainShell() {
       case 'drawings': return t.navDrawings;
       case 'recordings': return t.navRecordings;
       case 'stats': return t.navStats;
+      case 'stt': return t.navStt;
       case 'settings': return t.navSettings;
     }
   };
@@ -565,7 +571,7 @@ function MainShell() {
               }))}
               onChange={handleNavigate}
             />
-            <div className={`flex-1 overflow-y-auto overflow-x-hidden ${['dashboard', 'drawings', 'stats'].includes(activeTab) ? 'p-0' : 'p-6'}`}>
+            <div className={`flex-1 overflow-y-auto overflow-x-hidden ${['dashboard', 'drawings', 'stats', 'stt'].includes(activeTab) ? 'p-0' : 'p-6'}`}>
               {activeTab === 'dashboard' && (
                 <DashboardView
                   theme={theme}
@@ -615,8 +621,12 @@ function MainShell() {
 
               {activeTab === 'stats' && <StatsView tasks={tasks} />}
 
+              {activeTab === 'stt' && <SpeechPanel />}
+
               {activeTab === 'settings' && (
                 <SettingsView
+                  onNavigate={handleNavigate}
+                  onOpenStt={() => setActiveTab('stt')}
                   theme={theme}
                   accentKey={accentKey}
                   onSelectAccent={handleSelectAccent}

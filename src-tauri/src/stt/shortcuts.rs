@@ -26,7 +26,7 @@ pub struct SpeechBindings {
 impl Default for SpeechBindings {
     fn default() -> Self {
         Self {
-            transcribe: "Ctrl+Shift+D".to_string(),
+            transcribe: "Ctrl+S".to_string(),
             cancel: "Escape".to_string(),
         }
     }
@@ -391,6 +391,12 @@ mod tests {
         let shortcut = parse_accelerator("Ctrl+Shift+D").expect("parse Ctrl+Shift+D");
         assert!(shortcut.matches(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyD));
     }
+    #[test]
+    fn parse_ctrl_s() {
+        let shortcut = parse_accelerator("Ctrl+S").expect("parse Ctrl+S");
+        assert!(shortcut.matches(Modifiers::CONTROL, Code::KeyS));
+    }
+
 
     #[test]
     fn parse_alt_space() {
@@ -488,7 +494,7 @@ mod tests {
     #[test]
     fn speech_bindings_defaults() {
         let default_bindings = SpeechBindings::default();
-        assert_eq!(default_bindings.transcribe, "Ctrl+Shift+D");
+        assert_eq!(default_bindings.transcribe, "Ctrl+S");
         assert_eq!(default_bindings.cancel, "Escape");
     }
 }

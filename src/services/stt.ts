@@ -92,11 +92,8 @@ export interface DictationResult {
   engine: SttEngineKind;
 }
 
-export interface DictationState {
-  recording: boolean;
-  level: number;
-  since: number | null;
-}
+export type { DictationState } from '../components/DictationIndicator';
+import type { DictationState } from '../components/DictationIndicator';
 
 export interface TranscribeResult {
   text: string;
